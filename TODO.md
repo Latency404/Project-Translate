@@ -10,7 +10,7 @@ Komponenten Button/Card/Input/ProgressBar/Tag/Modal in `src/components/`,
 Showcase-View zeigt alles (inkl. live Farbtastatur).
 `npm run build` + `npm test` (18) grün. Nächster Punkt: 1.2
 
-## Phase 0 – Fundament                             [fertig]
+## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
       fertig wenn: `npm install && npm run dev` läuft (Vite + API-Port), leere Seite
       erscheint, `git init` + erster Commit vorhanden, `npm test` läuft grün (0 Tests ok)
@@ -25,7 +25,7 @@ Showcase-View zeigt alles (inkl. live Farbtastatur).
       `1299328280` (More Traits) liefert mehrere Mods mit je mehreren Versionen, Einträge haben
       id/file/key/original korrekt
 
-## Phase 1 – Frontend                              [geplant]
+## Phase 1 – Frontend [in Arbeit]
 - [x] 1.1 Design-Fundament · selbst · braucht 0.1
       fertig wenn: `npm run build` grün — eine Showcase-Seite zeigt Tokens
       (Farben, Schriften, Abstände) + Button, Card, Input, ProgressBar, Tag, Modal;
@@ -47,7 +47,7 @@ Showcase-View zeigt alles (inkl. live Farbtastatur).
       schreibt nach export/llm/, Import zeigt Vorschau (matched/unmatched pro Mod)
       mit Bestätigung, beide gegen Fake-API
 
-## Phase 2 – Durchstich                            [geplant]
+## Phase 2 – Durchstich [geplant]
 - [ ] 2.1 Echter Scan + echtes Einlesen · delegieren · braucht 0.3, 1.3
       fertig wenn: `npm start` — Setup zeigt echten Status, Scan findet die echten
       362+ Mods, Mod-Liste zeigt echte Eintragszahlen, Editor zeigt echte
@@ -56,29 +56,50 @@ Showcase-View zeigt alles (inkl. live Farbtastatur).
       fertig wenn: Eintrag im echten Mod speichern überlebt Neustart, alte Datei liegt
       in export/backups/, Rechtefehler (nicht Admin) wird sauber im UI gemeldet
 
-## Phase 3 – Funktionen                             [geplant]
+## Phase 3 – Funktionen [geplant]
 - [ ] 3.1 LLM-Export/-Import echt · delegieren · braucht 2.1
       fertig wenn: Export erzeugt eine Datei pro Mod im richtigen Format
       (Versionen im Datei-Key), Import-Vorschau zuordnet korrekt, Apply schreibt
       targetLang-Dateien mit Backup, unmatched-Keys werden verworfen
 - [ ] 3.2 Mod-Export · delegieren · braucht 2.1
       fertig wenn: `POST /api/export/mod` erzeugt kompletten installierbaren
-      Übersetzungs-Mod (mod.info pro Version, Translate/<LANG>/-Bäume, icon.png),
+      Übersetzungs-Mod (mod.info pro Version, Translate/`<LANG>`/-Bäume, icon.png),
       Zielordner wählbar, View zeigt Export-Dialog mit Ordnerauswahl
 - [ ] 3.3 Finales Produktions-Setup · selbst · braucht 3.1, 3.2
       fertig wenn: `npm start` — Express dient gebautes Frontend + API auf :3100,
       `npm run build` grün, kein Dev-Server nötig
 
-## Phase 4 – Abschluss                             [geplant]
-- [ ] 4.1 Fehlerfälle und leere Zustände · delegieren
+## Phase 4 – Review [geplant]
+- [ ] 4.1 Duplikate zusammenführen · selbst · braucht 3.3
+      fertig wenn: gleiche Logik existiert nur noch an einer Stelle (z. B.
+      Entry-Id-/Pfad-Parsing in scanner.js, entries.js, llm-io.js, mod-export.js),
+      `npm test` + `npm run build` laufen danach unverändert grün
+- [ ] 4.2 Toter Code und Fake-API-Reste raus · selbst · braucht 4.1
+      fertig wenn: keine ungenutzten Dateien, Funktionen oder Importe mehr
+      (Fake-API-Flag `PT_FAKE`, `fake-api.js`, Fixture-Routen — nur bleiben lassen,
+      was Tests noch brauchen), `npm start` startet sauber, `npm test` grün
+- [ ] 4.3 Struktur konsistent machen · selbst · braucht 4.2
+      fertig wenn: Benennung und Ordneraufbau folgen überall demselben Muster
+      (View-Namen, server/-Modul-Namen, API-Funktionsnamen), `npm test` grün
+
+## Phase 5 – Release [geplant]
+- [ ] 5.1 Leere Zustände und Fehlerfälle · delegieren · braucht 4.3
       fertig wenn: fehlendes Spiel/Workshop (leerer Zustand + Hilfe), kaputte
       JSON-Dateien (geskipped + gelistet, kein Abbruch), leerer Mod ohne Translate-
-      Ordner, Export ohne Auswahl, Import leerer Ordner — alles sichtbar gemeldet,
+      Ordner, Export ohne Auswahl, Import leerer Ordner, Rechtefehler (nicht
+      Admin) — alles zeigt eine verständliche Meldung statt einer leeren Fläche,
       `npm run build` grün
-- [ ] 4.2 Cleanup und README · selbst
-      fertig wenn: Fixtures-Flag konsistent, toter Code entfernt, README zeigt
-      Install, Start (inkl. Admin-Hinweis), Workflow Export→LLM→Import→Mod-Export;
-      `npm run build && npm test` grün, letzter Commit
+- [ ] 5.2 Validierung · delegieren · braucht 4.3
+      fertig wenn: Setup-View lehnt ungültige Pfade mit klarer Meldung ab,
+      Import lehnt Dateien ab, die keinem Mod/Format zuzuordnen sind,
+      `npm test` grün
+- [ ] 5.3 Responsive · delegieren · braucht 4.3
+      fertig wenn: alle Views ab Mindestdesktop-Breite (1024px) ohne horizontales
+      Scrollen bedienbar, Editor-Spalten brichen sauber um, `npm run build` grün
+- [ ] 5.4 README · selbst · braucht 5.1, 5.2, 5.3
+      fertig wenn: README zeigt Install, Start (inkl. Admin-Hinweis), Workflow
+      Export→LLM→Import→Mod-Export — Fremder kann das Projekt nach der Anleitung
+      starten, `npm run build && npm test` grün, letzter Commit
 
 ## Entscheidungen & Abweichungen
 - **Design-Palette (USER, Slice 1.1):** Carbon-Theme (#0a0a0a/#121517), Text
