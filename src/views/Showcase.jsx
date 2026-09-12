@@ -19,7 +19,7 @@ const SWATCHES = [
   ["accent-deep", "bg-accent-deep", "#8eaf00"],
   ["warning", "bg-warning", "#c9a24a"],
   ["success", "bg-success", "#6ca070"],
-  ["danger", "bg-danger", "#e5383b"],
+  ["danger", "bg-danger", "#a4161a"],
 ];
 
 function Section({ title, hint, children }) {
