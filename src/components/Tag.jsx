@@ -5,6 +5,7 @@
 const TONES = {
   neutral: "bg-raised text-muted border-line",
   accent: "bg-accent/15 text-accent border-accent/40",
+  base: "bg-dust/10 text-dust border-dust/40",
   warning: "bg-warning/15 text-warning border-warning/40",
   success: "bg-success/15 text-success border-success/40",
   danger: "bg-danger/15 text-danger border-danger/40",

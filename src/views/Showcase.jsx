@@ -14,11 +14,12 @@ const SWATCHES = [
   ["line", "bg-line", "#33383d"],
   ["text", "bg-text", "#f5f3f4"],
   ["muted", "bg-muted", "#b1a7a6"],
+  ["dust", "bg-dust", "#d3d3d3"],
   ["accent", "bg-accent", "#e5383b"],
   ["accent-deep", "bg-accent-deep", "#a4161a"],
   ["warning", "bg-warning", "#c9a24a"],
   ["success", "bg-success", "#6ca070"],
-  ["danger", "bg-danger", "#ba181b"],
+  ["danger", "bg-danger", "#e5383b"],
 ];
 
 function Section({ title, hint, children }) {
@@ -139,7 +140,7 @@ export default function Showcase() {
         <Card>
           <div className="flex flex-wrap gap-2">
             <Tag tone="neutral">Neutral</Tag>
-            <Tag tone="accent">Base Game</Tag>
+            <Tag tone="base">Base Game</Tag>
             <Tag tone="warning">Missing</Tag>
             <Tag tone="success">Translated</Tag>
             <Tag tone="danger">Fehler</Tag>

@@ -15,6 +15,7 @@
   /* Typo */
   --color-text: #f5f3f4;       /* Haupttext (White Smoke) */
   --color-muted: #b1a7a6;      /* Sekundärtext, Labels (Silver) */
+  --color-dust: #d3d3d3;       /* Dust Grey — z. B. Base-Game-Tag */
 
   /* Akzent */
   --color-accent: #e5383b;     /* Strawberry Red — primäre Aktionen */
@@ -23,7 +24,7 @@
   /* Status (Editor: Gold = missing, Salbei = translated) */
   --color-warning: #c9a24a;
   --color-success: #6ca070;
-  --color-danger: #ba181b;     /* Mahogany Red */
+  --color-danger: #e5383b;     /* Strawberry Red */
 
   /* Schriften */
   --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
