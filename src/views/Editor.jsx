@@ -268,13 +268,10 @@ export default function Editor({ modIds, onBack }) {
           const currentTranslation = getEntryTranslation(entry);
           const entryDirty = isEntryDirty(entry);
 
-          // Border status: empty translation → warning, otherwise → line (editing → accent)
-          let borderClass = "border-line";
-          if (!entryDirty) {
-            borderClass = entry.translation ? "border-line" : "border-warning";
-          } else {
-            borderClass = "border-accent";
-          }
+          // Statusring: gelb = fehlt, grün = vorhanden, Akzent = ungespeicherte Änderung
+          let statusClass = "outline-success";
+          if (entryDirty) statusClass = "outline-accent";
+          else if (!entry.translation) statusClass = "outline-warning";
 
           return (
             <div key={entry.id} className="flex flex-col gap-1 sm:flex-row sm:gap-4 sm:items-start">
@@ -283,11 +280,11 @@ export default function Editor({ modIds, onBack }) {
                 <label className="mb-1.5 block text-xs font-mono text-muted">
                   {entry.key}
                 </label>
-                <Input
+                <input
                   value={currentTranslation}
                   onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation)}
                   placeholder="Übersetzung…"
-                  className={borderClass}
+                  className={`h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text placeholder:text-muted/60 outline-2 outline-offset-1 focus-visible:outline-2 ${statusClass}`}
                 />
               </div>
               {/* Rechts: Original (readonly) */}

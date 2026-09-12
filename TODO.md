@@ -3,11 +3,11 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-1.3 gebaut (wartet auf Abnahme mit der Phase): Setup-View + Mods-View (Grid mit
-Suche, Multi-Select + „Alle", Base-Game-Tag, Fortschrittsbalken), Auswahl navigiert
-in den Editor (Platzhalter). `src/api.js` ist einziger API-Zugangspunkt, Dev läuft
-mit PT_FAKE=1, `GET /api/status` liefert `scanProgress`. `npm run build` +
-`npm test` (18) grün. Nächster Punkt: 1.4
+1.4 gebaut (wartet auf Abnahme mit der Phase): Setup-View + Mods-View +
+Editor-View (zweispaltig: Original rechts readonly, Übersetzung links mit
+Statusfarben, Suche serverseitig, Paginierung 50/Seite, Mod-Vor/Zurück-Navigation,
+Fortschrittsbalken, Speichern via PUT mit Dirty-Tracking). `npm run build` +
+`npm test` (18) grün. Nächster Punkt: 1.5
 
 ## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -37,7 +37,7 @@ mit PT_FAKE=1, `GET /api/status` liefert `scanProgress`. `npm run build` +
       fertig wenn: `npm run build` grün — Grid aller Mods mit Poster, Name,
       Eintragszahl, Fortschrittsbalken; Suche, Multi-Select + "Alle", Basisspiel als
       eigener Eintrag, Auswahl navigiert in den Editor
-- [ ] 1.4 Editor-View (zweispaltig) · delegieren · braucht 1.1, 0.2
+- [x] 1.4 Editor-View (zweispaltig) · delegieren · braucht 1.1, 0.2
       fertig wenn: `npm run build` grün — Original rechts (readonly), Übersetzung
       links (editierbar), Statusfarben gelb/grün, Suche, Paginierung 50/Seite,
       Vor/Zurück-Navigation, Fortschrittsbalken pro Mod, Speichern via /api (PUT)
