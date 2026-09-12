@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Rocket, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Copy, RotateCcw, Rocket, X } from "lucide-react";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
@@ -7,20 +7,98 @@ import ProgressBar from "../components/ProgressBar.jsx";
 import Tag from "../components/Tag.jsx";
 import Modal from "../components/Modal.jsx";
 
-const SWATCHES = [
-  ["ink", "bg-ink", "#0b090a"],
-  ["surface", "bg-surface", "#161a1d"],
-  ["raised", "bg-raised", "#21272b"],
-  ["line", "bg-line", "#33383d"],
-  ["text", "bg-text", "#f5f3f4"],
-  ["muted", "bg-muted", "#b1a7a6"],
-  ["dust", "bg-dust", "#d3d3d3"],
-  ["accent", "bg-accent", "#b6db00"],
-  ["accent-deep", "bg-accent-deep", "#8eaf00"],
-  ["warning", "bg-warning", "#c9a24a"],
-  ["success", "bg-success", "#15a33b"],
-  ["danger", "bg-danger", "#a4161a"],
-];
+/* Standard-Tokens aus src/styles/theme.css — das Panel überschreibt sie
+   zur Laufzeit über CSS-Variablen am :root. */
+const DEFAULTS = {
+  ink: "#0b090a",
+  surface: "#161a1d",
+  raised: "#21272b",
+  line: "#33383d",
+  text: "#f5f3f4",
+  muted: "#b1a7a6",
+  dust: "#d3d3d3",
+  accent: "#b6db00",
+  "accent-deep": "#8eaf00",
+  warning: "#c9a24a",
+  success: "#15a33b",
+  danger: "#a4161a",
+};
+
+const STORAGE_KEY = "pt-theme-overrides";
+
+function loadOverrides() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return Object.fromEntries(
+      Object.keys(DEFAULTS).filter((k) => parsed[k]).map((k) => [k, parsed[k]]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function ColorPanel({ colors, overrides, onPick, onReset }) {
+  const [copied, setCopied] = useState(false);
+
+  const cssBlock =
+    "@theme {\n" +
+    Object.entries(colors)
+      .map(([k, v]) => `  --color-${k}: ${v};`)
+      .join("\n") +
+    "\n}";
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(cssBlock);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* Clipboard nicht verfügbar — Button bleibt einfach unbestätigt */
+    }
+  };
+
+  return (
+    <Card
+      title="Farben"
+      subtitle="Zum schnellen Testen — überschreibt die Tokens live (bleibt bis Zurücksetzen)."
+      footer={
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" icon={Copy} onClick={copy}>
+            {copied ? "Kopiert!" : "@theme kopieren"}
+          </Button>
+          <Button variant="secondary" size="sm" icon={RotateCcw} onClick={onReset}>
+            Zurücksetzen
+          </Button>
+        </div>
+      }
+    >
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {Object.entries(colors).map(([name, value]) => (
+          <label key={name} className="flex items-center gap-2">
+            <input
+              type="color"
+              value={value}
+              onChange={(e) => onPick(name, e.target.value.toLowerCase())}
+              className="h-7 w-9 shrink-0 cursor-pointer rounded border border-line bg-raised p-0.5"
+              aria-label={`Token ${name}`}
+            />
+            <span className="min-w-0">
+              <span
+                className={`block truncate text-xs font-medium ${overrides[name] ? "text-accent" : "text-text"}`}
+              >
+                {name}
+              </span>
+              <span className="block font-mono text-[10px] text-muted">
+                {value}
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 function Section({ title, hint, children }) {
   return (
@@ -38,6 +116,20 @@ function Section({ title, hint, children }) {
 
 export default function Showcase() {
   const [modalOpen, setModalOpen] = useState(false);
+  const [overrides, setOverrides] = useState(loadOverrides);
+  const colors = { ...DEFAULTS, ...overrides };
+
+  useEffect(() => {
+    const root = document.documentElement;
+    for (const [key, value] of Object.entries(DEFAULTS)) {
+      if (overrides[key]) root.style.setProperty(`--color-${key}`, overrides[key]);
+      else root.style.removeProperty(`--color-${key}`);
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+  }, [overrides]);
+
+  const pick = (name, value) =>
+    setOverrides((prev) => ({ ...prev, [name]: value }));
 
   return (
     <div className="mx-auto max-w-3xl space-y-10 px-6 py-10">
@@ -50,14 +142,27 @@ export default function Showcase() {
         </p>
       </header>
 
-      <Section title="Farben" hint="Alle Farbwerte als Tokens in src/styles/theme.css.">
+      <ColorPanel
+        colors={colors}
+        overrides={overrides}
+        onPick={pick}
+        onReset={() => setOverrides({})}
+      />
+
+      <Section
+        title="Farbverwendung"
+        hint="So werden die Tokens in der App eingesetzt (Swatches oben live veränderbar)."
+      >
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {SWATCHES.map(([name, bg, hex]) => (
+          {Object.entries(colors).map(([name, hex]) => (
             <div
               key={name}
               className="flex items-center gap-2 rounded-md border border-line bg-surface p-2"
             >
-              <span className={`h-6 w-6 shrink-0 rounded ${bg}`} />
+              <span
+                className="h-6 w-6 shrink-0 rounded"
+                style={{ backgroundColor: hex }}
+              />
               <span className="min-w-0">
                 <span className="block truncate text-xs font-medium text-text">
                   {name}
