@@ -20,9 +20,9 @@
   --color-accent: #e5383b;     /* Strawberry Red — primäre Aktionen */
   --color-accent-deep: #a4161a;/* Mahogany Red — Hover primär */
 
-  /* Status (Editor: gelb = missing, grün = translated) */
-  --color-warning: #d9b13b;
-  --color-success: #74b061;
+  /* Status (Editor: Gold = missing, Salbei = translated) */
+  --color-warning: #c9a24a;
+  --color-success: #6ca070;
   --color-danger: #ba181b;     /* Mahogany Red */
 
   /* Schriften */
