@@ -17,9 +17,9 @@
   --color-muted: #b1a7a6;      /* Sekundärtext, Labels (Silver) */
   --color-dust: #d3d3d3;       /* Dust Grey — z. B. Base-Game-Tag */
 
-  /* Akzent */
-  --color-accent: #e5383b;     /* Strawberry Red — primäre Aktionen */
-  --color-accent-deep: #a4161a;/* Mahogany Red — Hover primär */
+  /* Akzent (Teal — Komplementär zum Rot, eindeutig von allen Statusfarben getrennt) */
+  --color-accent: #14b8a6;
+  --color-accent-deep: #0f766e;
 
   /* Status (Editor: Gold = missing, Salbei = translated) */
   --color-warning: #c9a24a;
