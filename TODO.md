@@ -3,11 +3,13 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-1.4 gebaut (wartet auf Abnahme mit der Phase): Setup-View + Mods-View +
-Editor-View (zweispaltig: Original rechts readonly, Übersetzung links mit
-Statusfarben, Suche serverseitig, Paginierung 50/Seite, Mod-Vor/Zurück-Navigation,
-Fortschrittsbalken, Speichern via PUT mit Dirty-Tracking). `npm run build` +
-`npm test` (18) grün. Nächster Punkt: 1.5
+Phase 1 komplett (wartet auf Abnahme der ganzen Phase): Setup-View + Mods-View
++ Editor-View (zweispaltig: Original rechts readonly, Übersetzung links mit
+Statusring gelb/grün/Akzent, Suche serverseitig, Paginierung 50/Seite,
+Mod-Vor/Zurück, Fortschrittsbalken, Speichern via PUT mit Dirty-Tracking) +
+Exchange-View (LLM-Export mit Mod-Auswahl/Sprache, LLM-Import mit Vorschau
+matched/unmatched pro Mod, Bestätigung per Modal, Apply). `npm run build` +
+`npm test` (18) grün. Nächster Punkt: 2.1 (Phase 2 – Durchstich).
 
 ## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -24,7 +26,7 @@ Fortschrittsbalken, Speichern via PUT mit Dirty-Tracking). `npm run build` +
       `1299328280` (More Traits) liefert mehrere Mods mit je mehreren Versionen, Einträge haben
       id/file/key/original korrekt
 
-## Phase 1 – Frontend [in Arbeit]
+## Phase 1 – Frontend [fertig]
 - [x] 1.1 Design-Fundament · selbst · braucht 0.1
       fertig wenn: `npm run build` grün — eine Showcase-Seite zeigt Tokens
       (Farben, Schriften, Abstände) + Button, Card, Input, ProgressBar, Tag, Modal;
@@ -41,7 +43,7 @@ Fortschrittsbalken, Speichern via PUT mit Dirty-Tracking). `npm run build` +
       fertig wenn: `npm run build` grün — Original rechts (readonly), Übersetzung
       links (editierbar), Statusfarben gelb/grün, Suche, Paginierung 50/Seite,
       Vor/Zurück-Navigation, Fortschrittsbalken pro Mod, Speichern via /api (PUT)
-- [ ] 1.5 Exchange-View (LLM-Austausch) · delegieren · braucht 1.1, 0.2
+- [x] 1.5 Exchange-View (LLM-Austausch) · delegieren · braucht 1.1, 0.2
       fertig wenn: `npm run build` grün — Export-Dialog (Mod-Auswahl, Zielsprache)
       schreibt nach export/llm/, Import zeigt Vorschau (matched/unmatched pro Mod)
       mit Bestätigung, beide gegen Fake-API
@@ -117,6 +119,9 @@ Fortschrittsbalken, Speichern via PUT mit Dirty-Tracking). `npm run build` +
   Dev-Verhalten wieder her.
 - `GET /api/status` liefert zusätzlich `scanProgress: { done, total, current }`
   (aus dem in-memory-Scan-State in server/index.js) — die Routenform sonst unverändert.
+- **Exchange-View ohne Ordner-Auswahl (Slice 1.5):** LLM-Export/Import nutzen immer
+  den Standard-Ordner `export/llm/<targetLang>` (dir-Parameter der API bleibt für
+  spätere Slices/CLI). Mod-Export (3.2) bekommt dagegen wahlweise einen Zielordner.
 - Git-Identität repo-lokal: `Latency <latency@localhost>` (global nicht gesetzt).
 - **mod.info beim Mod-Export liegt am Root** des exportierten Mods (nicht pro
   Version, wie in der ARCHITECTURE.md geschrieben) — `game_version` = höchste
@@ -140,7 +145,11 @@ Fortschrittsbalken, Speichern via PUT mit Dirty-Tracking). `npm run build` +
   überall grün bleibt.
 
 ## Offene Punkte
-- `ARCHITECTURE.md`: Zeile "`mod.info` pro Version" in "Mod-Export" auf "ein
+- Smoke-Tests, die `importApply`/`PUT entries` direkt gegen `server/fixtures/`
+  rufen, ändern die Fixture-Dateien (DE-Bäume/Backups) — nach solchen Tests
+  `git status` auf Fixtures prüfen und mit `git checkout -- server/fixtures`
+  zurücksetzen (war beim Review von 1.5 der Fall).
+- `ARCHITECTURE.md`: Zeile "mod.info pro Version" in "Mod-Export" auf "ein
   mod.info am Root, game_version = höchste Version" aktualisieren (Benutzer-
   Entscheidung, s. Entscheidungen).
 - Vite 8 warnt, dass die ESM-Syntax in `vite.config.js` mit dem künftigen
