@@ -3,13 +3,14 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-0.1 fertig: Projekt aufgesetzt, Vite + Express laufen, Git-Repo init. Nächster Punkt: 0.2
+0.2 fertig: Express-API vollständig (alle 10 Routen), Fixtures im echten PZ-Layout
+(3 SampleMods + Mini-Base-Game), 15 Tests grün. Nächster Punkt: 0.3
 
 ## Phase 0 – Fundament                             [in Arbeit]
 - [x] 0.1 Projekt aufsetzen · selbst
       fertig wenn: `npm install && npm run dev` läuft (Vite + API-Port), leere Seite
       erscheint, `git init` + erster Commit vorhanden, `npm test` läuft grün (0 Tests ok)
-- [ ] 0.2 Express-API mit echten Routen auf Fixtures · selbst · braucht 0.1
+- [x] 0.2 Express-API mit echten Routen auf Fixtures · selbst · braucht 0.1
       fertig wenn: `npm test` grün — `server/fixtures/` im echten PZ-Layout liegt
       (3 SampleMods + Mini-Base-Game mit EN- und DE-Dateien), alle Routen aus
       ARCHITECTURE.md liefern auf `PT_FAKE=1` Fixture-Daten, `GET /api/mods` zeigt
@@ -79,8 +80,22 @@ Abnahme: nach jedem Slice
 - `npm run dev` startet Vite + API über `scripts/dev.js` (eigenes Skript mit
   `child_process`), damit kein zusätzliches Paket wie `concurrently` nötig ist.
 - Git-Identität repo-lokal: `Latency <latency@localhost>` (global nicht gesetzt).
+- **mod.info beim Mod-Export liegt am Root** des exportierten Mods (nicht pro
+  Version, wie in der ARCHITECTURE.md geschrieben) — `game_version` = höchste
+  Version; Basisspiel-Export hat kein `game_version`. USER-Entscheidung, entspricht
+  echten PZ-Mods. → ARCHITECTURE.md entsprechend anpassen (ist "nie anfassen",
+  daher hier vermerkt).
+- Eintrags-Pfade: `entryId` = `<version>/<EN-Pfad relativ zum Version-Ordner>::<key>`,
+  d. h. `42.20/media/lua/shared/Translate/EN/ContextMenu.json::Key`; LLM-Export-Keys
+  sind die kurze Form `<version>/<Kategorie>.json`.
+- Test-/Runtime-Overrides: `PT_FAKE_ROOT`, `PT_EXPORT_ROOT`, `PT_CONFIG_PATH`,
+  `PORT` (Defaults: server/fixtures/, export/, config.json, 3100) — Tests laufen
+  auf tmp-Kopien, Fixtures bleiben unverändert.
 
 ## Offene Punkte
+- `ARCHITECTURE.md`: Zeile "`mod.info` pro Version" in "Mod-Export" auf "ein
+  mod.info am Root, game_version = höchste Version" aktualisieren (Benutzer-
+  Entscheidung, s. Entscheidungen).
 - Vite 8 warnt, dass die ESM-Syntax in `vite.config.js` mit dem künftigen
   Default `configLoader: 'native'` nicht zusammenpasst — bei Gelegenheit auf
   `.mjs` umtauschen.
