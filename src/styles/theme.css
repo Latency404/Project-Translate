@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+/* Design-Tokens — Project Translate, dunkles Gaming-Theme (Slice 1.1)
+   Alle Farben/Schriften der App leben hier. Views und Komponenten nutzen
+   nur die daraus erzeugten Tailwind-Utilities (bg-surface, text-muted, ...)
+   — keine eigenen Farbwerte. */
+
+@theme {
+  /* Flächen */
+  --color-ink: #0e100d;        /* Seitenhintergrund */
+  --color-surface: #151a14;    /* Karten */
+  --color-raised: #1d241b;     /* Inputs, Hover, Balken-Hintergrund */
+  --color-line: #2b3327;       /* Rahmen */
+
+  /* Typo */
+  --color-text: #e9e6da;       /* Haupttext */
+  --color-muted: #989b8c;      /* Sekundärtext, Labels */
+
+  /* Akzent */
+  --color-accent: #d4a53f;     /* Bernstein — primäre Aktionen */
+  --color-accent-deep: #b5882e;/* Hover primär */
+
+  /* Status (Editor: gelb = missing, grün = translated) */
+  --color-warning: #d9b13b;
+  --color-success: #74b061;
+  --color-danger: #c96a4a;
+
+  /* Schriften */
+  --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-ink);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  * {
+    scrollbar-color: var(--color-raised) var(--color-ink);
+  }
+}
