@@ -3,11 +3,11 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-1.1 gebaut, WARTET AUF ABNAHME: Design-Fundament — Tokens in `src/styles/theme.css`
-(dunkles Gaming-Theme: Bernstein-Akzent auf Moos-Schwarz, Editor-Farben gelb/grün),
-Komponenten Button/Card/Input/ProgressBar/Tag/Modal in `src/components/`, Showcase-View
-zeigt alles. `npm run build` + `npm test` (18) grün. Nächster Punkt: 1.2 (erst nach
-Abnahme — die Screens bauen darauf auf)
+1.1 abgenommen: Design-Fundament — Tokens in `src/styles/theme.css` (dunkles
+Carbon-Theme, Acid-Grün-Akzent #b6db00, Status: Gold=missing / Salbei=translated /
+Strawberry-Red=Error, Base-Game-Tag in Dust Grey), Komponenten Button/Card/Input/
+ProgressBar/Tag/Modal in `src/components/`, Showcase-View zeigt alles.
+`npm run build` + `npm test` (18) grün. Nächster Punkt: 1.2
 
 ## Phase 0 – Fundament                             [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -25,7 +25,7 @@ Abnahme — die Screens bauen darauf auf)
       id/file/key/original korrekt
 
 ## Phase 1 – Frontend                              [geplant]
-- [ ] 1.1 Design-Fundament · selbst · braucht 0.1
+- [x] 1.1 Design-Fundament · selbst · braucht 0.1
       fertig wenn: `npm run build` grün — eine Showcase-Seite zeigt Tokens
       (Farben, Schriften, Abstände) + Button, Card, Input, ProgressBar, Tag, Modal;
       dunkles Gaming-Theme, vom User abgenommen bevor Screens darauf aufsetzen
@@ -80,6 +80,11 @@ Abnahme — die Screens bauen darauf auf)
       `npm run build && npm test` grün, letzter Commit
 
 ## Entscheidungen & Abweichungen
+- **Design-Palette (USER, Slice 1.1):** Carbon-Theme (#0b090a/#161a1d), Text White
+  Smoke #f5f3f4, Muted Silver #b1a7a6, Base-Game-Tag Dust Grey #d3d3d3,
+  Akzent Acid-Grün #b6db00 (Deep #8eaf00), Status: warning Gold #c9a24a, success
+  Salbei #6ca070, danger Strawberry Red #e5383b. Rottöne bleiben für Fehler —
+  Aktionen sind Grün, damit sich Akzent und Error nie verwechseln.
 - `npm run dev` startet Vite + API über `scripts/dev.js` (eigenes Skript mit
   `child_process`), damit kein zusätzliches Paket wie `concurrently` nötig ist.
 - Git-Identität repo-lokal: `Latency <latency@localhost>` (global nicht gesetzt).
