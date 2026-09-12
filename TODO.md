@@ -3,10 +3,11 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-0.2 fertig: Express-API vollständig (alle 10 Routen), Fixtures im echten PZ-Layout
-(3 SampleMods + Mini-Base-Game), 15 Tests grün. Nächster Punkt: 0.3
+0.3 fertig: Scanner-Tests gegen die echte Installation (echter Scan findet 453 Mods inkl.
+Base Game, More-Traits liefert mehrere Mods mit je mehreren Versionen, Einträge korrekt).
+18 Tests grün. Phase 0 vollständig. Nächster Punkt: 1.1
 
-## Phase 0 – Fundament                             [in Arbeit]
+## Phase 0 – Fundament                             [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
       fertig wenn: `npm install && npm run dev` läuft (Vite + API-Port), leere Seite
       erscheint, `git init` + erster Commit vorhanden, `npm test` läuft grün (0 Tests ok)
@@ -15,7 +16,7 @@ Abnahme: nach jedem Slice
       (3 SampleMods + Mini-Base-Game mit EN- und DE-Dateien), alle Routen aus
       ARCHITECTURE.md liefern auf `PT_FAKE=1` Fixture-Daten, `GET /api/mods` zeigt
       alle 4 Mods mit entryCount
-- [ ] 0.3 Scanner-Tests gegen echte Daten · selbst · braucht 0.2
+- [x] 0.3 Scanner-Tests gegen echte Daten · selbst · braucht 0.2
       fertig wenn: `npm test` grün — `scanner.js` wird in Tests gegen die echte
       Workshop-Wurzel + Game-Root gelaufen, findet ≥ 100 Mods inkl. Base Game,
       `1299328280` (More Traits) liefert mehrere Mods mit je mehreren Versionen, Einträge haben
@@ -91,6 +92,10 @@ Abnahme: nach jedem Slice
 - Test-/Runtime-Overrides: `PT_FAKE_ROOT`, `PT_EXPORT_ROOT`, `PT_CONFIG_PATH`,
   `PORT` (Defaults: server/fixtures/, export/, config.json, 3100) — Tests laufen
   auf tmp-Kopien, Fixtures bleiben unverändert.
+- Scanner-Tests (`server/scanner.test.js`) laufen gegen die ECHTE Steam-Installation
+  (Config-Defaults), nicht auf tmp-Kopien — das ist ihr Zweck. Auf Maschinen ohne
+  PZ wird der Block übersprungen (`skip`, Assertions unverändert), damit `npm test`
+  überall grün bleibt.
 
 ## Offene Punkte
 - `ARCHITECTURE.md`: Zeile "`mod.info` pro Version" in "Mod-Export" auf "ein
