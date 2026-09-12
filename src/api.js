@@ -59,3 +59,23 @@ export function saveEntries(modId, entries) {
     },
   );
 }
+
+export function exportLlm(modIds, targetLang) {
+  return request("/api/export/llm", {
+    method: "POST",
+    body: JSON.stringify({ modIds, targetLang }),
+  });
+}
+
+export function importPreview(dir) {
+  return request(
+    `/api/import/llm/preview${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`,
+  );
+}
+
+export function importApply(dir) {
+  return request("/api/import/llm/apply", {
+    method: "POST",
+    body: JSON.stringify(dir ? { dir } : {}),
+  });
+}
