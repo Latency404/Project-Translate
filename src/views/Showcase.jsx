@@ -18,7 +18,7 @@ const SWATCHES = [
   ["accent", "bg-accent", "#b6db00"],
   ["accent-deep", "bg-accent-deep", "#8eaf00"],
   ["warning", "bg-warning", "#c9a24a"],
-  ["success", "bg-success", "#6ca070"],
+  ["success", "bg-success", "#15a33b"],
   ["danger", "bg-danger", "#a4161a"],
 ];
 
