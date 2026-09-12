@@ -3,12 +3,12 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-1.1 abgenommen: Design-Fundament — Tokens in `src/styles/theme.css` (dunkles
-Carbon-Theme, Accent = danger = #e21d1d (nur negative Pills/Buttons), Deep #8a1414,
-Status: Gold=missing #e2901d / Grün=translated #1de252, Base-Game-Tag in Dust Grey),
-Komponenten Button/Card/Input/ProgressBar/Tag/Modal in `src/components/`,
-Showcase-View zeigt alles (inkl. live Farbtastatur).
-`npm run build` + `npm test` (18) grün. Nächster Punkt: 1.2
+1.2 gebaut (wartet auf Abnahme mit der Phase): Setup-View in `src/views/Setup.jsx`
+(Status-Karten, editierbare Pfade, Zielsprache, Scan mit Fortschrittsanzeige),
+`src/api.js` als einziger API-Zugangspunkt, NavBar in `src/App.jsx`
+(Setup/Mods/Design, Mods noch Platzhalter). Dev läuft mit PT_FAKE=1 (scripts/dev.js),
+`GET /api/status` liefert jetzt `scanProgress`.
+`npm run build` + `npm test` (18) grün. Nächster Punkt: 1.3
 
 ## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -30,7 +30,7 @@ Showcase-View zeigt alles (inkl. live Farbtastatur).
       fertig wenn: `npm run build` grün — eine Showcase-Seite zeigt Tokens
       (Farben, Schriften, Abstände) + Button, Card, Input, ProgressBar, Tag, Modal;
       dunkles Gaming-Theme, vom User abgenommen bevor Screens darauf aufsetzen
-- [ ] 1.2 Setup-View · delegieren · braucht 1.1, 0.2
+- [x] 1.2 Setup-View · delegieren · braucht 1.1, 0.2
       fertig wenn: `npm run build` grün — Views-Wechsel via App-State, Status-Karten
       (Spiel/Workshop gefunden), Pfade editierbar, Zielsprache-Auswahl (Default DE),
       "Scannen"-Button mit Fortschrittsanzeige (Fake-Daten aus /api)
@@ -113,6 +113,11 @@ Showcase-View zeigt alles (inkl. live Farbtastatur).
   Button-Schrift (alle Größen/Varianten mit Akzent) steht in text-text.
 - `npm run dev` startet Vite + API über `scripts/dev.js` (eigenes Skript mit
   `child_process`), damit kein zusätzliches Paket wie `concurrently` nötig ist.
+- **Dev läuft mit PT_FAKE=1** (scripts/dev.js setzt die Env für beide Kinder), damit
+  die Frontend-Slices 1.2–1.5 gegen Fixtures arbeiten. Slice 3.3 stellt das echte
+  Dev-Verhalten wieder her.
+- `GET /api/status` liefert zusätzlich `scanProgress: { done, total, current }`
+  (aus dem in-memory-Scan-State in server/index.js) — die Routenform sonst unverändert.
 - Git-Identität repo-lokal: `Latency <latency@localhost>` (global nicht gesetzt).
 - **mod.info beim Mod-Export liegt am Root** des exportierten Mods (nicht pro
   Version, wie in der ARCHITECTURE.md geschrieben) — `game_version` = höchste

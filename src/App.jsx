@@ -2,6 +2,7 @@ import { useState } from "react";
 import Button from "./components/Button.jsx";
 import Setup from "./views/Setup.jsx";
 import Showcase from "./views/Showcase.jsx";
+import Mods from "./views/Mods.jsx";
 import Card from "./components/Card.jsx";
 
 const VIEWS = [
@@ -12,6 +13,7 @@ const VIEWS = [
 
 export default function App() {
   const [view, setView] = useState("setup");
+  const [selectedModIds, setSelectedModIds] = useState([]);
 
   return (
     <div className="min-h-screen bg-ink">
@@ -38,13 +40,29 @@ export default function App() {
       <main>
         {view === "setup" && <Setup onOpenMods={() => setView("mods")} />}
         {view === "mods" && (
+          <Mods
+            onGoToSetup={() => setView("setup")}
+            onOpenEditor={(ids) => {
+              setSelectedModIds(ids);
+              setView("editor");
+            }}
+          />
+        )}
+        {view === "showcase" && <Showcase />}
+        {view === "editor" && (
           <div className="mx-auto max-w-2xl px-6 py-10">
-            <Card title="Mods" subtitle="Slice 1.3">
-              <p className="text-sm text-muted">Kommt im nächsten Slice (1.3).</p>
+            <Card title="Editor" subtitle="Slice 1.4">
+              <p className="text-sm text-muted">
+                Kommt im nächsten Slice (1.4).
+              </p>
+              <div className="mt-4">
+                <Button variant="secondary" onClick={() => setView("mods")}>
+                  Zurück zu den Mods
+                </Button>
+              </div>
             </Card>
           </div>
         )}
-        {view === "showcase" && <Showcase />}
       </main>
     </div>
   );
