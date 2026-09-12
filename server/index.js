@@ -60,7 +60,8 @@ app.get('/api/status', (req, res) => {
     workshopFound: fs.existsSync(r.workshopDir),
     scanRunning,
     modCount: cache ? cache.mods.length : 0,
-    error: scanError
+    error: scanError,
+    scanProgress
   })
 })
 

@@ -13,12 +13,14 @@ function killAll() {
 
 const vite = spawn(process.execPath, [path.join(root, 'node_modules', 'vite', 'bin', 'vite.js')], {
   cwd: root,
+  env: { ...process.env, PT_FAKE: '1' },
   stdio: 'inherit'
 })
 children.push(vite)
 
 const api = spawn(process.execPath, [path.join(root, 'server', 'index.js')], {
   cwd: root,
+  env: { ...process.env, PT_FAKE: '1' },
   stdio: 'inherit'
 })
 children.push(api)
