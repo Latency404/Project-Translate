@@ -2,3 +2,4 @@ node_modules/
 dist/
 export/
 config.json
+.obsidian/
