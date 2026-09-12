@@ -3,12 +3,11 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-1.2 gebaut (wartet auf Abnahme mit der Phase): Setup-View in `src/views/Setup.jsx`
-(Status-Karten, editierbare Pfade, Zielsprache, Scan mit Fortschrittsanzeige),
-`src/api.js` als einziger API-Zugangspunkt, NavBar in `src/App.jsx`
-(Setup/Mods/Design, Mods noch Platzhalter). Dev läuft mit PT_FAKE=1 (scripts/dev.js),
-`GET /api/status` liefert jetzt `scanProgress`.
-`npm run build` + `npm test` (18) grün. Nächster Punkt: 1.3
+1.3 gebaut (wartet auf Abnahme mit der Phase): Setup-View + Mods-View (Grid mit
+Suche, Multi-Select + „Alle", Base-Game-Tag, Fortschrittsbalken), Auswahl navigiert
+in den Editor (Platzhalter). `src/api.js` ist einziger API-Zugangspunkt, Dev läuft
+mit PT_FAKE=1, `GET /api/status` liefert `scanProgress`. `npm run build` +
+`npm test` (18) grün. Nächster Punkt: 1.4
 
 ## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -34,7 +33,7 @@ Abnahme: nach jedem Slice
       fertig wenn: `npm run build` grün — Views-Wechsel via App-State, Status-Karten
       (Spiel/Workshop gefunden), Pfade editierbar, Zielsprache-Auswahl (Default DE),
       "Scannen"-Button mit Fortschrittsanzeige (Fake-Daten aus /api)
-- [ ] 1.3 Mod-Übersicht (Canvas) · delegieren · braucht 1.1, 0.2
+- [x] 1.3 Mod-Übersicht (Canvas) · delegieren · braucht 1.1, 0.2
       fertig wenn: `npm run build` grün — Grid aller Mods mit Poster, Name,
       Eintragszahl, Fortschrittsbalken; Suche, Multi-Select + "Alle", Basisspiel als
       eigener Eintrag, Auswahl navigiert in den Editor

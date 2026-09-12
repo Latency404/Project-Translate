@@ -3,7 +3,7 @@ import Button from "./components/Button.jsx";
 import Setup from "./views/Setup.jsx";
 import Showcase from "./views/Showcase.jsx";
 import Mods from "./views/Mods.jsx";
-import Card from "./components/Card.jsx";
+import Editor from "./views/Editor.jsx";
 
 const VIEWS = [
   { key: "setup", label: "Setup" },
@@ -49,20 +49,7 @@ export default function App() {
           />
         )}
         {view === "showcase" && <Showcase />}
-        {view === "editor" && (
-          <div className="mx-auto max-w-2xl px-6 py-10">
-            <Card title="Editor" subtitle="Slice 1.4">
-              <p className="text-sm text-muted">
-                Kommt im nächsten Slice (1.4).
-              </p>
-              <div className="mt-4">
-                <Button variant="secondary" onClick={() => setView("mods")}>
-                  Zurück zu den Mods
-                </Button>
-              </div>
-            </Card>
-          </div>
-        )}
+        {view === "editor" && <Editor modIds={selectedModIds} onBack={() => setView("mods")} />}
       </main>
     </div>
   );

@@ -40,3 +40,22 @@ export function saveConfig(cfg) {
 export function getMods() {
   return request("/api/mods");
 }
+
+export function getEntries(modId, { page = 1, pageSize = 50, search = "" } = {}) {
+  return request(
+    `/api/mods/${encodeURIComponent(modId)}/entries?page=${page}&pageSize=${pageSize}${
+      search ? `&search=${encodeURIComponent(search)}` : ""
+    }`,
+  );
+}
+
+export function saveEntries(modId, entries) {
+  return request(
+    `/api/mods/${encodeURIComponent(modId)}/entries`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entries }),
+    },
+  );
+}
