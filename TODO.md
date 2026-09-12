@@ -3,9 +3,11 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-0.3 fertig: Scanner-Tests gegen die echte Installation (echter Scan findet 453 Mods inkl.
-Base Game, More-Traits liefert mehrere Mods mit je mehreren Versionen, Einträge korrekt).
-18 Tests grün. Phase 0 vollständig. Nächster Punkt: 1.1
+1.1 gebaut, WARTET AUF ABNAHME: Design-Fundament — Tokens in `src/styles/theme.css`
+(dunkles Gaming-Theme: Bernstein-Akzent auf Moos-Schwarz, Editor-Farben gelb/grün),
+Komponenten Button/Card/Input/ProgressBar/Tag/Modal in `src/components/`, Showcase-View
+zeigt alles. `npm run build` + `npm test` (18) grün. Nächster Punkt: 1.2 (erst nach
+Abnahme — die Screens bauen darauf auf)
 
 ## Phase 0 – Fundament                             [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
