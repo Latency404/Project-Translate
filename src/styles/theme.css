@@ -39,6 +39,9 @@
 @layer base {
   html {
     color-scheme: dark;
+    /* USER-Wahl: alles 125 % groß wie bei Browser-Zoom 125 % (16 px → 20 px).
+       Alle rem-basierten Tailwind-Größen (Schrift, Spacing, Radii) skalieren mit. */
+    font-size: 20px;
   }
 
   body {
