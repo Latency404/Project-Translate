@@ -3,10 +3,10 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-Noch nicht begonnen. Nächster Punkt: 0.1
+0.1 fertig: Projekt aufgesetzt, Vite + Express laufen, Git-Repo init. Nächster Punkt: 0.2
 
-## Phase 0 – Fundament                             [geplant]
-- [ ] 0.1 Projekt aufsetzen · selbst
+## Phase 0 – Fundament                             [in Arbeit]
+- [x] 0.1 Projekt aufsetzen · selbst
       fertig wenn: `npm install && npm run dev` läuft (Vite + API-Port), leere Seite
       erscheint, `git init` + erster Commit vorhanden, `npm test` läuft grün (0 Tests ok)
 - [ ] 0.2 Express-API mit echten Routen auf Fixtures · selbst · braucht 0.1
@@ -76,8 +76,13 @@ Noch nicht begonnen. Nächster Punkt: 0.1
       `npm run build && npm test` grün, letzter Commit
 
 ## Entscheidungen & Abweichungen
-- (leer)
+- `npm run dev` startet Vite + API über `scripts/dev.js` (eigenes Skript mit
+  `child_process`), damit kein zusätzliches Paket wie `concurrently` nötig ist.
+- Git-Identität repo-lokal: `Latency <latency@localhost>` (global nicht gesetzt).
 
 ## Offene Punkte
+- Vite 8 warnt, dass die ESM-Syntax in `vite.config.js` mit dem künftigen
+  Default `configLoader: 'native'` nicht zusammenpasst — bei Gelegenheit auf
+  `.mjs` umtauschen.
 - Steam-Workshop-Auto-Upload (ausdrücklich NICHT in v1 — späteres Projekt)
 - Electron-Verpackung (ausdrücklich NICHT in v1 — späteres Projekt)
