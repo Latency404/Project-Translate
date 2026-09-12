@@ -4,8 +4,9 @@
 //   mod.info                                   (am Root, game_version = höchste Version)
 //   icon.png                                   (falls die Quelle eine hat)
 //   <version>/media/lua/shared/Translate/<targetLang>/<Kategorie>.json
-// Es werden nur übersetzte Einträge exportiert (translation !== null), pro
-// Version eigene Dateien wie im echten Mod. Leere Dateien werden nicht erzeugt.
+// Es werden nur übersetzte Einträge der NEUESTEN Version exportiert
+// (translation !== null). Ältere Versionen werden nicht exportiert.
+// Leere Dateien werden nicht erzeugt.
 const fs = require('node:fs')
 const path = require('node:path')
 const { versionDirOf, toPosix } = require('./scanner')

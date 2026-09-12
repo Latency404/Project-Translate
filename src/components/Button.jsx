@@ -6,7 +6,7 @@ import { forwardRef } from "react";
  */
 const VARIANTS = {
   primary:
-    "bg-accent text-text hover:bg-accent-deep font-semibold disabled:opacity-50 disabled:hover:bg-accent",
+    "bg-accent text-text hover:bg-accent-light font-semibold disabled:opacity-50 disabled:hover:bg-accent",
   secondary:
     "bg-raised text-text hover:bg-line border border-line disabled:opacity-50 disabled:hover:bg-raised",
   danger:

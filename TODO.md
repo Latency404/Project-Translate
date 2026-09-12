@@ -83,10 +83,12 @@ Showcase-View zeigt alles (inkl. live Farbtastatur).
 ## Entscheidungen & Abweichungen
 - **Design-Palette (USER, Slice 1.1):** Carbon-Theme (#0a0a0a/#121517), Text
   #f5f5f5, Muted #ababab, Base-Game-Tag Dust Grey #c4c4c4,
-  Accent #e21d1d (Deep #8a1414), Status: warning #e2901d, success #1de252,
+  Accent #e21d1d (Light #ff4040 = Button-Hover — Hover wird heller, nicht
+  dunkler; Deep #8a1414), Status: warning #e2901d, success #1de252,
   danger #e21d1d — danger und accent tragen denselben Ton; danger wird nur für
   negative Pills/Buttons (Fehler, Abbruch) verwendet, nie für primäre Aktionen.
-  ProgressBar kennt bewusst keinen accent-Ton, damit sich beide nie kreuzen.
+  ProgressBar kennt bewusst keinen accent-Ton, damit sich beide nie kreuzen;
+  als neutralen Fortschritts-Ton gibt es zusätzlich dust.
   Button-Schrift (alle Größen/Varianten mit Akzent) steht in text-text.
 - `npm run dev` startet Vite + API über `scripts/dev.js` (eigenes Skript mit
   `child_process`), damit kein zusätzliches Paket wie `concurrently` nötig ist.
@@ -99,6 +101,11 @@ Showcase-View zeigt alles (inkl. live Farbtastatur).
 - Eintrags-Pfade: `entryId` = `<version>/<EN-Pfad relativ zum Version-Ordner>::<key>`,
   d. h. `42.20/media/lua/shared/Translate/EN/ContextMenu.json::Key`; LLM-Export-Keys
   sind die kurze Form `<version>/<Kategorie>.json`.
+- **Versionsregel (USER):** Hat ein Mod mehrere Versionen, wird immer nur die
+  NEUESTE Version gescannt, übersetzt und exportiert; ältere Version-Ordner
+  bleiben auf der Platte, aber ungenutzt. Implementiert im Scanner (versions =
+  [neueste]); Export und LLM-Export folgen daraus, da beide auf den
+  Scanner-Einträgen aufbauen.
 - Test-/Runtime-Overrides: `PT_FAKE_ROOT`, `PT_EXPORT_ROOT`, `PT_CONFIG_PATH`,
   `PORT` (Defaults: server/fixtures/, export/, config.json, 3100) — Tests laufen
   auf tmp-Kopien, Fixtures bleiben unverändert.

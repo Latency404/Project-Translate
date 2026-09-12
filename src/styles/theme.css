@@ -19,8 +19,11 @@
 
   /* Akzent — USER-Wahl. Danger trägt denselben Ton: danger wird nur für
      negative Pills/Buttons (Fehler, Abbruch) verwendet, accent für primäre
-     Aktionen — sie treffen nie aufeinander (z. B. nie beide in einer Bar). */
+     Aktionen — sie treffen nie aufeinander (z. B. nie beide in einer Bar).
+     accent-light = hellerer Hover-Ton (Hover wird heller, nicht dunkler);
+     accent-deep bleibt als dunkler Ton für z. B. aktive/gedrückte Zustände. */
   --color-accent: #e21d1d;
+  --color-accent-light: #ff4040;
   --color-accent-deep: #8a1414;
 
   /* Status */

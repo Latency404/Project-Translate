@@ -121,16 +121,16 @@ test('Scan: 4 Mods mit entryCount, Basisspiel dabei', async () => {
 
   const coffee = mods.find((m) => m.id === '2000000001/Coffee Machines Fix')
   assert.ok(coffee)
-  assert.deepEqual(coffee.versions, ['42.20', '42']) // absteigend
-  assert.equal(coffee.entryCount, 12) // 11 (42.20) + 1 (42)
-  assert.equal(coffee.translatedCount, 11)
+  assert.deepEqual(coffee.versions, ['42.20']) // nur die neueste Version
+  assert.equal(coffee.entryCount, 11) // 42.20 (ContextMenu 5 + IG_UI 6)
+  assert.equal(coffee.translatedCount, 10) // 42.20 DE (4 + 6)
 })
 
 test('GET /api/mods/:modId/entries — Pagination + Suche + id-Format', async () => {
   const pid = encodeURIComponent('2000000001/Coffee Machines Fix')
   const first = await api('GET', `/mods/${pid}/entries?page=1&pageSize=5`)
   assert.equal(first.status, 200)
-  assert.equal(first.json.total, 12)
+  assert.equal(first.json.total, 11)
   assert.equal(first.json.entries.length, 5)
   const e = first.json.entries[0]
   assert.equal(e.modId, '2000000001/Coffee Machines Fix')
@@ -141,7 +141,7 @@ test('GET /api/mods/:modId/entries — Pagination + Suche + id-Format', async ()
   assert.equal(typeof e.preFilled, 'boolean')
 
   const last = await api('GET', `/mods/${pid}/entries?page=3&pageSize=5`)
-  assert.equal(last.json.entries.length, 2)
+  assert.equal(last.json.entries.length, 1)
 
   const found = await api('GET', `/mods/${pid}/entries?search=Coffee`)
   assert.ok(found.json.total > 0)

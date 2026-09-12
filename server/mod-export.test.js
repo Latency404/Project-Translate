@@ -48,8 +48,8 @@ test('exportMod: mod.info am Root mit game_version = höchste Version', () => {
   assert.match(info, /^author=Project Translate$/m)
   assert.match(info, /^game_version=42\.20$/m)
 
-  // Übersetzte Einträge: 42.20 hat ContextMenu (4) + IG_UI (6) = 10,
-  // 42 hat ItemName (1) → 11 Datei-Inhalte, keine leeren Dateien.
+  // Übersetzte Einträge: nur die neueste Version (42.20) — ContextMenu (4)
+  // + IG_UI (6) = 10. ItemName (nur in 42) wird nicht mehr exportiert.
   const f42 = readFileSync(
     path.join(outRoot, '42.20', 'media', 'lua', 'shared', 'Translate', 'DE', 'ContextMenu.json'), 'utf8'
   )
@@ -61,9 +61,12 @@ test('exportMod: mod.info am Root mit game_version = höchste Version', () => {
       path.join(outRoot, '42.20', 'media', 'lua', 'shared', 'Translate', 'DE', 'ItemName.json')
     )
   )
-  assert.ok(existsSync(
-    path.join(outRoot, '42', 'media', 'lua', 'shared', 'Translate', 'DE', 'ItemName.json')
-  ))
+  // Ältere Version (42) wird nicht exportiert
+  assert.ok(
+    !existsSync(
+      path.join(outRoot, '42', 'media', 'lua', 'shared', 'Translate', 'DE', 'ItemName.json')
+    )
+  )
   assert.ok(written.length >= 3)
 })
 

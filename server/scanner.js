@@ -6,7 +6,9 @@
 //   <workshopDir>/<PublishedFileID>/mods/<ModName>/
 //       mod.info
 //       poster.png oder generic.png
-//       <version>/  (z. B. 42, 42.13, 42.20 — Versionsordner heißen immer \d+(\.\d+)*)
+//       <version>/  (z. B. 42, 42.13, 42.20 — Versionsordner heißen immer \d+(\.\d+)*;
+//                    es wird immer nur die NEUESTE Version gescannt/übersetzt —
+//                    ältere Version-Ordner bleiben auf der Platte, aber ungenutzt)
 //           media/lua/shared/Translate/<LANG>/<Kategorie>.json
 // Ein Published-File kann mehrere Mods enthalten: jeder Unterordner unter mods/
 // zählt als eigener Mod mit id = <PublishedFileID>/<Unterordnername>.
@@ -190,14 +192,16 @@ async function scan(gameRoot, workshopDir, targetLang, { onProgress } = {}) {
         id: `${pid}/${name}`,
         name,
         isBaseGame: false,
-        versions: versionNames,
+        // Nur die neueste Version (versionNames steht absteigend): ältere
+        // Version-Ordner werden weder gescannt, übersetzt noch exportiert.
+        versions: versionNames.slice(0, 1),
         rootPath: toPosix(modDir),
         poster: posterFor(modDir),
         entryCount: 0,
         translatedCount: 0
       }
       const entries = []
-      for (const version of versionNames) {
+      for (const version of mod.versions) {
         const enDir = translateDir(path.join(modDir, version), SOURCE_LANG)
         entries.push(...scanVersionEntries(mod, version, enDir, targetLang))
       }

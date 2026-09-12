@@ -4,9 +4,10 @@
 // vorhanden sind. Damit bleibt `npm test` überall grün, prüft hier aber die echte Logik.
 const { test, before } = require('node:test')
 const assert = require('node:assert/strict')
-const { existsSync } = require('node:fs')
+const { existsSync, readdirSync } = require('node:fs')
 const { scan } = require('./scanner')
 const { DEFAULTS } = require('./config')
+const fs = require('node:fs')
 
 // true, wenn a >= b (segmentweise numerisch, wie cmpVersionDesc im Scanner).
 function versionGe(a, b) {
@@ -46,24 +47,28 @@ test('echter Scan findet ≥ 100 Mods inkl. Base Game', { skip: skipReason }, ()
   assert.deepEqual(base.versions, ['base'])
 })
 
-test('1299328280 (More Traits) liefert mehrere Mods mit je mehreren Versionen', {
+test('1299328280 (More Traits): mehrere Mods, jeweils nur die neueste Version', {
   skip: skipReason
 }, () => {
   const { mods } = result
   const moreTraits = mods.filter((m) => m.id.startsWith('1299328280/'))
   assert.ok(moreTraits.length >= 2, `erwartet mehrere More-Traits-Mods, gefunden: ${moreTraits.length}`)
   for (const m of moreTraits) {
-    assert.ok(
-      m.versions.length >= 2,
-      `${m.id}: erwartet mehrere Versionen, gefunden: ${JSON.stringify(m.versions)}`
-    )
-    // Absteigend sortiert (höchste Version zuerst), segmentweise numerisch.
-    for (let i = 1; i < m.versions.length; i++) {
-      assert.ok(
-        versionGe(m.versions[i - 1], m.versions[i]),
-        `${m.id}: Versionen nicht absteigend: ${JSON.stringify(m.versions)}`
-      )
+    // Auf der Platte liegen mehrere Version-Ordner, aber nur die neueste wird genutzt.
+    const onDisk = fs
+      .readdirSync(m.rootPath, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && /^\d+(\.\d+)*$/.test(d.name))
+      .map((d) => d.name)
+    assert.ok(onDisk.length >= 2, `${m.id}: erwartet mehrere Version-Ordner auf der Platte, gefunden: ${onDisk.length}`)
+    assert.equal(m.versions.length, 1, `${m.id}: erwartet genau 1 Version, gefunden: ${JSON.stringify(m.versions)}`)
+    let newest = onDisk[0]
+    for (const v of onDisk) {
+      if (versionGe(v, newest) && !versionGe(newest, v)) newest = v
     }
+    assert.equal(
+      m.versions[0], newest,
+      `${m.id}: erwartet neueste Version ${newest}, gefunden: ${m.versions[0]}`
+    )
   }
 })
 

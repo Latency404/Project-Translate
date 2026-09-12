@@ -44,11 +44,10 @@ test('exportLlm: eine Datei pro Mod, korrektes Format', () => {
   assert.equal(doc.mod, 'Coffee Machines Fix')
   assert.equal(doc.modId, '2000000001/Coffee Machines Fix')
   assert.equal(doc.targetLang, 'DE')
-  // Datei-Keys tragen das Versions-Segment
+  // Datei-Keys tragen das Versions-Segment; nur die neueste Version (42.20)
   const keys = Object.keys(doc.files)
   assert.ok(keys.includes('42.20/ContextMenu.json'))
-  assert.ok(keys.includes('42/ItemName.json'))
-  assert.equal(doc.files['42/ItemName.json'].ItemName_CoffeeMachine, 'Coffee Machine')
+  assert.ok(!keys.includes('42/ItemName.json')) // ältere Version wird nicht exportiert
   // Werte sind Originaltexte (EN), keine Übersetzungen
   assert.equal(doc.files['42.20/ContextMenu.json'].ContextMenu_OPTION_COFFEE_MACHINE, 'Coffee Machine')
 })
@@ -67,8 +66,8 @@ test('importPreview: matched + unmatched zählen', () => {
         ContextMenu_OPTION_NO_ELECTRICITY: 'Kein Strom!', // matched
         ContextMenu_ERFUNDE: 'Nein' // unmatched
       },
-      '42.99/ItemName.json': {
-        ItemName_CoffeeMachine: 'Kaffeemaschine' // unmatched: falsche Version
+      '42/ItemName.json': {
+        ItemName_CoffeeMachine: 'Kaffeemaschine' // unmatched: ältere Version (nur die neueste wird genutzt)
       }
     }
   }

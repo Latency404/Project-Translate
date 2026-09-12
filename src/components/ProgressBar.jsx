@@ -1,8 +1,9 @@
 /**
  * ProgressBar — `value`/`max` (0..max), `label` optional, `color` =
- * Token-Name ("success" | "warning" | "danger"), default "success".
- * accent kommt bewusst NICHT vor — der Akzent-Ton ist auch der Danger-Ton
- * und darf sich nicht in einer Bar kreuzen.
+ * Token-Name ("success" | "warning" | "danger" | "dust"), default "success".
+ * "dust" = neutraler Verlauf (z. B. Scan-Fortschritt). accent kommt
+ * bewusst NICHT vor — der Akzent-Ton ist auch der Danger-Ton und
+ * darf sich nicht in einer Bar kreuzen.
  * Zeigt bei `showValue` rechts den Wert.
  */
 export default function ProgressBar({
@@ -18,6 +19,7 @@ export default function ProgressBar({
     success: "bg-success",
     warning: "bg-warning",
     danger: "bg-danger",
+    dust: "bg-dust",
   }[color] ?? "bg-success";
 
   return (

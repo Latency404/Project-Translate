@@ -18,6 +18,7 @@ const DEFAULTS = {
   muted: "#ababab",
   dust: "#c4c4c4",
   accent: "#e21d1d",
+  "accent-light": "#ff4040",
   "accent-deep": "#8a1414",
   warning: "#e2901d",
   success: "#1de252",
@@ -103,7 +104,7 @@ function ColorPanel({ colors, overrides, onPick, onReset }) {
 function Section({ title, hint, children }) {
   return (
     <section className="space-y-3">
-      <div>
+      <div className="space-y-1">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
           {title}
         </h2>
@@ -234,7 +235,7 @@ export default function Showcase() {
 
       <Section title="ProgressBar" hint="Fortschritt pro Mod — Farbtöne je Status.">
         <Card className="space-y-4">
-          <ProgressBar label="More Traits" value={2410} max={4812} showValue color="success" />
+          <ProgressBar label="More Traits" value={2410} max={4812} showValue color="dust" />
           <ProgressBar label="Basisspiel (fertig)" value={100} max={100} color="success" />
           <ProgressBar label="Defekte Datei" value={12} max={100} color="warning" />
           <ProgressBar label="Abbruch" value={30} max={100} color="danger" />
