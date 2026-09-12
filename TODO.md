@@ -83,7 +83,7 @@ ProgressBar/Tag/Modal in `src/components/`, Showcase-View zeigt alles.
 - **Design-Palette (USER, Slice 1.1):** Carbon-Theme (#0b090a/#161a1d), Text White
   Smoke #f5f3f4, Muted Silver #b1a7a6, Base-Game-Tag Dust Grey #d3d3d3,
   Akzent Acid-Grün #b6db00 (Deep #8eaf00), Status: warning Gold #c9a24a, success
-  Salbei #6ca070, danger Mahogany Red #a4161a. Rottöne bleiben für Fehler —
+  Salbei #15a33b, danger Mahogany Red #a4161a. Rottöne bleiben für Fehler —
   Aktionen sind Grün, damit sich Akzent und Error nie verwechseln.
 - `npm run dev` startet Vite + API über `scripts/dev.js` (eigenes Skript mit
   `child_process`), damit kein zusätzliches Paket wie `concurrently` nötig ist.
