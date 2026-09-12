@@ -7,24 +7,26 @@
 
 @theme {
   /* Flächen */
-  --color-ink: #0b090a;        /* Seitenhintergrund (~Black) */
-  --color-surface: #161a1d;    /* Karten (Carbon Black) */
+  --color-ink: #0a0a0a;        /* Seitenhintergrund */
+  --color-surface: #121517;    /* Karten */
   --color-raised: #21272b;     /* Inputs, Hover, Balken-Hintergrund */
   --color-line: #33383d;       /* Rahmen */
 
   /* Typo */
-  --color-text: #f5f3f4;       /* Haupttext (White Smoke) */
-  --color-muted: #b1a7a6;      /* Sekundärtext, Labels (Silver) */
-  --color-dust: #d3d3d3;       /* Dust Grey — z. B. Base-Game-Tag */
+  --color-text: #f5f5f5;       /* Haupttext */
+  --color-muted: #ababab;      /* Sekundärtext, Labels */
+  --color-dust: #c4c4c4;       /* Dust Grey — z. B. Base-Game-Tag */
 
-  /* Akzent (Acid-Grün — USER-Wahl) */
-  --color-accent: #b6db00;
-  --color-accent-deep: #8eaf00;
+  /* Akzent — USER-Wahl. Danger trägt denselben Ton: danger wird nur für
+     negative Pills/Buttons (Fehler, Abbruch) verwendet, accent für primäre
+     Aktionen — sie treffen nie aufeinander (z. B. nie beide in einer Bar). */
+  --color-accent: #e21d1d;
+  --color-accent-deep: #8a1414;
 
-  /* Status (Editor: Gold = missing, Salbei = translated) */
-  --color-warning: #c9a24a;
-  --color-success: #15a33b;    /* USER-Wahl */
-  --color-danger: #a4161a;     /* Mahogany Red — USER-Wahl */
+  /* Status */
+  --color-warning: #e2901d;
+  --color-success: #1de252;    /* USER-Wahl */
+  --color-danger: #e21d1d;     /* = accent-Ton */
 
   /* Schriften */
   --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;

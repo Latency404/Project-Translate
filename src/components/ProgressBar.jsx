@@ -1,23 +1,24 @@
 /**
  * ProgressBar — `value`/`max` (0..max), `label` optional, `color` =
- * Token-Name ("accent" | "success" | "warning" | "danger"), default "accent".
+ * Token-Name ("success" | "warning" | "danger"), default "success".
+ * accent kommt bewusst NICHT vor — der Akzent-Ton ist auch der Danger-Ton
+ * und darf sich nicht in einer Bar kreuzen.
  * Zeigt bei `showValue` rechts den Wert.
  */
 export default function ProgressBar({
   value = 0,
   max = 100,
   label,
-  color = "accent",
+  color = "success",
   showValue = false,
   className = "",
 }) {
   const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
   const fill = {
-    accent: "bg-accent",
     success: "bg-success",
     warning: "bg-warning",
     danger: "bg-danger",
-  }[color] ?? "bg-accent";
+  }[color] ?? "bg-success";
 
   return (
     <div className={className}>

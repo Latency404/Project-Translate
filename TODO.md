@@ -4,9 +4,10 @@ Abnahme: nach jedem Slice
 
 ## Aktueller Stand
 1.1 abgenommen: Design-Fundament — Tokens in `src/styles/theme.css` (dunkles
-Carbon-Theme, Acid-Grün-Akzent #b6db00, Status: Gold=missing / Salbei=translated /
-Strawberry-Red=Error, Base-Game-Tag in Dust Grey), Komponenten Button/Card/Input/
-ProgressBar/Tag/Modal in `src/components/`, Showcase-View zeigt alles.
+Carbon-Theme, Accent = danger = #e21d1d (nur negative Pills/Buttons), Deep #8a1414,
+Status: Gold=missing #e2901d / Grün=translated #1de252, Base-Game-Tag in Dust Grey),
+Komponenten Button/Card/Input/ProgressBar/Tag/Modal in `src/components/`,
+Showcase-View zeigt alles (inkl. live Farbtastatur).
 `npm run build` + `npm test` (18) grün. Nächster Punkt: 1.2
 
 ## Phase 0 – Fundament                             [fertig]
@@ -80,11 +81,13 @@ ProgressBar/Tag/Modal in `src/components/`, Showcase-View zeigt alles.
       `npm run build && npm test` grün, letzter Commit
 
 ## Entscheidungen & Abweichungen
-- **Design-Palette (USER, Slice 1.1):** Carbon-Theme (#0b090a/#161a1d), Text White
-  Smoke #f5f3f4, Muted Silver #b1a7a6, Base-Game-Tag Dust Grey #d3d3d3,
-  Akzent Acid-Grün #b6db00 (Deep #8eaf00), Status: warning Gold #c9a24a, success
-  Salbei #15a33b, danger Mahogany Red #a4161a. Rottöne bleiben für Fehler —
-  Aktionen sind Grün, damit sich Akzent und Error nie verwechseln.
+- **Design-Palette (USER, Slice 1.1):** Carbon-Theme (#0a0a0a/#121517), Text
+  #f5f5f5, Muted #ababab, Base-Game-Tag Dust Grey #c4c4c4,
+  Accent #e21d1d (Deep #8a1414), Status: warning #e2901d, success #1de252,
+  danger #e21d1d — danger und accent tragen denselben Ton; danger wird nur für
+  negative Pills/Buttons (Fehler, Abbruch) verwendet, nie für primäre Aktionen.
+  ProgressBar kennt bewusst keinen accent-Ton, damit sich beide nie kreuzen.
+  Button-Schrift (alle Größen/Varianten mit Akzent) steht in text-text.
 - `npm run dev` startet Vite + API über `scripts/dev.js` (eigenes Skript mit
   `child_process`), damit kein zusätzliches Paket wie `concurrently` nötig ist.
 - Git-Identität repo-lokal: `Latency <latency@localhost>` (global nicht gesetzt).

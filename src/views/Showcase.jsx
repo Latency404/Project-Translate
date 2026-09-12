@@ -10,18 +10,18 @@ import Modal from "../components/Modal.jsx";
 /* Standard-Tokens aus src/styles/theme.css — das Panel überschreibt sie
    zur Laufzeit über CSS-Variablen am :root. */
 const DEFAULTS = {
-  ink: "#0b090a",
-  surface: "#161a1d",
+  ink: "#0a0a0a",
+  surface: "#121517",
   raised: "#21272b",
   line: "#33383d",
-  text: "#f5f3f4",
-  muted: "#b1a7a6",
-  dust: "#d3d3d3",
-  accent: "#b6db00",
-  "accent-deep": "#8eaf00",
-  warning: "#c9a24a",
-  success: "#15a33b",
-  danger: "#a4161a",
+  text: "#f5f5f5",
+  muted: "#ababab",
+  dust: "#c4c4c4",
+  accent: "#e21d1d",
+  "accent-deep": "#8a1414",
+  warning: "#e2901d",
+  success: "#1de252",
+  danger: "#e21d1d",
 };
 
 const STORAGE_KEY = "pt-theme-overrides";
@@ -234,7 +234,7 @@ export default function Showcase() {
 
       <Section title="ProgressBar" hint="Fortschritt pro Mod — Farbtöne je Status.">
         <Card className="space-y-4">
-          <ProgressBar label="More Traits" value={2410} max={4812} showValue color="accent" />
+          <ProgressBar label="More Traits" value={2410} max={4812} showValue color="success" />
           <ProgressBar label="Basisspiel (fertig)" value={100} max={100} color="success" />
           <ProgressBar label="Defekte Datei" value={12} max={100} color="warning" />
           <ProgressBar label="Abbruch" value={30} max={100} color="danger" />
