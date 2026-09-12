@@ -8,17 +8,17 @@ import Tag from "../components/Tag.jsx";
 import Modal from "../components/Modal.jsx";
 
 const SWATCHES = [
-  ["ink", "bg-ink", "#0e100d"],
-  ["surface", "bg-surface", "#151a14"],
-  ["raised", "bg-raised", "#1d241b"],
-  ["line", "bg-line", "#2b3327"],
-  ["text", "bg-text", "#e9e6da"],
-  ["muted", "bg-muted", "#989b8c"],
-  ["accent", "bg-accent", "#d4a53f"],
-  ["accent-deep", "bg-accent-deep", "#b5882e"],
+  ["ink", "bg-ink", "#0b090a"],
+  ["surface", "bg-surface", "#161a1d"],
+  ["raised", "bg-raised", "#21272b"],
+  ["line", "bg-line", "#33383d"],
+  ["text", "bg-text", "#f5f3f4"],
+  ["muted", "bg-muted", "#b1a7a6"],
+  ["accent", "bg-accent", "#e5383b"],
+  ["accent-deep", "bg-accent-deep", "#a4161a"],
   ["warning", "bg-warning", "#d9b13b"],
   ["success", "bg-success", "#74b061"],
-  ["danger", "bg-danger", "#c96a4a"],
+  ["danger", "bg-danger", "#ba181b"],
 ];
 
 function Section({ title, hint, children }) {

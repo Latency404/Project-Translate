@@ -7,23 +7,23 @@
 
 @theme {
   /* Flächen */
-  --color-ink: #0e100d;        /* Seitenhintergrund */
-  --color-surface: #151a14;    /* Karten */
-  --color-raised: #1d241b;     /* Inputs, Hover, Balken-Hintergrund */
-  --color-line: #2b3327;       /* Rahmen */
+  --color-ink: #0b090a;        /* Seitenhintergrund (~Black) */
+  --color-surface: #161a1d;    /* Karten (Carbon Black) */
+  --color-raised: #21272b;     /* Inputs, Hover, Balken-Hintergrund */
+  --color-line: #33383d;       /* Rahmen */
 
   /* Typo */
-  --color-text: #e9e6da;       /* Haupttext */
-  --color-muted: #989b8c;      /* Sekundärtext, Labels */
+  --color-text: #f5f3f4;       /* Haupttext (White Smoke) */
+  --color-muted: #b1a7a6;      /* Sekundärtext, Labels (Silver) */
 
   /* Akzent */
-  --color-accent: #d4a53f;     /* Bernstein — primäre Aktionen */
-  --color-accent-deep: #b5882e;/* Hover primär */
+  --color-accent: #e5383b;     /* Strawberry Red — primäre Aktionen */
+  --color-accent-deep: #a4161a;/* Mahogany Red — Hover primär */
 
   /* Status (Editor: gelb = missing, grün = translated) */
   --color-warning: #d9b13b;
   --color-success: #74b061;
-  --color-danger: #c96a4a;
+  --color-danger: #ba181b;     /* Mahogany Red */
 
   /* Schriften */
   --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
