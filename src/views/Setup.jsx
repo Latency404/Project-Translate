@@ -30,6 +30,7 @@ export default function Setup({ onOpenMods }) {
   const [error, setError] = useState("");
   const [gameRoot, setGameRoot] = useState("");
   const [workshopDir, setWorkshopDir] = useState("");
+  const [sourceLang, setSourceLang] = useState("EN");
   const [targetLang, setTargetLang] = useState("DE");
   const [scanning, setScanning] = useState(false);
   const [scanDone, setScanDone] = useState(false);
@@ -42,6 +43,7 @@ export default function Setup({ onOpenMods }) {
         setConfig(cfg);
         setGameRoot(cfg.gameRoot);
         setWorkshopDir(cfg.workshopDir);
+        setSourceLang(cfg.sourceLang || "EN");
         setTargetLang(cfg.targetLang);
         setStatus(st);
       })
@@ -74,7 +76,12 @@ export default function Setup({ onOpenMods }) {
     setError("");
     setScanDone(false);
     try {
-      const saved = await api.saveConfig({ gameRoot, workshopDir, targetLang });
+      const saved = await api.saveConfig({
+        gameRoot,
+        workshopDir,
+        sourceLang,
+        targetLang,
+      });
       setConfig(saved);
       setStatus(await api.getStatus());
     } catch (err) {
@@ -132,20 +139,37 @@ export default function Setup({ onOpenMods }) {
         <div className="space-y-4">
           <Input label="Game folder" value={gameRoot} onChange={(e) => setGameRoot(e.target.value)} className="font-mono" />
           <Input label="Workshop folder" value={workshopDir} onChange={(e) => setWorkshopDir(e.target.value)} className="font-mono" />
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted">
-              Target language
-            </label>
-            <select
-              value={targetLang}
-              onChange={(e) => setTargetLang(e.target.value)}
-              className="h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-            >
-              <option value="DE">DE</option>
-              <option value="EN">EN</option>
-              <option value="FR">FR</option>
-              <option value="ES">ES</option>
-            </select>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted">
+                Source language
+              </label>
+              <select
+                value={sourceLang}
+                onChange={(e) => setSourceLang(e.target.value)}
+                className="h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <option value="EN">EN</option>
+                <option value="DE">DE</option>
+                <option value="FR">FR</option>
+                <option value="ES">ES</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted">
+                Target language
+              </label>
+              <select
+                value={targetLang}
+                onChange={(e) => setTargetLang(e.target.value)}
+                className="h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <option value="DE">DE</option>
+                <option value="EN">EN</option>
+                <option value="FR">FR</option>
+                <option value="ES">ES</option>
+              </select>
+            </div>
           </div>
         </div>
       </Card>
