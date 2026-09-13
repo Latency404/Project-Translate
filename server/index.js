@@ -21,6 +21,7 @@ const { exportMod } = require('./mod-export')
 const app = express()
 const PORT = process.env.PORT || 3100
 const FAKE = process.env.PT_FAKE === '1'
+const FAKE_SERVE = FAKE && process.env.PT_FAKE_SERVE === '1'
 
 const PROJECT_ROOT = path.join(__dirname, '..')
 // export/-Verzeichnis: export/ im Projektroot (git-ignoriert); PT_EXPORT_ROOT
@@ -89,7 +90,8 @@ app.post('/api/scan', (req, res) => {
 
 app.get('/api/mods', (req, res) => {
   if (!cache) return fail(res, 404, 'Noch kein Scan durchgeführt — POST /api/scan.')
-  res.json({ mods: cache.mods })
+  const mods = cache.mods.map((m) => ({ ...m, poster: posterUrl(m) }))
+  res.json({ mods })
 })
 
 function getMod(res, modId) {
@@ -102,6 +104,7 @@ function getMod(res, modId) {
     fail(res, 404, `Mod nicht gefunden: ${modId}`)
     return null
   }
+  mod.posterUrl = posterUrl(mod)
   return mod
 }
 
@@ -199,6 +202,25 @@ app.post('/api/export/mod', (req, res) => {
     fail(res, 500, err.message || 'Mod-Export fehlgeschlagen')
   }
 })
+
+// --- Fake-API: Mod-Poster aus server/fixtures/ über /fixtures/ dienen ---
+if (FAKE_SERVE) {
+  app.use('/fixtures', express.static(path.join(fake.FIXTURES)))
+}
+
+// --- Mod-Poster (Fake-API) ---
+// Server-Pfad des Posters → API-URL (über schreibgeschütztes Feld `poster`
+// im /api/mods-Response). In Fake-Mode liegt das Poster unter server/fixtures/
+// und wird über /fixtures/ gedient. In echtem Modus fehlt diese Route noch
+// (Phase 2 liefert die echten Pfade).
+function posterUrl(mod) {
+  if (!mod.poster) return null
+  if (FAKE) {
+    const rel = path.relative(fake.FIXTURES, mod.poster).split(path.sep).join('/')
+    return '/fixtures/' + rel
+  }
+  return null
+}
 
 // --- Production: gebautes Frontend dienen ---
 const DIST = path.join(PROJECT_ROOT, 'dist')

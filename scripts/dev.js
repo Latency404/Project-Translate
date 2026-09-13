@@ -20,7 +20,7 @@ children.push(vite)
 
 const api = spawn(process.execPath, [path.join(root, 'server', 'index.js')], {
   cwd: root,
-  env: { ...process.env, PT_FAKE: '1' },
+  env: { ...process.env, PT_FAKE: '1', PT_FAKE_SERVE: '1' },
   stdio: 'inherit'
 })
 children.push(api)

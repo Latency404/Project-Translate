@@ -155,9 +155,17 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
               {/* ID */}
               <p className="mb-3 font-mono text-xs text-muted">{mod.id}</p>
 
-              {/* Poster placeholder */}
-              <div className="mb-3 flex h-24 items-center justify-center rounded-md bg-raised">
-                <span className="text-xs text-muted">Poster</span>
+              {/* Poster */}
+              <div className="mb-3 flex h-24 items-center justify-center overflow-hidden rounded-md bg-raised">
+                {mod.poster ? (
+                  <img
+                    src={mod.poster}
+                    alt={mod.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xs text-muted">No poster</span>
+                )}
               </div>
 
               {/* Entries */}
