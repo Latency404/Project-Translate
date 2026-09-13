@@ -119,7 +119,7 @@ test('Scan: 4 Mods mit entryCount, Basisspiel dabei', async () => {
   assert.equal(base.entryCount, 11)
   assert.equal(base.translatedCount, 8)
 
-  const coffee = mods.find((m) => m.id === '2000000001/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
   assert.ok(coffee)
   assert.deepEqual(coffee.versions, ['42.20']) // nur die neueste Version
   assert.equal(coffee.entryCount, 11) // 42.20 (ContextMenu 5 + IG_UI 6)
@@ -127,13 +127,13 @@ test('Scan: 4 Mods mit entryCount, Basisspiel dabei', async () => {
 })
 
 test('GET /api/mods/:modId/entries — Pagination + Suche + id-Format', async () => {
-  const pid = encodeURIComponent('2000000001/Coffee Machines Fix')
+  const pid = encodeURIComponent('2688538916/Coffee Machines Fix')
   const first = await api('GET', `/mods/${pid}/entries?page=1&pageSize=5`)
   assert.equal(first.status, 200)
   assert.equal(first.json.total, 11)
   assert.equal(first.json.entries.length, 5)
   const e = first.json.entries[0]
-  assert.equal(e.modId, '2000000001/Coffee Machines Fix')
+  assert.equal(e.modId, '2688538916/Coffee Machines Fix')
   assert.equal(e.version, '42.20')
   assert.equal(e.file, 'media/lua/shared/Translate/EN/ContextMenu.json')
   assert.match(e.id, /^42\.20\/media\/lua\/shared\/Translate\/EN\/ContextMenu\.json::ContextMenu_.+/)
@@ -155,7 +155,7 @@ test('GET /api/mods/:modId/entries — Pagination + Suche + id-Format', async ()
 })
 
 test('PUT /api/mods/:modId/entries — speichern + Backup + Ziel-Datei', async () => {
-  const pid = encodeURIComponent('2000000003/Fuel Bowser')
+  const pid = encodeURIComponent('3554514861/Fuel Bowser')
   const before = await api('GET', `/mods/${pid}/entries`)
   const miss = before.json.entries.find((e) => e.translation === null)
   assert.ok(miss)
@@ -167,7 +167,7 @@ test('PUT /api/mods/:modId/entries — speichern + Backup + Ziel-Datei', async (
 
   // Die DE-Datei in der Fake-Kopie enthält jetzt den neuen Wert.
   const tgt = path.join(
-    fakeRoot, 'workshop', '2000000003', 'mods', 'Fuel Bowser', '42.20',
+    fakeRoot, 'workshop', '3554514861', 'mods', 'Fuel Bowser', '42.20',
     'media', 'lua', 'shared', 'Translate', 'DE', 'ContextMenu.json'
   )
   const written = JSON.parse(readFileSync(tgt, 'utf8'))

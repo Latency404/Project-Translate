@@ -32,7 +32,12 @@ export default function App() {
                 key={v.key}
                 size="sm"
                 variant={view === v.key ? "primary" : "secondary"}
-                onClick={() => setView(v.key)}
+                onClick={() => {
+                  if (v.key === "mods" && view !== "mods") {
+                    setLibraryKey((k) => k + 1);
+                  }
+                  setView(v.key);
+                }}
               >
                 {v.label}
               </Button>

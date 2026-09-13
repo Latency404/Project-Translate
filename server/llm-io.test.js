@@ -35,14 +35,14 @@ after(() => {
 })
 
 test('exportLlm: eine Datei pro Mod, korrektes Format', () => {
-  const coffee = mods.find((m) => m.id === '2000000001/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
   const { written } = exportLlm([coffee], 'DE', path.join(exportRoot, 'llm'))
   assert.equal(written.length, 1)
   const file = path.join(exportRoot, 'llm', 'DE', 'Coffee Machines Fix.json')
   assert.ok(existsSync(file))
   const doc = JSON.parse(readFileSync(file, 'utf8'))
   assert.equal(doc.mod, 'Coffee Machines Fix')
-  assert.equal(doc.modId, '2000000001/Coffee Machines Fix')
+  assert.equal(doc.modId, '2688538916/Coffee Machines Fix')
   assert.equal(doc.targetLang, 'DE')
   // Datei-Keys tragen das Versions-Segment; nur die neueste Version (42.20)
   const keys = Object.keys(doc.files)
@@ -55,7 +55,7 @@ test('exportLlm: eine Datei pro Mod, korrektes Format', () => {
 test('importPreview: matched + unmatched zählen', () => {
   const dir = path.join(workdir, 'preview-test')
   mkdirSync(dir, { recursive: true })
-  const coffee = mods.find((m) => m.id === '2000000001/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
   const doc = {
     mod: coffee.name,
     modId: coffee.id,
@@ -84,7 +84,7 @@ test('importPreview: matched + unmatched zählen', () => {
 test('importApply: nur gültige Keys landen in der DE-Datei, mit Backup', () => {
   const dir = path.join(workdir, 'apply-test')
   mkdirSync(dir, { recursive: true })
-  const belt = mods.find((m) => m.id === '2000000002/Expanded Belt')
+  const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
   const doc = {
     mod: belt.name,
     modId: belt.id,
@@ -102,7 +102,7 @@ test('importApply: nur gültige Keys landen in der DE-Datei, mit Backup', () => 
   const result = importApply(dir, mods, 'DE', path.join(exportRoot, 'backups'))
   assert.equal(result.saved, 1)
   const tgt = path.join(
-    fakeRoot, 'workshop', '2000000002', 'mods', 'Expanded Belt', '42.20',
+    fakeRoot, 'workshop', '3411213493', 'mods', 'Expanded Belt', '42.20',
     'media', 'lua', 'shared', 'Translate', 'DE', 'ItemName.json'
   )
   const written = JSON.parse(readFileSync(tgt, 'utf8'))
@@ -110,7 +110,7 @@ test('importApply: nur gültige Keys landen in der DE-Datei, mit Backup', () => 
   // Ungültige Datei wurde nicht angelegt
   assert.ok(
     !existsSync(
-      path.join(fakeRoot, 'workshop', '2000000002', 'mods', 'Expanded Belt', '42.20',
+      path.join(fakeRoot, 'workshop', '3411213493', 'mods', 'Expanded Belt', '42.20',
         'media', 'lua', 'shared', 'Translate', 'DE', 'KeineDatei.json')
     )
   )

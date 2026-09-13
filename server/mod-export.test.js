@@ -36,7 +36,7 @@ test('highestVersion: segmentweise numerisch', () => {
 })
 
 test('exportMod: mod.info am Root mit game_version = höchste Version', () => {
-  const coffee = mods.find((m) => m.id === '2000000001/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
   const targetDir = path.join(workdir, 'export')
   const { targetPath, written } = exportMod(coffee, 'DE', targetDir)
   const outRoot = path.join(targetDir, 'Coffee Machines Fix-DE')
@@ -71,7 +71,7 @@ test('exportMod: mod.info am Root mit game_version = höchste Version', () => {
 })
 
 test('exportMod: icon.png wird mitkopiert, wenn vorhanden', () => {
-  const belt = mods.find((m) => m.id === '2000000002/Expanded Belt')
+  const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
   const targetDir = path.join(workdir, 'export2')
   exportMod(belt, 'DE', targetDir)
   const outRoot = path.join(targetDir, 'Expanded Belt-DE')
