@@ -149,7 +149,7 @@ export default function Editor({ modIds, onBack }) {
           <p className="text-sm text-muted">No mod selected.</p>
           <div className="mt-4">
             <Button variant="secondary" onClick={onBack}>
-              Back to Mods
+              Back to Library
             </Button>
           </div>
         </Card>
@@ -165,7 +165,7 @@ export default function Editor({ modIds, onBack }) {
           <p className="text-sm text-danger">{error}</p>
           <div className="mt-4">
             <Button variant="secondary" onClick={onBack}>
-              Back to Mods
+              Back to Library
             </Button>
           </div>
         </Card>

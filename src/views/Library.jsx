@@ -102,7 +102,7 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
       {/* Header */}
       <header className="mb-6 flex items-center justify-between">
         <h1 className="font-mono text-xl font-bold text-accent">
-          Mods{" "}
+          Library{" "}
           <span className="text-sm font-normal text-muted">
             ({total} {total === 1 ? "Mod" : "Mods"})
           </span>

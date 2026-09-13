@@ -2,15 +2,16 @@ import { useState } from "react";
 import Button from "./components/Button.jsx";
 import Setup from "./views/Settings.jsx";
 import Showcase from "./views/Showcase.jsx";
-import Mods from "./views/Mods.jsx";
+import Library from "./views/Library.jsx";
 import Editor from "./views/Editor.jsx";
 import Exchange from "./views/Exchange.jsx";
 
 const VIEWS = [
   { key: "settings", label: "Settings" },
-  { key: "mods", label: "Mods" },
+  { key: "mods", label: "Library" },
   { key: "export", label: "Export" },
   { key: "showcase", label: "Design" },
+  { key: "editor", label: "Editor" },
 ];
 
 export default function App() {
@@ -42,7 +43,7 @@ export default function App() {
       <main>
         {view === "settings" && <Setup onOpenMods={() => setView("mods")} />}
         {view === "mods" && (
-          <Mods
+          <Library
             onGoToSetup={() => setView("settings")}
             onOpenEditor={(ids) => {
               setSelectedModIds(ids);

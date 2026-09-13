@@ -183,7 +183,7 @@ export default function Settings({ onOpenMods }) {
             </Button>
             {scanComplete && (
               <Button variant="secondary" size="sm" onClick={onOpenMods}>
-                Go to Mods
+                Go to Library
               </Button>
             )}
           </div>
