@@ -7,14 +7,14 @@ import Editor from "./views/Editor.jsx";
 import Exchange from "./views/Exchange.jsx";
 
 const VIEWS = [
-  { key: "setup", label: "Setup" },
+  { key: "settings", label: "Settings" },
   { key: "mods", label: "Mods" },
   { key: "exchange", label: "Exchange" },
   { key: "showcase", label: "Design" },
 ];
 
 export default function App() {
-  const [view, setView] = useState("setup");
+  const [view, setView] = useState("settings");
   const [selectedModIds, setSelectedModIds] = useState([]);
 
   return (
@@ -40,10 +40,10 @@ export default function App() {
 
       {/* Content */}
       <main>
-        {view === "setup" && <Setup onOpenMods={() => setView("mods")} />}
+        {view === "settings" && <Setup onOpenMods={() => setView("mods")} />}
         {view === "mods" && (
           <Mods
-            onGoToSetup={() => setView("setup")}
+            onGoToSetup={() => setView("settings")}
             onOpenEditor={(ids) => {
               setSelectedModIds(ids);
               setView("editor");

@@ -7,8 +7,8 @@ import ProgressBar from "../components/ProgressBar.jsx";
 import Tag from "../components/Tag.jsx";
 import Modal from "../components/Modal.jsx";
 
-/* Standard-Tokens aus src/styles/theme.css — das Panel überschreibt sie
-   zur Laufzeit über CSS-Variablen am :root. */
+/* Standard tokens from src/styles/theme.css — the panel overrides them
+   at runtime via CSS variables on :root. */
 const DEFAULTS = {
   ink: "#0a0a0a",
   surface: "#121517",
@@ -55,21 +55,21 @@ function ColorPanel({ colors, overrides, onPick, onReset }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      /* Clipboard nicht verfügbar — Button bleibt einfach unbestätigt */
+      /* Clipboard not available — the button simply stays unconfirmed */
     }
   };
 
   return (
     <Card
-      title="Farben"
-      subtitle="Zum schnellen Testen — überschreibt die Tokens live (bleibt bis Zurücksetzen)."
+      title="Colors"
+      subtitle="For quick testing — overrides the tokens live (persists until reset)."
       footer={
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" icon={Copy} onClick={copy}>
-            {copied ? "Kopiert!" : "@theme kopieren"}
+            {copied ? "Copied!" : "Copy @theme"}
           </Button>
           <Button variant="secondary" size="sm" icon={RotateCcw} onClick={onReset}>
-            Zurücksetzen
+            Reset
           </Button>
         </div>
       }
@@ -139,7 +139,7 @@ export default function Showcase() {
           Project Translate
         </h1>
         <p className="text-sm text-muted">
-          Design-Fundament — Tokens und Komponenten vor dem Aufbau der Screens.
+          Design foundation — tokens and components before building the screens.
         </p>
       </header>
 
@@ -151,8 +151,8 @@ export default function Showcase() {
       />
 
       <Section
-        title="Farbverwendung"
-        hint="So werden die Tokens in der App eingesetzt (Swatches oben live veränderbar)."
+        title="Color usage"
+        hint="This is how the tokens are used in the app (swatches above are live-editable)."
       >
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {Object.entries(colors).map(([name, hex]) => (
@@ -177,7 +177,7 @@ export default function Showcase() {
         </div>
       </Section>
 
-      <Section title="Schriften" hint="Sans für UI, Mono für Pfade, Keys und Zahlen.">
+      <Section title="Fonts" hint="Sans for UI, mono for paths, keys and numbers.">
         <Card>
           <p className="text-base text-text">
             Sans — Project Zomboid Mod Translator
@@ -188,7 +188,7 @@ export default function Showcase() {
         </Card>
       </Section>
 
-      <Section title="Buttons" hint="Varianten: primary, secondary, danger — Größen sm/md/lg.">
+      <Section title="Buttons" hint="Variants: primary, secondary, danger — sizes sm/md/lg.">
         <Card>
           <div className="flex flex-wrap items-center gap-3">
             <Button icon={Rocket}>Primary</Button>
@@ -203,73 +203,73 @@ export default function Showcase() {
         </Card>
       </Section>
 
-      <Section title="Card" hint="Mit Titel, Untertitel und Footer.">
+      <Section title="Card" hint="With title, subtitle and footer.">
         <Card
           title="More Traits"
-          subtitle="1299328280 · 3 Versionen · 4.812 Einträge"
+          subtitle="1299328280 · 3 versions · 4,812 entries"
           footer={
             <div className="flex justify-end gap-2">
               <Button variant="secondary" size="sm">
-                Übersetzen
+                Translate
               </Button>
-              <Button size="sm">Öffnen</Button>
+              <Button size="sm">Open</Button>
             </div>
           }
         >
           <p className="text-sm text-muted">
-            Karten tragen Inhalt, Rahmen und optional Kopf-/Fußzeile.
+            Cards carry content, borders and an optional header/footer.
           </p>
         </Card>
       </Section>
 
-      <Section title="Input" hint="Mit Label und Hinweis; Fokus zeigt den Akzent-Ring.">
+      <Section title="Input" hint="With label and hint; focus shows the accent ring.">
         <Card className="space-y-4">
-          <Input label="Spiel-Ordner" placeholder="C:/Program Files (x86)/Steam/..." />
+          <Input label="Game folder" placeholder="C:/Program Files (x86)/Steam/..." />
           <Input
-            label="Zielsprache"
+            label="Target language"
             placeholder="DE"
-            hint="2- oder 4-Buchstaben-Code"
+            hint="2- or 4-letter code"
           />
         </Card>
       </Section>
 
-      <Section title="ProgressBar" hint="Fortschritt pro Mod — Farbtöne je Status.">
+      <Section title="ProgressBar" hint="Progress per mod — color tones per status.">
         <Card className="space-y-4">
           <ProgressBar label="More Traits" value={2410} max={4812} showValue color="dust" />
-          <ProgressBar label="Basisspiel (fertig)" value={100} max={100} color="success" />
-          <ProgressBar label="Defekte Datei" value={12} max={100} color="warning" />
-          <ProgressBar label="Abbruch" value={30} max={100} color="danger" />
+          <ProgressBar label="Base game (done)" value={100} max={100} color="success" />
+          <ProgressBar label="Broken file" value={12} max={100} color="warning" />
+          <ProgressBar label="Aborted" value={30} max={100} color="danger" />
         </Card>
       </Section>
 
-      <Section title="Tag" hint="Status-Labels — z. B. Base Game, missing, translated.">
+      <Section title="Tag" hint="Status labels — e.g. Base Game, missing, translated.">
         <Card>
           <div className="flex flex-wrap gap-2">
             <Tag tone="neutral">Neutral</Tag>
             <Tag tone="base">Base Game</Tag>
             <Tag tone="warning">Missing</Tag>
             <Tag tone="success">Translated</Tag>
-            <Tag tone="danger">Fehler</Tag>
+            <Tag tone="danger">Error</Tag>
           </div>
         </Card>
       </Section>
 
-      <Section title="Modal" hint="Schließt über X, Backdrop-Klick oder Escape.">
+      <Section title="Modal" hint="Closes via X, backdrop click or Escape.">
         <Card>
-          <Button onClick={() => setModalOpen(true)}>Dialog öffnen</Button>
+          <Button onClick={() => setModalOpen(true)}>Open dialog</Button>
         </Card>
       </Section>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Export bestätigen">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Confirm export">
         <p className="text-sm text-muted">
-          3 Mods werden nach <span className="font-mono text-text">export/llm/DE/</span>{" "}
-          exportiert. Bestehende Dateien werden überschrieben.
+          3 mods will be exported to <span className="font-mono text-text">export/llm/DE/</span>.{" "}
+          Existing files will be overwritten.
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setModalOpen(false)}>
-            Abbrechen
+            Cancel
           </Button>
-          <Button onClick={() => setModalOpen(false)}>Exportieren</Button>
+          <Button onClick={() => setModalOpen(false)}>Export</Button>
         </div>
       </Modal>
     </div>

@@ -35,7 +35,7 @@ export default function Modal({ open, onClose, title, children }) {
           <button
             onClick={onClose}
             className="rounded p-1 text-muted hover:bg-raised hover:text-text cursor-pointer"
-            aria-label="Schließen"
+            aria-label="Close"
           >
             <X size={16} />
           </button>

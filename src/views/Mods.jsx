@@ -14,7 +14,7 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(new Set());
 
-  // Daten laden
+  // Load data
   useEffect(() => {
     api
       .getMods()
@@ -22,7 +22,7 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
       .catch((err) => setError(err.message));
   }, []);
 
-  // Filter nach Suchtext
+  // Filter by search text
   const filtered =
     search.trim() === ""
       ? mods
@@ -34,12 +34,12 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
           );
         });
 
-  // Anzahl der aktuell sichtbaren Mods
+  // Number of currently visible mods
   const visibleIds = new Set(filtered.map((m) => m.id));
   const allVisibleSelected =
     filtered.length > 0 && filtered.every((m) => selected.has(m.id));
 
-  // Toggle-Auswahl für einzelne Karte
+  // Toggle selection for a single card
   const toggleOne = (id) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -49,7 +49,7 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
     });
   };
 
-  // Alle an/aus (nur sichtbare)
+  // Toggle all on/off (only visible ones)
   const toggleAll = () => {
     if (allVisibleSelected) {
       setSelected((prev) => {
@@ -66,21 +66,20 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
     }
   };
 
-  // Gesamtzahl
+  // Total count
   const total = mods.length;
 
-  // === Leerzustand (kein Scan durchgeführt) ===
+  // === Empty state (no scan performed) ===
   if (error) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
         <Card title="Mods">
           <p className="text-sm text-muted">
-            Noch kein Scan durchgeführt. Gehen Sie zum Setup und starten Sie
-            einen Scan.
+            No scan has been performed yet. Go to Settings and start a scan.
           </p>
           <div className="mt-4">
             <Button variant="secondary" onClick={onGoToSetup}>
-              Zum Setup
+              Go to Settings
             </Button>
           </div>
         </Card>
@@ -88,19 +87,19 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
     );
   }
 
-  // === Ladezustand ===
+  // === Loading state ===
   if (mods.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
-        <p className="text-center text-muted">Lädt…</p>
+        <p className="text-center text-muted">Loading…</p>
       </div>
     );
   }
 
-  // === Hauptansicht ===
+  // === Main view ===
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      {/* Kopfzeile */}
+      {/* Header */}
       <header className="mb-6 flex items-center justify-between">
         <h1 className="font-mono text-xl font-bold text-accent">
           Mods{" "}
@@ -110,10 +109,10 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
         </h1>
       </header>
 
-      {/* Suche + Alle */}
+      {/* Search + All */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <Input
-          placeholder="Suchen…"
+          placeholder="Search…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1 min-w-52"
@@ -124,7 +123,7 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
           icon={Check}
           onClick={toggleAll}
         >
-          Alle ({filtered.length})
+          All ({filtered.length})
         </Button>
       </div>
 
@@ -140,14 +139,14 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
               }`}
               onClick={() => toggleOne(mod.id)}
             >
-              {/* Häkchen oben rechts */}
+              {/* Checkmark top right */}
               {isSelected && (
                 <span className="absolute right-3 top-3 text-accent">
                   <Check size={16} />
                 </span>
               )}
 
-              {/* Name + Base-Game-Tag */}
+              {/* Name + Base Game tag */}
               <div className="mb-1 flex items-center gap-2">
                 <span className="font-semibold text-text">{mod.name}</span>
                 {mod.isBaseGame && <Tag tone="base">Base Game</Tag>}
@@ -156,18 +155,18 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
               {/* ID */}
               <p className="mb-3 font-mono text-xs text-muted">{mod.id}</p>
 
-              {/* Poster-Platzhalter */}
+              {/* Poster placeholder */}
               <div className="mb-3 flex h-24 items-center justify-center rounded-md bg-raised">
                 <span className="text-xs text-muted">Poster</span>
               </div>
 
-              {/* Einträge */}
+              {/* Entries */}
               <p className="mb-2 text-xs text-muted">
                 <span className="font-mono text-text">{mod.entryCount}</span>{" "}
-                Einträge
+                entries
               </p>
 
-              {/* Fortschritt */}
+              {/* Progress */}
               <ProgressBar
                 value={mod.translatedCount}
                 max={mod.entryCount}
@@ -179,17 +178,17 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
         })}
       </div>
 
-      {/* Auswahl-Leiste unten */}
+      {/* Selection bar at bottom */}
       <footer className="mt-6 flex items-center justify-between border-t border-line pt-4">
         <span className="text-sm text-muted">
-          {selected.size} Mod{selected.size === 1 ? "" : "s"} ausgewählt
+          {selected.size} mod{selected.size === 1 ? "" : "s"} selected
         </span>
         <Button
           variant="primary"
           disabled={selected.size === 0}
           onClick={() => onOpenEditor(Array.from(selected))}
         >
-          Übersetzen
+          Translate
         </Button>
       </footer>
     </div>

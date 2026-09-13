@@ -22,7 +22,7 @@ export default function Exchange() {
   const [applyOk, setApplyOk] = useState(null);
   const [applyErr, setApplyErr] = useState("");
 
-  // Daten laden
+  // Load data
   useEffect(() => {
     Promise.all([api.getConfig(), api.getMods()])
       .then(([cfg, data]) => {
@@ -34,7 +34,7 @@ export default function Exchange() {
       });
   }, []);
 
-  // Alle aus / auswählen
+  // Deselect all / select all
   const toggleAll = () => {
     if (selected.size === 0) {
       setSelected(new Set(mods.map((m) => m.id)));
@@ -58,7 +58,7 @@ export default function Exchange() {
     }
   };
 
-  // Vorschau
+  // Preview
   const handlePreview = async () => {
     setPreviewErr("");
     setPreview(null);
@@ -73,7 +73,7 @@ export default function Exchange() {
     }
   };
 
-  // Summen
+  // Totals
   const totalMatched = preview
     ? Object.values(preview.perMod).reduce((s, p) => s + p.matched, 0)
     : 0;
@@ -102,16 +102,16 @@ export default function Exchange() {
       <header className="space-y-1">
         <h1 className="font-mono text-2xl font-bold text-accent">Exchange</h1>
         <p className="text-sm text-muted">
-          LLM-Export und -Import für Mods verwalten.
+          Manage LLM export and import for mods.
         </p>
       </header>
 
-      {/* LLM-Export */}
-      <Card title="LLM-Export" subtitle="Wähle Mods und Sprache für den Export.">
+      {/* LLM Export */}
+      <Card title="LLM Export" subtitle="Select mods and language for the export.">
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={toggleAll}>
-              {selected.size === 0 ? "Alle auswählen" : "Auswahl löschen"}
+              {selected.size === 0 ? "Select all" : "Clear selection"}
             </Button>
           </div>
 
@@ -145,7 +145,7 @@ export default function Exchange() {
 
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted">
-              Zielsprache
+              Target language
             </label>
             <select
               value={targetLang}
@@ -165,14 +165,14 @@ export default function Exchange() {
               disabled={selected.size === 0 || exportLoading}
               onClick={handleExport}
             >
-              {exportLoading ? "Exportiere…" : "Exportieren"}
+              {exportLoading ? "Exporting…" : "Export"}
             </Button>
           </div>
 
           {exportOk && (
             <div className="space-y-1">
               <p className="text-sm text-success">
-                {exportOk.written.length} Datei{exportOk.written.length !== 1 ? "en" : ""} geschrieben.
+                {exportOk.written.length} file{exportOk.written.length !== 1 ? "s" : ""} written.
               </p>
               <div className="max-h-40 space-y-0.5 overflow-y-auto">
                 {exportOk.written.map((p) => (
@@ -187,22 +187,22 @@ export default function Exchange() {
         </div>
       </Card>
 
-      {/* LLM-Import */}
-      <Card title="LLM-Import" subtitle="Vorschau und Übernahme von LLM-Übersetzungen.">
+      {/* LLM Import */}
+      <Card title="LLM Import" subtitle="Preview and apply LLM translations.">
         <div className="space-y-4">
           <Button
             variant="secondary"
             disabled={previewLoading}
             onClick={handlePreview}
           >
-            {previewLoading ? "Lädt…" : "Vorschau laden"}
+            {previewLoading ? "Loading…" : "Load preview"}
           </Button>
 
           {preview && (
             <>
               {totalMatched === 0 && totalUnmatched === 0 ? (
                 <p className="text-sm text-muted">
-                  Keine Dateien im Import-Ordner gefunden.
+                  No files found in the import folder.
                 </p>
               ) : (
                 <>
@@ -223,7 +223,7 @@ export default function Exchange() {
                             <span className="font-mono text-sm text-warning">
                               {pm.unmatched}
                             </span>
-                            <Tag tone="warning">Warnung</Tag>
+                            <Tag tone="warning">Warning</Tag>
                           </>
                         )}
                       </div>
@@ -232,12 +232,12 @@ export default function Exchange() {
 
                   <div className="flex items-center gap-2 border-t border-line pt-3">
                     <span className="text-sm font-medium text-text">
-                      Gesamt: {totalMatched} matched, {totalUnmatched} unmatched
+                      Total: {totalMatched} matched, {totalUnmatched} unmatched
                     </span>
                   </div>
 
                   <Button variant="primary" onClick={() => setModalOpen(true)}>
-                    Übernehmen
+                    Apply
                   </Button>
                 </>
               )}
@@ -247,23 +247,23 @@ export default function Exchange() {
           {previewErr && <p className="text-sm text-danger">{previewErr}</p>}
           {applyOk && (
             <p className="text-sm text-success">
-              {applyOk.saved} Einträge übernommen.
+              {applyOk.saved} entries applied.
             </p>
           )}
         </div>
       </Card>
 
-      {/* Bestätigungs-Modal */}
+      {/* Confirmation modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Import übernehmen"
+        title="Apply import"
       >
         <div className="space-y-4">
           <p className="text-sm text-text">
-            {totalMatched} Einträge werden in {targetLang}-Dateien geschrieben{" "}
+            {totalMatched} entries will be written to {targetLang} files.{" "}
             {totalUnmatched > 0 &&
-              `(${totalUnmatched} unmatched werden verworfen).`}
+              `(${totalUnmatched} unmatched will be discarded).`}
           </p>
 
           {applyErr && <p className="text-sm text-danger">{applyErr}</p>}
@@ -273,14 +273,14 @@ export default function Exchange() {
               variant="secondary"
               onClick={() => setModalOpen(false)}
             >
-              Abbrechen
+              Cancel
             </Button>
             <Button
               variant="primary"
               disabled={applyLoading}
               onClick={handleApply}
             >
-              {applyLoading ? "Übernehme…" : "Ja, übernehmen"}
+              {applyLoading ? "Applying…" : "Yes, apply"}
             </Button>
           </div>
         </div>

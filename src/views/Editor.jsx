@@ -71,7 +71,7 @@ export default function Editor({ modIds, onBack }) {
     setPage(1);
   };
 
-  // --- Dirty tracking: dirty nur wenn der Wert vom geladenen abweicht ---
+  // --- Dirty tracking: dirty only when the value differs from the loaded one ---
   const updateDirty = useCallback((id, translation, original) => {
     const value = translation === null ? "" : String(translation);
     if (value === original) {
@@ -146,10 +146,10 @@ export default function Editor({ modIds, onBack }) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
         <Card title="Editor">
-          <p className="text-sm text-muted">Kein Mod ausgewählt.</p>
+          <p className="text-sm text-muted">No mod selected.</p>
           <div className="mt-4">
             <Button variant="secondary" onClick={onBack}>
-              Zurück zu den Mods
+              Back to Mods
             </Button>
           </div>
         </Card>
@@ -165,7 +165,7 @@ export default function Editor({ modIds, onBack }) {
           <p className="text-sm text-danger">{error}</p>
           <div className="mt-4">
             <Button variant="secondary" onClick={onBack}>
-              Zurück zu den Mods
+              Back to Mods
             </Button>
           </div>
         </Card>
@@ -177,7 +177,7 @@ export default function Editor({ modIds, onBack }) {
   if (modsMeta.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
-        <p className="text-center text-muted">Lädt…</p>
+        <p className="text-center text-muted">Loading…</p>
       </div>
     );
   }
@@ -185,7 +185,7 @@ export default function Editor({ modIds, onBack }) {
   // === Main editor ===
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      {/* Kopfzeile */}
+      {/* Header */}
       <header className="mb-4">
         <div className="flex items-center gap-3">
           <span className="font-mono text-xl font-bold text-accent">
@@ -193,7 +193,7 @@ export default function Editor({ modIds, onBack }) {
           </span>
           {activeMod?.isBaseGame && <Tag tone="base">Base Game</Tag>}
           <div className="flex-1" />
-          {/* Mod-Navigation */}
+          {/* Mod navigation */}
           <Button
             variant="secondary"
             size="sm"
@@ -201,7 +201,7 @@ export default function Editor({ modIds, onBack }) {
             onClick={goToPrev}
             disabled={modsMeta.length <= 1}
           >
-            Vorheriger
+            Previous
           </Button>
           <span className="font-mono text-sm text-muted">
             {activeIdx + 1} / {modsMeta.length}
@@ -213,10 +213,10 @@ export default function Editor({ modIds, onBack }) {
             onClick={goToNext}
             disabled={modsMeta.length <= 1}
           >
-            Nächster
+            Next
           </Button>
         </div>
-        {/* Fortschrittsbalken */}
+        {/* Progress bar */}
         {activeMod && (
           <ProgressBar
             value={activeMod.translatedCount}
@@ -227,16 +227,16 @@ export default function Editor({ modIds, onBack }) {
         )}
       </header>
 
-      {/* Seitenstatus */}
+      {/* Page status */}
       <p className="mb-2 text-xs text-muted">
-        {total} Einträge — {activeMod?.translatedCount || 0} übersetzt
+        {total} entries — {activeMod?.translatedCount || 0} translated
       </p>
 
-      {/* Suche + Speichern */}
+      {/* Search + Save */}
       <div className="mb-4 flex items-center gap-3">
         <div className="flex-1">
           <Input
-            placeholder="Suchen…"
+            placeholder="Search…"
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
           />
@@ -247,20 +247,20 @@ export default function Editor({ modIds, onBack }) {
           onClick={handleSave}
           disabled={dirtySize === 0}
         >
-          {dirtySize === 0 ? "Speichern" : `Speichern (${dirtySize})`}
+          {dirtySize === 0 ? "Save" : `Save (${dirtySize})`}
         </Button>
       </div>
 
-      {/* Fehleranzeige */}
+      {/* Error display */}
       {saveError && (
         <p className="mb-2 text-sm text-danger">{saveError}</p>
       )}
 
-      {/* Eintragsliste */}
-      {loading && <p className="text-sm text-muted">Lädt…</p>}
+      {/* Entry list */}
+      {loading && <p className="text-sm text-muted">Loading…</p>}
 
       {!loading && entries.length === 0 && total === 0 && search !== "" && (
-        <p className="text-sm text-muted">Keine Einträge für diese Suche.</p>
+        <p className="text-sm text-muted">No entries for this search.</p>
       )}
 
       <div className="grid max-h-[50vh] grid-cols-2 gap-x-6 gap-y-2 overflow-y-auto rounded-lg border border-line bg-surface p-4">
@@ -268,14 +268,14 @@ export default function Editor({ modIds, onBack }) {
           const currentTranslation = getEntryTranslation(entry);
           const entryDirty = isEntryDirty(entry);
 
-          // Statusring: gelb = fehlt, grün = vorhanden, Akzent = ungespeicherte Änderung
+          // Status ring: yellow = missing, green = present, accent = unsaved change
           let statusClass = "outline-success";
           if (entryDirty) statusClass = "outline-accent";
           else if (!entry.translation) statusClass = "outline-warning";
 
           return (
             <div key={entry.id} className="flex flex-col gap-1 sm:flex-row sm:gap-4 sm:items-start">
-              {/* Links: Übersetzung */}
+              {/* Left: Translation */}
               <div className="flex-1">
                 <label className="mb-1.5 block text-xs font-mono text-muted">
                   {entry.key}
@@ -283,11 +283,11 @@ export default function Editor({ modIds, onBack }) {
                 <input
                   value={currentTranslation}
                   onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation)}
-                  placeholder="Übersetzung…"
+                  placeholder="Translation…"
                   className={`h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text placeholder:text-muted/60 outline-2 outline-offset-1 focus-visible:outline-2 ${statusClass}`}
                 />
               </div>
-              {/* Rechts: Original (readonly) */}
+              {/* Right: Original (readonly) */}
               <div className="flex-1">
                 <label className="mb-1.5 block text-xs font-mono text-muted">
                   Original
@@ -303,10 +303,10 @@ export default function Editor({ modIds, onBack }) {
         })}
       </div>
 
-      {/* Paginierung */}
+      {/* Pagination */}
       <footer className="mt-4 flex items-center justify-between border-t border-line pt-3">
         <span className="text-xs font-mono text-muted">
-          Seite {page} von {maxPage}
+          Page {page} of {maxPage}
         </span>
         <div className="flex items-center gap-1">
           <Button
@@ -316,7 +316,7 @@ export default function Editor({ modIds, onBack }) {
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1}
           >
-            Zurück
+            Back
           </Button>
           <Button
             variant="secondary"
@@ -325,7 +325,7 @@ export default function Editor({ modIds, onBack }) {
             onClick={() => setPage((p) => Math.min(maxPage, p + 1))}
             disabled={page >= maxPage}
           >
-            Weiter
+            Next
           </Button>
         </div>
       </footer>

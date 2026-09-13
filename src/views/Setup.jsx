@@ -13,12 +13,12 @@ function StatusCard({ title, path, found }) {
       title={title}
       footer={
         <Tag tone={found ? "success" : "danger"}>
-          {found ? "Gefunden" : "Nicht gefunden"}
+          {found ? "Found" : "Not found"}
         </Tag>
       }
     >
       <p className="text-xs text-muted">
-        Pfad: <span className="font-mono text-text">{path}</span>
+        Path: <span className="font-mono text-text">{path}</span>
       </p>
     </Card>
   );
@@ -35,7 +35,7 @@ export default function Setup({ onOpenMods }) {
   const [scanDone, setScanDone] = useState(false);
   const [scanProgress, setScanProgress] = useState({ done: 0, total: 0, current: "" });
 
-  // Initial laden
+  // Initial load
   useEffect(() => {
     Promise.all([api.getConfig(), api.getStatus()])
       .then(([cfg, st]) => {
@@ -48,7 +48,7 @@ export default function Setup({ onOpenMods }) {
       .catch((err) => setError(err.message));
   }, []);
 
-  // Polling während Scan: alle 1000 ms Status abfragen, bis scanRunning false ist.
+  // Polling during scan: query status every 1000 ms until scanRunning is false.
   useEffect(() => {
     if (!scanning) return;
     const timer = setInterval(async () => {
@@ -95,13 +95,13 @@ export default function Setup({ onOpenMods }) {
     }
   };
 
-  // Wenn Scan abgeschlossen
+  // When scan is complete
   const scanComplete = status && !status.scanRunning && scanDone;
 
   if (!config || !status) {
     return (
       <div className="mx-auto max-w-2xl py-10">
-        <p className="text-center text-muted">Lädt…</p>
+        <p className="text-center text-muted">Loading…</p>
       </div>
     );
   }
@@ -109,14 +109,14 @@ export default function Setup({ onOpenMods }) {
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-10">
       <header className="space-y-1">
-        <h1 className="font-mono text-2xl font-bold text-accent">Setup</h1>
-        <p className="text-sm text-muted">Konfiguration prüfen, Pfade bearbeiten und Mods scannen.</p>
+        <h1 className="font-mono text-2xl font-bold text-accent">Settings</h1>
+        <p className="text-sm text-muted">Check configuration, edit paths, and scan mods.</p>
       </header>
 
-      {/* Status-Karten */}
+      {/* Status cards */}
       <div className="grid gap-4 sm:grid-cols-2">
         <StatusCard
-          title="Spiel"
+          title="Game"
           path={status.gameFound ? gameRoot : "—"}
           found={status.gameFound}
         />
@@ -127,14 +127,14 @@ export default function Setup({ onOpenMods }) {
         />
       </div>
 
-      {/* Config bearbeiten */}
-      <Card title="Konfiguration" subtitle="Pfade und Zielsprache bearbeiten.">
+      {/* Edit configuration */}
+      <Card title="Configuration" subtitle="Edit paths and languages.">
         <div className="space-y-4">
-          <Input label="Spiel-Ordner" value={gameRoot} onChange={(e) => setGameRoot(e.target.value)} className="font-mono" />
-          <Input label="Workshop-Ordner" value={workshopDir} onChange={(e) => setWorkshopDir(e.target.value)} className="font-mono" />
+          <Input label="Game folder" value={gameRoot} onChange={(e) => setGameRoot(e.target.value)} className="font-mono" />
+          <Input label="Workshop folder" value={workshopDir} onChange={(e) => setWorkshopDir(e.target.value)} className="font-mono" />
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted">
-              Zielsprache
+              Target language
             </label>
             <select
               value={targetLang}
@@ -150,27 +150,27 @@ export default function Setup({ onOpenMods }) {
         </div>
       </Card>
 
-      {/* Scannen */}
+      {/* Scan */}
       <Card>
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Button variant="primary" size="lg" icon={ScanSearch} onClick={handleScan} disabled={scanning}>
-              Scannen
+              Scan
             </Button>
             {scanComplete && (
               <Button variant="secondary" size="sm" onClick={onOpenMods}>
-                Zu den Mods
+                Go to Mods
               </Button>
             )}
           </div>
 
-          {/* Scan-Fortschritt */}
+          {/* Scan progress */}
           {(scanning || scanProgress.done > 0) && (
             <div className="space-y-2">
               <ProgressBar
                 value={scanProgress.done}
                 max={scanProgress.total > 0 ? scanProgress.total : 1}
-                label="Scannen…"
+                label="Scanning…"
                 color="dust"
                 className="w-full"
               />
@@ -180,14 +180,14 @@ export default function Setup({ onOpenMods }) {
             </div>
           )}
 
-          {/* Ergebnis */}
+          {/* Result */}
           {scanComplete && !error && (
             <p className="text-sm text-success font-medium">
-              Scan fertig — {status.modCount} Mods gefunden.
+              Scan complete — {status.modCount} mods found.
             </p>
           )}
 
-          {/* Fehler */}
+          {/* Error */}
           {error && (
             <p className="text-sm text-danger">{error}</p>
           )}
