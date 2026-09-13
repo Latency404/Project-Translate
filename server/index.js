@@ -94,6 +94,16 @@ app.get('/api/mods', (req, res) => {
   res.json({ mods })
 })
 
+// --- Base-Game-Poster (Ressource aus Resources/) ---
+// Das Logo des Basisspiels liegt als statische Ressource im Projekt
+// (Resources/projectzomboidlogo.jpg) und wird unabhängig vom Scan als
+// /base-game-poster.jpg gedient. Die Library zeigt es für den BASE-Mod.
+const BASE_POSTER_FILE = path.join(PROJECT_ROOT, 'Resources', 'projectzomboidlogo.jpg')
+app.get('/base-game-poster.jpg', (req, res) => {
+  if (!fs.existsSync(BASE_POSTER_FILE)) return fail(res, 404, 'Poster nicht gefunden')
+  res.type('image/jpeg').sendFile(BASE_POSTER_FILE)
+})
+
 function getMod(res, modId) {
   if (!cache) {
     fail(res, 404, 'Noch kein Scan durchgeführt — POST /api/scan.')
@@ -203,23 +213,29 @@ app.post('/api/export/mod', (req, res) => {
   }
 })
 
-// --- Fake-API: Mod-Poster aus server/fixtures/ über /fixtures/ dienen ---
-if (FAKE_SERVE) {
-  app.use('/fixtures', express.static(path.join(fake.FIXTURES)))
-}
-
 // --- Mod-Poster (Fake-API) ---
+// Base-Game-Logo ist eine statische Projekt-Ressource (Resources/), die in
+// jedem Modus über die feste Route /base-game-poster.jpg gelöst wird.
 // Server-Pfad des Posters → API-URL (über schreibgeschütztes Feld `poster`
 // im /api/mods-Response). In Fake-Mode liegt das Poster unter server/fixtures/
 // und wird über /fixtures/ gedient. In echtem Modus fehlt diese Route noch
 // (Phase 2 liefert die echten Pfade).
 function posterUrl(mod) {
+  if (mod.isBaseGame) return '/base-game-poster.jpg'
   if (!mod.poster) return null
   if (FAKE) {
     const rel = path.relative(fake.FIXTURES, mod.poster).split(path.sep).join('/')
     return '/fixtures/' + rel
   }
   return null
+}
+
+// --- Fake-API: Mod-Poster aus server/fixtures/ über /fixtures/ dienen ---
+// Vor dem dist/-Block registrieren: die SPA-Catchall-Route würde sonst
+// /fixtures/-Pfade auf index.html (text/html) abfangen und die Poster
+// im Browser kaputt.
+if (FAKE_SERVE) {
+  app.use('/fixtures', express.static(path.join(fake.FIXTURES)))
 }
 
 // --- Production: gebautes Frontend dienen ---
