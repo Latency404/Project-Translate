@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Copy, RotateCcw, Rocket, X } from "lucide-react";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
@@ -39,7 +39,64 @@ function loadOverrides() {
   }
 }
 
-function ColorPanel({ colors, overrides, onPick, onReset }) {
+function Swatch({ name, value, isOverridden, onPick, onResetOne }) {
+  const inputRef = useRef(null);
+  const openPicker = () => {
+    const input = inputRef.current;
+    if (input?.showPicker) {
+      try {
+        input.showPicker();
+      } catch {
+        /* Requires a user gesture — nothing to do */
+      }
+    }
+  };
+  return (
+    <div className="group relative flex items-center gap-2">
+      <button
+        type="button"
+        onClick={openPicker}
+        className="h-7 w-9 shrink-0 cursor-pointer overflow-hidden rounded border border-line"
+        style={{ backgroundColor: value }}
+        aria-label={`Pick color for ${name}`}
+        title={`Pick color for ${name}`}
+      />
+      <input
+        ref={inputRef}
+        type="color"
+        value={value}
+        onChange={(e) => onPick(name, e.target.value.toLowerCase())}
+        className="sr-only"
+        aria-label={`Token ${name}`}
+      />
+      <span className="min-w-0">
+        <span
+          className={`block truncate text-xs font-medium ${
+            isOverridden ? "text-accent" : "text-text"
+          }`}
+        >
+          {name}
+        </span>
+        <span className="block font-mono text-[10px] text-muted">
+          {value}
+        </span>
+      </span>
+      {isOverridden && (
+        <button
+          type="button"
+          onClick={() => onResetOne(name)}
+          className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center rounded text-muted hover:bg-line hover:text-text transition-colors"
+          aria-label={`Reset ${name} to default`}
+          title={`Reset ${name} to default`}
+        >
+          <X size={12} aria-hidden />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ColorPanel({ colors, overrides, onPick, onReset, onResetOne }) {
   const [copied, setCopied] = useState(false);
 
   const cssBlock =
@@ -62,7 +119,7 @@ function ColorPanel({ colors, overrides, onPick, onReset }) {
   return (
     <Card
       title="Colors"
-      subtitle="For quick testing — overrides the tokens live (persists until reset)."
+      subtitle="For quick testing — overrides the tokens live (persists until reset; X on a swatch resets that color only)."
       footer={
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" icon={Copy} onClick={copy}>
@@ -76,25 +133,14 @@ function ColorPanel({ colors, overrides, onPick, onReset }) {
     >
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {Object.entries(colors).map(([name, value]) => (
-          <label key={name} className="flex items-center gap-2">
-            <input
-              type="color"
-              value={value}
-              onChange={(e) => onPick(name, e.target.value.toLowerCase())}
-              className="h-7 w-9 shrink-0 cursor-pointer rounded border border-line bg-raised p-0.5"
-              aria-label={`Token ${name}`}
-            />
-            <span className="min-w-0">
-              <span
-                className={`block truncate text-xs font-medium ${overrides[name] ? "text-accent" : "text-text"}`}
-              >
-                {name}
-              </span>
-              <span className="block font-mono text-[10px] text-muted">
-                {value}
-              </span>
-            </span>
-          </label>
+          <Swatch
+            key={name}
+            name={name}
+            value={value}
+            isOverridden={overrides[name] !== undefined}
+            onPick={onPick}
+            onResetOne={onResetOne}
+          />
         ))}
       </div>
     </Card>
@@ -132,6 +178,13 @@ export default function Showcase() {
   const pick = (name, value) =>
     setOverrides((prev) => ({ ...prev, [name]: value }));
 
+  const resetOne = (name) =>
+    setOverrides((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+
   return (
     <div className="mx-auto max-w-3xl space-y-10 px-6 py-10">
       <header className="space-y-1">
@@ -148,6 +201,7 @@ export default function Showcase() {
         overrides={overrides}
         onPick={pick}
         onReset={() => setOverrides({})}
+        onResetOne={resetOne}
       />
 
       <Section
