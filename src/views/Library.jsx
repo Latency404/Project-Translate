@@ -7,12 +7,17 @@ import Input from "../components/Input.jsx";
 import ProgressBar from "../components/ProgressBar.jsx";
 import Tag from "../components/Tag.jsx";
 
-export default function Mods({ onGoToSetup, onOpenEditor }) {
+export default function Library({ onGoToSetup, onSelectionChange }) {
   const [mods, setMods] = useState([]);
   const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(new Set());
+
+  // Notify parent whenever the selection changes (immediately, not on Save)
+  useEffect(() => {
+    onSelectionChange && onSelectionChange(Array.from(selected));
+  }, [selected, onSelectionChange]);
 
   // Load data
   useEffect(() => {
@@ -186,18 +191,10 @@ export default function Mods({ onGoToSetup, onOpenEditor }) {
         })}
       </div>
 
-      {/* Selection bar at bottom */}
-      <footer className="mt-6 flex items-center justify-between border-t border-line pt-4">
-        <span className="text-sm text-muted">
+      <footer className="mt-6 border-t border-line pt-4">
+        <p className="text-sm text-muted">
           {selected.size} mod{selected.size === 1 ? "" : "s"} selected
-        </span>
-        <Button
-          variant="primary"
-          disabled={selected.size === 0}
-          onClick={() => onOpenEditor(Array.from(selected))}
-        >
-          Translate
-        </Button>
+        </p>
       </footer>
     </div>
   );

@@ -9,14 +9,16 @@ import Exchange from "./views/Exchange.jsx";
 const VIEWS = [
   { key: "settings", label: "Settings" },
   { key: "mods", label: "Library" },
+  { key: "editor", label: "Editor" },
   { key: "export", label: "Export" },
   { key: "showcase", label: "Design" },
-  { key: "editor", label: "Editor" },
 ];
 
 export default function App() {
   const [view, setView] = useState("settings");
   const [selectedModIds, setSelectedModIds] = useState([]);
+  // Library stays mounted so its selection survives navigating to/from the Editor
+  const [libraryKey, setLibraryKey] = useState(0);
 
   return (
     <div className="min-h-screen bg-ink">
@@ -41,19 +43,33 @@ export default function App() {
 
       {/* Content */}
       <main>
-        {view === "settings" && <Setup onOpenMods={() => setView("mods")} />}
-        {view === "mods" && (
+        <div className={view === "mods" ? "" : "hidden"}>
           <Library
+            key={libraryKey}
             onGoToSetup={() => setView("settings")}
-            onOpenEditor={(ids) => {
-              setSelectedModIds(ids);
-              setView("editor");
+            onSelectionChange={setSelectedModIds}
+          />
+        </div>
+        {view === "settings" && (
+          <Setup
+            onOpenMods={() => {
+              setLibraryKey((k) => k + 1); // fresh selection for a new scan
+              setView("mods");
             }}
           />
         )}
         {view === "showcase" && <Showcase />}
         {view === "export" && <Exchange />}
-        {view === "editor" && <Editor modIds={selectedModIds} onBack={() => setView("mods")} />}
+        {view === "editor" && (
+          <Editor
+            modIds={selectedModIds}
+            onBack={() => setView("mods")}
+            onReselect={() => {
+              setLibraryKey((k) => k + 1);
+              setView("mods");
+            }}
+          />
+        )}
       </main>
     </div>
   );

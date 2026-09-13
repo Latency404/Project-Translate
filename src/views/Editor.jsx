@@ -7,7 +7,7 @@ import Input from "../components/Input.jsx";
 import ProgressBar from "../components/ProgressBar.jsx";
 import Tag from "../components/Tag.jsx";
 
-export default function Editor({ modIds, onBack }) {
+export default function Editor({ modIds, onBack, onReselect }) {
   // --- State ---
   const [modsMeta, setModsMeta] = useState([]);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -141,15 +141,17 @@ export default function Editor({ modIds, onBack }) {
     [dirty],
   );
 
-  // === Empty state: no modIds ===
+  // === Empty state: no mod selected ===
   if (!modIds || modIds.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
         <Card title="Editor">
-          <p className="text-sm text-muted">No mod selected.</p>
+          <p className="text-sm text-muted">
+            No mod selected. Select mods in the Library.
+          </p>
           <div className="mt-4">
-            <Button variant="secondary" onClick={onBack}>
-              Back to Library
+            <Button variant="secondary" onClick={onReselect}>
+              Go to Library
             </Button>
           </div>
         </Card>
