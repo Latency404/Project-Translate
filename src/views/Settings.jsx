@@ -24,7 +24,7 @@ function StatusCard({ title, path, found }) {
   );
 }
 
-export default function Setup({ onOpenMods }) {
+export default function Settings({ onOpenMods }) {
   const [config, setConfig] = useState(null);
   const [status, setStatus] = useState(null);
   const [error, setError] = useState("");

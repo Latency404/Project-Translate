@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Button from "./components/Button.jsx";
-import Setup from "./views/Setup.jsx";
+import Setup from "./views/Settings.jsx";
 import Showcase from "./views/Showcase.jsx";
 import Mods from "./views/Mods.jsx";
 import Editor from "./views/Editor.jsx";
@@ -9,7 +9,7 @@ import Exchange from "./views/Exchange.jsx";
 const VIEWS = [
   { key: "settings", label: "Settings" },
   { key: "mods", label: "Mods" },
-  { key: "exchange", label: "Exchange" },
+  { key: "export", label: "Export" },
   { key: "showcase", label: "Design" },
 ];
 
@@ -51,7 +51,7 @@ export default function App() {
           />
         )}
         {view === "showcase" && <Showcase />}
-        {view === "exchange" && <Exchange />}
+        {view === "export" && <Exchange />}
         {view === "editor" && <Editor modIds={selectedModIds} onBack={() => setView("mods")} />}
       </main>
     </div>

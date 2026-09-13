@@ -100,7 +100,7 @@ export default function Exchange() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-10">
       <header className="space-y-1">
-        <h1 className="font-mono text-2xl font-bold text-accent">Exchange</h1>
+        <h1 className="font-mono text-2xl font-bold text-accent">Export</h1>
         <p className="text-sm text-muted">
           Manage LLM export and import for mods.
         </p>
