@@ -8,8 +8,9 @@ Phase 1 komplett (wartet auf Abnahme der ganzen Phase): Settings-View + Library-
 Übersetzung links mit Statusring gelb/grün/Akzent, Suche serverseitig, Paginierung
 50/Seite, Mod-Vor/Zurück, Fortschrittsbalken, Speichern via PUT mit Dirty-Tracking)
 + Export-View (LLM-Export mit Mod-Auswahl/Sprache, LLM-Import mit Vorschau
-matched/unmatched pro Mod, Bestätigung per Modal, Apply). Editor ist jetzt eine
-eigene Nav-Seite neben Settings/Library/Export/Design. `npm run build` +
+matched/unmatched pro Mod, Bestätigung per Modal, Apply). Editor ist eine
+eigene Nav-Seite direkt neben Library; die Auswahl in der Library wirkt
+sofort (Editor liest sie live, kein Save-Button mehr). `npm run build` +
 `npm test` (18) grün. Nächster Punkt: 2.1 (Phase 2 – Durchstich).
 
 ## Phase 0 – Fundament [fertig]
@@ -104,9 +105,13 @@ eigene Nav-Seite neben Settings/Library/Export/Design. `npm run build` +
       starten, `npm run build && npm test` grün, letzter Commit
 
 ## Entscheidungen & Abweichungen
-- **Navigation: 5 Seiten (USER, Slice 5):** Editor ist eine eigene Nav-Seite; die
-  Mod-Übersicht heißt „Library". Nav-Reihenfolge: Settings | Library | Export |
-  Design | Editor. `src/views/Mods.jsx` → `src/views/Library.jsx`.
+- **Navigation: 5 Seiten (USER, Slice 5/6):** Editor ist eine eigene Nav-Seite
+  direkt rechts neben Library; die Mod-Übersicht heißt „Library". Nav-Reihenfolge:
+  Settings | Library | Editor | Export | Design. Die Library-Auswahl wirkt sofort —
+  der Editor liest sie live über `onSelectionChange` (Library bleibt mountet,
+  Auswahl überlebt View-Wechsel); „Translate"-Button entfällt. Nach neuem Scan
+  oder „Go to Library" aus dem Editor wird die Auswahl frisch (library-Key).
+  `src/views/Mods.jsx` → `src/views/Library.jsx`.
 - **Design-Palette (USER, Slice 1.1):** Carbon-Theme (#0a0a0a/#121517), Text
   #f5f5f5, Muted #ababab, Base-Game-Tag Dust Grey #c4c4c4,
   Accent #e21d1d (Light #ff4040 = Button-Hover — Hover wird heller, nicht
