@@ -3,14 +3,16 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-Phase 1 komplett; 3.2 (Mod-Export) steht VOR — View + Fake-API, aber nicht
-abgenommen: Export-View zeigt nur noch Mod-Export (Mod-Auswahl, wählbarer
-Zielordner, Zielsprache → POST /api/export/mod, Ergebnis pro Mod); LLM-
-Export/-Import lebt ausschließlich im Editor (USER-Entscheidung), die
-Export-View hat keinen LLM-Teil mehr. Editor hat eigenen Mod-Selektor
-(checkbox-Sidebar, multi-Mod). `npm run build` + `npm test` (18) grün.
-Nächster Punkt: 2.1 (Phase 2 – Durchstich), danach 3.2/3.1 gegen echte Daten
-abnehmen.
+Phase 2 in Arbeit; 2.1 (Echter Scan + echtes Einlesen) fertig und abgenommen:
+`npm start` ohne `PT_FAKE` dient das gebaute Frontend + echte API — Setup zeigt
+echten Status, Scan findet 453 Mods (362+ Kriterium erfüllt), Mod-Liste zeigt
+echte Eintragszahlen (BASE 47 239, MoreBuilds 1 363 …), Editor zeigt echte
+Originaltexte mit Pre-Fill-DE-Werten (grün). Zusätzlich: Workshop-Poster im
+echten Modus fix (Route `/mod-poster?m=<modId>`, `posterUrl()` liefert sie
+statt null) — 131 von 453 Mods zeigen jetzt Poster statt „No poster".
+`npm run build` + `npm test` (18) grün.
+Nächster Punkt: 2.2 (Echtes Speichern mit Backup), danach 3.1 / 3.2 gegen
+echte Daten abnehmen.
 
 ## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -49,8 +51,8 @@ abnehmen.
       schreibt nach export/llm/, Import zeigt Vorschau (matched/unmatched pro Mod)
       mit Bestätigung, beide gegen Fake-API
 
-## Phase 2 – Durchstich [geplant]
-- [ ] 2.1 Echter Scan + echtes Einlesen · delegieren · braucht 0.3, 1.3
+## Phase 2 – Durchstich [in Arbeit]
+- [x] 2.1 Echter Scan + echtes Einlesen · delegieren · braucht 0.3, 1.3
       fertig wenn: `npm start` — Setup zeigt echten Status, Scan findet die echten
       362+ Mods, Mod-Liste zeigt echte Eintragszahlen, Editor zeigt echte
       Originaltexte inkl. Pre-Fill vorhandener DE-Werte (grün)
@@ -104,6 +106,14 @@ abnehmen.
       starten, `npm run build && npm test` grün, letzter Commit
 
 ## Entscheidungen & Abweichungen
+- **2.1: Poster-Fix als Nachbesserung (USER-Entscheidung):** Im echten Modus
+  lieferte `posterUrl()` für alle Workshop-Mods `null` (nur BASE bekam
+  `/base-game-poster.jpg`) — die Library zeigte für alle 452 echten Mods
+  „No poster". Fix: neue Route `GET /mod-poster?m=<modId>` in server/index.js
+  dient das Poster von der Disk (Dateipfad aus dem gecachten Mod, nicht aus
+  der URL — kein Pfad-Traversing; nur *.png). `posterUrl()` liefert im echten
+  Modus diese URL. 131 von 453 Mods haben ein Poster (poster.png oder
+  generic.png).
 - **LLM-Export wandert in die Editor-Toolbar (Nacht-Session 14.09):** Der
   LLM-Export-Button (exportLlm) sitzt jetzt neben Save im Editor und exportiert
   die dort ausgewählten Mods — die Export-View hat dafür einen echten Mod-Export
