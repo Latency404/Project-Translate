@@ -289,11 +289,12 @@ export default function Editor({ initialModIds, onReselect }) {
     );
   }
 
-  // === Main editor — the sidebar is always visible (all mods with checkboxes) ===
+  // === Main editor — the sidebar lists only the selected mods ===
   return (
     <div className="flex min-h-[calc(100vh-49px)]">
-      {/* Sidebar: full library with multi-select */}
-      <aside className="w-64 shrink-0 overflow-y-auto border-r border-line bg-surface p-3">
+      {/* Sidebar: selected mods only, as tall as its content (max. viewport),
+          scrolling internally when the list overflows */}
+      <aside className="w-64 shrink-0 self-start max-h-[calc(100vh-49px)] overflow-y-auto border-r border-line bg-surface p-3">
         <div className="mb-2 flex items-center justify-between">
           <p className="text-xs font-mono font-medium text-muted uppercase">
             Mods ({modIds.length}/{allMods.length})
@@ -306,42 +307,26 @@ export default function Editor({ initialModIds, onReselect }) {
           </button>
         </div>
         <nav className="space-y-1">
-          {allMods.map((mod) => {
-            const isSelected = modIds.includes(mod.id);
-            return (
-              <div
-                key={mod.id}
-                className={`flex items-center gap-2 rounded-md px-2 py-2 transition-colors ${
-                  isSelected ? "" : "opacity-50"
-                } hover:bg-raised/50`}
-              >
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={() => toggleMod(mod.id)}
-                  className="size-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
-                  aria-label={`Select ${mod.name}`}
-                />
-                <div className="min-w-0 flex-1 text-left text-sm">
-                  <span className={`block truncate ${isSelected ? "text-text" : "text-muted"}`}>
-                    {mod.name}
-                  </span>
-                  <span className="mt-0.5 block text-xs font-mono text-muted">
-                    {mod.translatedCount} / {mod.entryCount}
-                  </span>
-                </div>
-                {isSelected && (
-                  <button
-                    onClick={() => toggleMod(mod.id)}
-                    className="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono text-muted transition-colors hover:bg-raised hover:text-danger"
-                    title="Remove from editor"
-                  >
-                    ×
-                  </button>
-                )}
+          {modsMeta.map((mod) => (
+            <div
+              key={mod.id}
+              className="flex items-center gap-2 rounded-md px-2 py-2 transition-colors hover:bg-raised/50"
+            >
+              <input
+                type="checkbox"
+                checked
+                onChange={() => toggleMod(mod.id)}
+                className="size-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
+                aria-label={`Select ${mod.name}`}
+              />
+              <div className="min-w-0 flex-1 text-left text-sm">
+                <span className="block truncate text-text">{mod.name}</span>
+                <span className="mt-0.5 block text-xs font-mono text-muted">
+                  {mod.translatedCount} / {mod.entryCount}
+                </span>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </nav>
       </aside>
 

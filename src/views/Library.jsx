@@ -12,11 +12,22 @@ export default function Library({ onGoToSetup, onSelectionChange }) {
   const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState(new Set());
+  // Selection persists across visits (sessionStorage) so returning to the
+  // Library keeps the checkmarks — the Editor's mod list is driven by it.
+  const [selected, setSelected] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem("pt_library_selected");
+      if (stored) return new Set(JSON.parse(stored));
+    } catch { /* ignore */ }
+    return new Set();
+  });
 
   // Notify parent whenever the selection changes (immediately, not on Save)
   useEffect(() => {
     onSelectionChange && onSelectionChange(Array.from(selected));
+    try {
+      sessionStorage.setItem("pt_library_selected", JSON.stringify(Array.from(selected)));
+    } catch { /* ignore */ }
   }, [selected, onSelectionChange]);
 
   // Load data. If the API hasn't been scanned yet (e.g. after a server
