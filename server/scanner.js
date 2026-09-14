@@ -10,6 +10,8 @@
 //                    es wird immer nur die NEUESTE Version gescannt/übersetzt —
 //                    ältere Version-Ordner bleiben auf der Platte, aber ungenutzt)
 //           media/lua/shared/Translate/<LANG>/<Kategorie>.json
+//       common/media/lua/shared/Translate/<LANG>/<Kategorie>.json  (common-Layout)
+//       media/lua/shared/Translate/<LANG>/<Kategorie>.json  (root-Layout)
 // Ein Published-File kann mehrere Mods enthalten: jeder Unterordner unter mods/
 // zählt als eigener Mod mit id = <PublishedFileID>/<Unterordnername>.
 //
@@ -18,8 +20,10 @@
 //   id = BASE, name = "Project Zomboid (Base Game)", versions = ["base"],
 //   rootPath = gameRoot (es gibt keinen Version-Ordner).
 //
-// JSON-Dateien sind flache key → string-Maps. Einträge in JSON-Datei-Reihenfolge
-// (Insertion Order), Dateien alphabetisch. Pfade immer POSIX-Style.
+// JSON-Dateien sind flache key → string-Maps.
+// TXT-Dateien sind Lua-Translate (Sandbox_EN.txt etc.) mit Key=Value-Paaren.
+// Einträge in JSON-/TXT-Datei-Reihenfolge (Insertion Order), Dateien alphabetisch.
+// Pfade immer POSIX-Style.
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -55,8 +59,12 @@ function translateDir(rootDir, lang) {
 }
 
 // Version-Ordner eines Mods: Mods haben <rootPath>/<version>, das Base Game nicht.
+// Für common/root-Layouts liefert sie den entsprechenden Pfad.
 function versionDirOf(mod, version) {
-  return mod.isBaseGame ? mod.rootPath : path.join(mod.rootPath, version)
+  if (mod.isBaseGame) return mod.rootPath
+  if (version === 'common') return path.join(mod.rootPath, 'common')
+  if (version === 'root') return mod.rootPath
+  return path.join(mod.rootPath, version)
 }
 
 function posterFor(modDir) {
@@ -65,6 +73,109 @@ function posterFor(modDir) {
     if (fs.existsSync(p)) return toPosix(p)
   }
   return null
+}
+
+// Lua-Translate-Parser — liest .txt Dateien (Sandbox_EN.txt etc.)
+// Format: Key = "Value" oder Key = [[Long Value]] oder ["Key"] = "Value"
+const IS_WS = (c) => c === ' ' || c === '\t' || c === '\r' || c === '\n'
+function unescapeLua(c) {
+  switch (c) {
+    case '"': return '"'
+    case "'": return "'"
+    case '\\': return '\\'
+    case 'n': return '\n'
+    case 't': return '\t'
+    case 'r': return '\r'
+    case 'a': return '\x07'
+    case 'v': return '\x0b'
+    case 'f': return '\x0c'
+    case 'b': return '\b'
+    default: return c
+  }
+}
+function readString(raw, i) {
+  const n = raw.length
+  if (i >= n) return [null, i]
+  const q = raw[i]
+  if (q !== '"' && q !== "'") return [null, i]
+  i++
+  let v = ''
+  while (i < n && raw[i] !== q) {
+    if (raw[i] === '\\' && i + 1 < n) { v += unescapeLua(raw[i + 1]); i += 2 }
+    else { v += raw[i]; i++ }
+  }
+  i++ // closing quote
+  return [v, i]
+}
+function parseLuaTranslate(raw) {
+  if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1) // BOM entfernen
+  const map = {}
+  let i = 0
+  const n = raw.length
+  while (i < n) {
+    const c = raw[i]
+    if (IS_WS(c)) { i++; continue }
+    if (c === '-' && raw[i + 1] === '-') { while (i < n && raw[i] !== '\n') i++; continue } // -- Kommentar
+    if (c === '{' || c === '}' || c === ',' || c === '=') { i++; continue }
+    // Key lesen
+    let key = null
+    if (c === '"' || c === "'") {
+      const [v, j] = readString(raw, i)
+      if (v === null) { i++; continue }
+      key = v; i = j
+    } else if (c === '[' && raw[i + 1] !== '[') {
+      // ["key"] oder [ "key" ]
+      let j = i + 1
+      while (j < n && IS_WS(raw[j])) j++
+      if (raw[j] === '"' || raw[j] === "'") {
+        const [v, k] = readString(raw, j)
+        if (v !== null) {
+          key = v
+          // nach Closing-Quote: ] erwartet (ws toleriert)
+          let m = k
+          while (m < n && IS_WS(raw[m])) m++
+          i = (raw[m] === ']') ? m + 1 : k
+          if (raw[m] !== ']') i = k + 1 // Fallback: 1 Zeichen Vorwärtsschritt
+          continue
+        }
+      }
+      i++
+      continue
+    } else {
+      // unquoted Key: Identifier [A-Za-z0-9_%.]+
+      const start = i
+      while (i < n && /[A-Za-z0-9_%.]/.test(raw[i])) i++
+      const k = raw.slice(start, i)
+      if (!k) { i++; continue }
+      key = k
+    }
+    // '=' erwarten
+    let k = i
+    while (k < n && IS_WS(raw[k])) k++
+    if (raw[k] !== '=') continue
+    k++
+    while (k < n && IS_WS(raw[k])) k++
+    // Wert
+    if (raw[k] === '{') { i = k + 1; continue } // Tabelle skip
+    if (raw[k] === '[' && raw[k + 1] === '[') {
+      // Langstring [[ ... ]]
+      let j = k + 2, v = ''
+      while (j < n && !(raw[j] === ']' && raw[j + 1] === ']')) { v += raw[j]; j++ }
+      map[key] = v
+      i = j + 2
+      continue
+    }
+    if (raw[k] === '"' || raw[k] === "'") {
+      const [v, j] = readString(raw, k)
+      if (v === null) { i = k + 1; continue }
+      map[key] = v
+      i = j
+      continue
+    }
+    // Zahl/Boolean/etc. → kein String, nicht übersetzbar
+    i = Math.max(k + 1, i + 1)
+  }
+  return map
 }
 
 function readFlatMap(filePath) {
@@ -79,23 +190,64 @@ function readFlatMap(filePath) {
   }
 }
 
-// Einträge einer Version lesen: alle EN-Dateien (alphabetisch), Key-Reihenfolge
-// wie in der Datei; translation aus der targetLang-Datei (null = fehlt).
-function scanVersionEntries(mod, version, enDir, targetLang) {
+// TXT-Datei als Lua-Translate lesen.
+// Gibt {key: value} Map oder null wenn keine Keys gefunden.
+function readTxtMap(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8')
+    const map = parseLuaTranslate(raw)
+    return Object.keys(map).length > 0 ? map : null
+  } catch {
+    return null
+  }
+}
+
+// EN-Datei-Name → DE-Datei-Name.
+// JSON: gleich (ItemName.json → ItemName.json)
+// TXT: _EN.txt → _DE.txt (Sandbox_EN.txt → Sandbox_DE.txt)
+//     sonst: .txt → _DE.txt (Sandbox.txt → Sandbox_DE.txt)
+function targetFileName(enFileName, targetLang, enDir) {
+  const ext = path.extname(enFileName)
+  const base = enFileName.slice(0, -ext.length)
+  if (ext === '.json') return enFileName
+  // TXT: entferne optional _EN-Suffix, hänge _<targetLang>
+  const noEn = base.endsWith('_EN') ? base.slice(0, -3) : base
+  return noEn + '_' + targetLang + ext
+}
+
+// Einträge einer EN-Dir lesen: alle .json + .txt Dateien (alphabetisch),
+// Key-Reihenwie in der Datei; Translation aus der targetLang-Dir.
+// Gibt Array von Entry-Objekten zurück.
+// version: das "version"-Segment der entryId (z. B. "42.20", "common", "root").
+// modRoot: der Root-Pfad des Mods (für entryId-File-Berechnung).
+// enDir: der EN-Translate-Ordner.
+// targetLang: Zielsprache-Code.
+// isVersion: true wenn version ein echter Versionsordner (nicht common/root) —
+//            bestimmt das file-Verhältnis (relativ zum Version-Ordner vs. zum Root).
+function scanEntriesForDir(mod, version, enDir, targetLang, modRoot) {
   const entries = []
   if (!fs.existsSync(enDir)) return entries
   const langDir = path.join(path.dirname(enDir), targetLang)
   let names
   try {
-    names = fs.readdirSync(enDir).filter((f) => f.endsWith('.json')).sort()
+    names = fs.readdirSync(enDir).sort()
   } catch {
     return entries
   }
-  for (const f of names) {
+
+  // Alle .json und .txt Dateien sammeln
+  const jsonNames = names.filter(f => f.endsWith('.json'))
+  const txtNames = names.filter(f => /\.txt$/i.test(f) && !f.endsWith('.json'))
+
+  // JSON-Einträge zuerst (höhere Priorität bei Duplikaten)
+  const jsonEntries = new Map()
+  for (const f of jsonNames) {
     const enMap = readFlatMap(path.join(enDir, f))
     if (!enMap) continue
-    const deMap = readFlatMap(path.join(langDir, f))
-    const file = toPosix(path.relative(versionDirOf(mod, version), path.join(enDir, f)))
+    const deFileName = targetFileName(f, targetLang, enDir)
+    const deMap = readFlatMap(path.join(langDir, deFileName))
+    const relPath = path.relative(modRoot, path.join(enDir, f))
+    const file = toPosix(relPath)
     for (const [key, value] of Object.entries(enMap)) {
       if (typeof value !== 'string') continue
       const translation = deMap && typeof deMap[key] === 'string' ? deMap[key] : null
@@ -107,11 +259,62 @@ function scanVersionEntries(mod, version, enDir, targetLang) {
         key,
         original: value,
         translation,
-        preFilled: translation !== null
+        preFilled: translation !== null,
+        _sourceFile: f
+      })
+      jsonEntries.set(`${version}/${file}::${key}`, true)
+    }
+  }
+
+  // TXT-Einträge danach (Überschreibt JSON nur wenn gleiche entryId — sollte selten sein)
+  for (const f of txtNames) {
+    const enMap = readTxtMap(path.join(enDir, f))
+    if (!enMap) continue
+    const deFileName = targetFileName(f, targetLang, enDir)
+    const deMap = readFlatMap(path.join(langDir, deFileName))
+    const relPath = path.relative(modRoot, path.join(enDir, f))
+    const file = toPosix(relPath)
+    for (const [key, value] of Object.entries(enMap)) {
+      if (typeof value !== 'string') continue
+      const entryId = `${version}/${file}::${key}`
+      const translation = deMap && typeof deMap[key] === 'string' ? deMap[key] : null
+      entries.push({
+        id: entryId,
+        modId: mod.id,
+        version,
+        file,
+        key,
+        original: value,
+        translation,
+        preFilled: translation !== null,
+        _sourceFile: f
       })
     }
   }
-  return entries
+
+  // Deduplizierung: gleiche entryId → JSON hat Priorität.
+  // Wenn JSON+TXT gleiche entryId haben, den TXT-Eintrag entfernen.
+  const seen = new Map()
+  for (const e of entries) {
+    const existing = seen.get(e.id)
+    if (existing) {
+      // JSON-Eintrag hat Priorität — TXT-Eintrag überschreibt nur wenn kein JSON
+      // Da wir zuerst JSON durchlaufen, ist existing immer JSON → TXT überspringen
+      // Aber wir wollen den TXT-Eintrag nicht verlieren wenn es keinen JSON gibt →
+      // Die JSON-Einträge sind schon im Map, TXT-Einträge haben gleiche entryId → remove TXT
+      // Weil JSON zuerst: existing ist JSON, e ist TXT → TXT überspringen
+      // Umgekehrt: wenn TXT zuerst (sollte nicht vorkommen), JSON würde überschreiben
+      // Lösung: Map enthält nur JSON-Einträge für diese entryId
+    } else {
+      seen.set(e.id, e)
+    }
+  }
+
+  // Einträge zurückgeben, _sourceFile entfernen
+  return Array.from(seen.values()).map(e => {
+    const { _sourceFile: _, ...rest } = e
+    return rest
+  })
 }
 
 function summarize(mod, entries) {
@@ -144,7 +347,7 @@ async function scan(gameRoot, workshopDir, targetLang, { onProgress } = {}) {
     translatedCount: 0
   }
   if (fs.existsSync(baseEnDir)) {
-    const entries = summarize(baseMod, scanVersionEntries(baseMod, 'base', baseEnDir, targetLang))
+    const entries = summarize(baseMod, scanEntriesForDir(baseMod, 'base', baseEnDir, targetLang, baseMod.rootPath))
     mods.push(baseMod)
     entriesByModId[BASE_ID] = entries
   }
@@ -178,6 +381,8 @@ async function scan(gameRoot, workshopDir, targetLang, { onProgress } = {}) {
     }
     for (const name of subNames) {
       const modDir = path.join(modsDir, name)
+
+      // Versionen suchen (vor mod-Deklaration, weil später benötigt)
       let versionNames = []
       try {
         versionNames = fs
@@ -188,23 +393,46 @@ async function scan(gameRoot, workshopDir, targetLang, { onProgress } = {}) {
       } catch {
         versionNames = []
       }
+
+      // Mod-Objekt anlegen (vor dem Scan, damit es referenziert werden kann)
       const mod = {
         id: `${pid}/${name}`,
         name,
         isBaseGame: false,
-        // Nur die neueste Version (versionNames steht absteigend): ältere
-        // Version-Ordner werden weder gescannt, übersetzt noch exportiert.
         versions: versionNames.slice(0, 1),
         rootPath: toPosix(modDir),
         poster: posterFor(modDir),
         entryCount: 0,
         translatedCount: 0
       }
-      const entries = []
-      for (const version of mod.versions) {
-        const enDir = translateDir(path.join(modDir, version), SOURCE_LANG)
-        entries.push(...scanVersionEntries(mod, version, enDir, targetLang))
+
+      let entries = []
+
+      // Layout-Scanner: welche Translate-Orte existieren?
+      // common → root → neuester Version-Ordner
+
+      // common-Layout prüfen
+      const commonEnDir = path.join(modDir, 'common', 'media', 'lua', 'shared', 'Translate', SOURCE_LANG)
+      if (fs.existsSync(commonEnDir)) {
+        const commonEntries = scanEntriesForDir(mod, 'common', commonEnDir, targetLang, path.join(modDir, 'common'))
+        entries.push(...commonEntries)
       }
+
+      // root-Layout prüfen (nur wenn kein common-Layout)
+      if (!fs.existsSync(commonEnDir)) {
+        const rootEnDir = path.join(modDir, 'media', 'lua', 'shared', 'Translate', SOURCE_LANG)
+        if (fs.existsSync(rootEnDir)) {
+          const rootEntries = scanEntriesForDir(mod, 'root', rootEnDir, targetLang, modDir)
+          entries.push(...rootEntries)
+        }
+      }
+
+      // Version-Ordner scannen
+      for (const version of versionNames.slice(0, 1)) {
+        const enDir = translateDir(path.join(modDir, version), SOURCE_LANG)
+        entries.push(...scanEntriesForDir(mod, version, enDir, targetLang, path.join(modDir, version)))
+      }
+
       summarize(mod, entries)
       mods.push(mod)
       entriesByModId[mod.id] = entries
