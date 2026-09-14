@@ -175,12 +175,10 @@ in der Toolbar. `npm run build` + `npm test` (18) grün. Nächster Punkt: 2.1
   überall grün bleibt.
 
 ## Offene Punkte
-- **LLM-Export/-Import im Editor statt in der Export-View (USER entscheiden):**
-  1.5 sah LLM-Export + Import in der Exchange-View vor; die Nacht-Session hat
-  LLM-Export/Import in die Editor-Toolbar gelegt und die Export-View auf
-  Mod-Export (3.2) umgebaut. Funktioniert, weicht aber vom Plan ab — wenn es
-  anders soll (z. B. LLM-Export zurück in die Export-View, Editor-Button nur
-  als Kurzweg), sagen.
+- **LLM-Export/-Import im Editor (USER-Entscheidung, andere Session):**
+  Gewollt — LLM-Export/Import sitzen in der Editor-Toolbar (nicht in der
+  Export-View, wie 1.5 vorgegeben); LLM-Import steht an beiden Stellen.
+  3.2 (Mod-Export) hat die Export-View. Kein Fix nötig.
 - **3.2 im Fake-Mode vorgezogen:** Mod-Export-View + Route sind fertig und
   getestet; echte Abnahme (echte Pfade, installierbarer Mod) passiert mit 2.1.
   In der TODO bleibt 3.2 offen, hängt formal an 2.1.
