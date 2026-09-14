@@ -36,7 +36,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-ink">
       {/* NavBar */}
-      <nav className="border-b border-line bg-surface px-4 py-2">
+      <nav className="sticky top-0 z-10 border-b border-line bg-surface px-4 py-2">
         <div className="mx-auto flex max-w-4xl items-center justify-between">
           <span className="font-mono text-lg font-bold text-accent">Project Translate</span>
           <div className="flex items-center gap-1">
