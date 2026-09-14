@@ -3,15 +3,13 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-Phase 1 komplett (wartet auf Abnahme der ganzen Phase): Settings-View + Library-View
-(Mods-Übersicht, umbenannt) + Editor-View (zweispaltig: Original rechts readonly,
-Übersetzung links mit Statusring gelb/grün/Akzent, Suche serverseitig, Paginierung
-50/Seite, Mod-Vor/Zurück, Fortschrittsbalken, Speichern via PUT mit Dirty-Tracking)
-+ Export-View (LLM-Export mit Mod-Auswahl/Sprache, LLM-Import mit Vorschau
-matched/unmatched pro Mod, Bestätigung per Modal, Apply). Editor ist eine
-eigene Nav-Seite direkt neben Library; die Auswahl in der Library wirkt
-sofort (Editor liest sie live, kein Save-Button mehr). `npm run build` +
-`npm test` (18) grün. Nächster Punkt: 2.1 (Phase 2 – Durchstich).
+Phase 1 komplett + Phase 3.2 (Mod-Export) im Fake-Mode vorgezogen:
+Export-View zeigt Mod-Export (Mod-Auswahl, wählbarer Zielordner, Zielsprache
+→ POST /api/export/mod, Ergebnis listet pro Mod Zielpfad + geschriebene Dateien)
++ LLM-Import (Vorschau matched/unmatched pro Mod, Apply per Modal). Editor hat
+eigenen Mod-Selektor (checkbox-Sidebar, multi-Mod) und LLM-Export/-Import-Buttons
+in der Toolbar. `npm run build` + `npm test` (18) grün. Nächster Punkt: 2.1
+(Phase 2 – Durchstich).
 
 ## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -105,6 +103,29 @@ sofort (Editor liest sie live, kein Save-Button mehr). `npm run build` +
       starten, `npm run build && npm test` grün, letzter Commit
 
 ## Entscheidungen & Abweichungen
+- **LLM-Export wandert in die Editor-Toolbar (Nacht-Session 14.09):** Der
+  LLM-Export-Button (exportLlm) sitzt jetzt neben Save im Editor und exportiert
+  die dort ausgewählten Mods — die Export-View hat dafür einen echten Mod-Export
+  (POST /api/export/mod) mit wählbarem Zielordner bekommen. Damit ist 3.2 (Mod-
+  Export) im Fake-Mode vorgezogen; die View-Abnahme von 3.2 passiert mit 2.1
+  gegen echte Pfade.
+- **Editor verwaltet eigene Mod-Auswahl (Nacht-Session 14.09):** Der Editor
+  kennt eine Sidebar mit allen Mods (checkbox), initialisiert aus der
+  Library-Auswahl; die Auswahl überlebt View-Wechsel via sessionStorage
+  (`pt_editor_selection`). Die App persistiert die aktive View ebenfalls in
+  sessionStorage (`pt_active_view`) — überlebt Vite-HMR-Reloads nach Server-
+  Neustarts. Vorher (Slices 5/6) las der Editor die Auswahl live von der
+  Library; die Library bleibt aber bei jedem Library-Klick remounted
+  (libraryKey++), deshalb hat der Editor jetzt seinen eigenen Zustand.
+- **Fake-Mode: Disk ist Quelle der Wahrheit (Nacht-Session 14.09):** PUT
+  (Speichern) und Import-Apply triggern im Fake-Mode einen Rescan, der die
+  Fixture-Disk in den Cache spiegelt — der Editor sieht gespeicherte Änderungen
+  sofort. `rescan()` + `rescanning`-Flag in server/index.js. Im echten Modus
+  (Phase 2) bleibt der Scan der einzige Punkt, der die Disk neu einliest.
+- **config.load() schreibt nichts mehr (Nacht-Session 14.09):** Existiert
+  config.json nicht, liefert load() DEFAULTS ohne die Datei anzulegen — nur
+  save() schreibt. Davor landete im Fake-Mode ein config.json mit Steam-Pfaden
+  im Projektroot (liegt noch: config.json, gitignored).
 - **Navigation: 5 Seiten (USER, Slice 5/6):** Editor ist eine eigene Nav-Seite
   direkt rechts neben Library; die Mod-Übersicht heißt „Library". Nav-Reihenfolge:
   Settings | Library | Editor | Export | Design. Die Library-Auswahl wirkt sofort —
@@ -154,6 +175,17 @@ sofort (Editor liest sie live, kein Save-Button mehr). `npm run build` +
   überall grün bleibt.
 
 ## Offene Punkte
+- **LLM-Export/-Import im Editor statt in der Export-View (USER entscheiden):**
+  1.5 sah LLM-Export + Import in der Exchange-View vor; die Nacht-Session hat
+  LLM-Export/Import in die Editor-Toolbar gelegt und die Export-View auf
+  Mod-Export (3.2) umgebaut. Funktioniert, weicht aber vom Plan ab — wenn es
+  anders soll (z. B. LLM-Export zurück in die Export-View, Editor-Button nur
+  als Kurzweg), sagen.
+- **3.2 im Fake-Mode vorgezogen:** Mod-Export-View + Route sind fertig und
+  getestet; echte Abnahme (echte Pfade, installierbarer Mod) passiert mit 2.1.
+  In der TODO bleibt 3.2 offen, hängt formal an 2.1.
+- Altes `config.json` im Projektroot (gitignored) aus Fake-Mode-Tests — beim
+  nächsten echten Start überschrieben; kann auch weg.
 - Smoke-Tests, die `importApply`/`PUT entries` direkt gegen `server/fixtures/`
   rufen, ändern die Fixture-Dateien (DE-Bäume/Backups) — nach solchen Tests
   `git status` auf Fixtures prüfen und mit `git checkout -- server/fixtures`
