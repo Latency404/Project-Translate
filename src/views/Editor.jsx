@@ -58,8 +58,7 @@ export default function Editor({ initialModIds, onReselect }) {
     } catch { /* ignore */ }
   }, [modIds]);
 
-  // --- Load the whole library; the sidebar shows every mod with a checkbox,
-  //     independent of the current selection ("None" must not empty the sidebar) ---
+  // --- Load config + library ---
   useEffect(() => {
     Promise.all([api.getConfig(), api.getMods()])
       .then(([cfg, data]) => {
@@ -72,12 +71,21 @@ export default function Editor({ initialModIds, onReselect }) {
       });
   }, []);
 
-  // Selected mods in selection order
-  const modsMeta = allMods
-    .filter((m) => modIds.includes(m.id))
-    .sort((a, b) => modIds.indexOf(a.id) - modIds.indexOf(b.id));
+  // Sidebar: ALL mods sorted by selection order (selected first, then alphabetical)
+  const sidebarMods = allMods.slice().sort((a, b) => {
+    const aIn = modIds.indexOf(a.id);
+    const bIn = modIds.indexOf(b.id);
+    const aOk = aIn !== -1;
+    const bOk = bIn !== -1;
+    if (aOk && !bOk) return -1;
+    if (!aOk && bOk) return 1;
+    if (aOk && bOk) return aIn - bIn;
+    return a.name.localeCompare(b.name);
+  });
 
-  const modsMetaIdsKey = modsMeta.map((m) => m.id).join("\u0000");
+  // Selected mods only (for entries loading, dirty tracking, etc.)
+  const entryMods = allMods.filter((m) => modIds.includes(m.id));
+  const entryModsKey = entryMods.map((m) => m.id).join("\u0000");
 
   // --- Mod selection helpers ---
   const toggleMod = (id) => {
@@ -99,14 +107,14 @@ export default function Editor({ initialModIds, onReselect }) {
 
   // --- Load entries for every selected mod (recalled on selection/search) ---
   useEffect(() => {
-    if (modsMeta.length === 0) {
+    if (entryMods.length === 0) {
       setEntriesByMod(new Map());
       return;
     }
     let cancelled = false;
     setLoading(true);
     Promise.all(
-      modsMeta.map(async (mod) => {
+      entryMods.map(async (mod) => {
         const data = await api.getEntries(mod.id, {
           page: 1,
           pageSize: 99999,
@@ -130,7 +138,7 @@ export default function Editor({ initialModIds, onReselect }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modsMetaIdsKey, search]);
+  }, [entryModsKey, search]);
 
   // --- Search handler ---
   const handleSearch = (val) => {
@@ -152,8 +160,8 @@ export default function Editor({ initialModIds, onReselect }) {
     }
   }, []);
 
-  // Grouped dirty entries per mod, in selection order
-  const dirtyByMod = modsMeta
+  // Grouped dirty entries per selected mod, in selection order
+  const dirtyByMod = entryMods
     .map((mod) => {
       const ids = new Set((entriesByMod.get(mod.id)?.entries || []).map((e) => e.id));
       return {
@@ -289,15 +297,14 @@ export default function Editor({ initialModIds, onReselect }) {
     );
   }
 
-  // === Main editor — the sidebar lists only the selected mods ===
+  // === Main editor --- sidebar = ALL mods, content = selected mods ===
   return (
-    <div className="flex min-h-[calc(100vh-49px)]">
-      {/* Sidebar: selected mods only, as tall as its content (max. viewport),
-          scrolling internally when the list overflows */}
-      <aside className="w-64 shrink-0 self-start max-h-[calc(100vh-49px)] overflow-y-auto border-r border-line bg-surface p-3">
+    <div className="flex h-[calc(100vh-49px)]">
+      {/* Sidebar: ALL mods with checkbox status, scrollable independently */}
+      <aside className="w-64 shrink-0 self-stretch overflow-y-auto border-r border-line bg-surface p-3">
         <div className="mb-2 flex items-center justify-between">
           <p className="text-xs font-mono font-medium text-muted uppercase">
-            Mods ({modIds.length}/{allMods.length})
+            All mods
           </p>
           <button
             onClick={toggleAllMods}
@@ -307,14 +314,16 @@ export default function Editor({ initialModIds, onReselect }) {
           </button>
         </div>
         <nav className="space-y-1">
-          {modsMeta.map((mod) => (
+          {sidebarMods.map((mod) => (
             <div
               key={mod.id}
-              className="flex items-center gap-2 rounded-md px-2 py-2 transition-colors hover:bg-raised/50"
+              className={`flex items-center gap-2 rounded-md px-2 py-2 transition-colors ${
+                modIds.includes(mod.id) ? "hover:bg-raised/50 bg-raised/30" : "hover:bg-raised/50"
+              }`}
             >
               <input
                 type="checkbox"
-                checked
+                checked={modIds.includes(mod.id)}
                 onChange={() => toggleMod(mod.id)}
                 className="size-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
                 aria-label={`Select ${mod.name}`}
@@ -336,21 +345,21 @@ export default function Editor({ initialModIds, onReselect }) {
         <header className="border-b border-line px-4 py-3">
           <div className="flex items-center gap-3">
             <span className="font-mono text-lg font-bold text-accent">
-              {modsMeta.length === 0
+              {entryMods.length === 0
                 ? "Editor"
-                : modsMeta.length > 1
-                  ? `${modsMeta.length} Mods`
-                  : modsMeta[0]?.name || ""}
+                : entryMods.length > 1
+                  ? `${entryMods.length} Mods`
+                  : entryMods[0]?.name || ""}
             </span>
-            {modsMeta.length === 1 && modsMeta[0].isBaseGame && (
+            {entryMods.length === 1 && entryMods[0].isBaseGame && (
               <Tag tone="base">Base Game</Tag>
             )}
             <div className="flex-1" />
           </div>
-          {modsMeta.length === 1 && (
+          {entryMods.length === 1 && (
             <ProgressBar
-              value={modsMeta[0].translatedCount}
-              max={modsMeta[0].entryCount}
+              value={entryMods[0].translatedCount}
+              max={entryMods[0].entryCount}
               color="dust"
               showValue
             />
@@ -401,7 +410,7 @@ export default function Editor({ initialModIds, onReselect }) {
 
         {/* Entry area — one block per selected mod */}
         <div className="flex-1 overflow-auto">
-          {modsMeta.length === 0 && (
+          {entryMods.length === 0 && (
             <div className="mx-auto max-w-md px-6 py-10">
               <Card title="Editor">
                 <p className="text-sm text-muted">
@@ -417,12 +426,12 @@ export default function Editor({ initialModIds, onReselect }) {
             </div>
           )}
 
-          {modsMeta.length > 0 && loading && (
+          {entryMods.length > 0 && loading && (
             <p className="px-4 py-6 text-sm text-muted">Loading...</p>
           )}
 
-          {modsMeta.length > 0 && !loading &&
-            modsMeta.map((mod, i) => {
+          {entryMods.length > 0 && !loading &&
+            entryMods.map((mod, i) => {
               const info = entriesByMod.get(mod.id);
               const entries = info?.entries || [];
               return (

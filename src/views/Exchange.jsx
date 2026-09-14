@@ -2,38 +2,66 @@ import { useEffect, useState } from "react";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
+import ProgressBar from "../components/ProgressBar.jsx";
 import Tag from "../components/Tag.jsx";
 import * as api from "../api.js";
+
+const STORAGE_KEY = "pt_editor_selection";
+
+function loadStoredIds() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const ids = JSON.parse(raw);
+      if (Array.isArray(ids) && ids.length > 0) return ids;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
 
 export default function Exchange() {
   const [mods, setMods] = useState([]);
   const [targetLang, setTargetLang] = useState("DE");
+  const [selectedIds, setSelectedIds] = useState(() => loadStoredIds() || []);
   const [targetDir, setTargetDir] = useState("");
-  const [selected, setSelected] = useState(new Set());
   const [exportLoading, setExportLoading] = useState(false);
   const [exportOk, setExportOk] = useState(null);
   const [exportErr, setExportErr] = useState("");
 
   // Load data
   useEffect(() => {
-    Promise.all([api.getConfig(), api.getMods()])
-      .then(([cfg, data]) => {
-        setTargetLang(cfg.targetLang || "DE");
-        setMods(data.mods || []);
-      })
-      .catch((err) => {
-        setExportErr(err.message);
-      });
+    api.getMods()
+      .then((data) => setMods(data.mods || []))
+      .catch(() => {});
+  }, []);
+
+  // Load target lang from config
+  useEffect(() => {
+    api.getConfig()
+      .then((cfg) => setTargetLang(cfg.targetLang || "DE"))
+      .catch(() => {});
   }, []);
 
   // Deselect all / select all
   const toggleAll = () => {
-    if (selected.size === 0) {
-      setSelected(new Set(mods.map((m) => m.id)));
+    if (selectedIds.length === 0) {
+      setSelectedIds(mods.map((m) => m.id));
     } else {
-      setSelected(new Set());
+      setSelectedIds([]);
     }
   };
+
+  const selectedMods = mods.filter((m) => selectedIds.includes(m.id));
+
+  // Status calculation
+  const totalEntries = selectedMods.reduce((s, m) => s + m.entryCount, 0);
+  const totalTranslated = selectedMods.reduce((s, m) => s + m.translatedCount, 0);
+  const allReady = selectedMods.length > 0 && selectedMods.every((m) => m.entryCount > 0 && m.entryCount === m.translatedCount);
+  const hasAnyEntry = selectedMods.some((m) => m.entryCount > 0);
+
+  const readyMods = selectedMods.filter((m) => m.entryCount > 0 && m.entryCount === m.translatedCount);
+  const pendingMods = selectedMods.filter((m) => m.entryCount > 0 && m.translatedCount < m.entryCount);
+  const emptyMods = selectedMods.filter((m) => m.entryCount === 0);
 
   // Export
   const handleExport = async () => {
@@ -42,7 +70,7 @@ export default function Exchange() {
     setExportLoading(true);
     try {
       const result = await api.exportMod(
-        Array.from(selected),
+        selectedIds,
         targetDir.trim() || undefined,
         targetLang
       );
@@ -63,42 +91,73 @@ export default function Exchange() {
         </p>
       </header>
 
-      {/* Mod Export */}
-      <Card title="Mod Export" subtitle="Export installable translation mods.">
+      {/* Status section */}
+      <Card title="Export Status" subtitle={`Selected: ${selectedMods.length} of ${mods.length} mods`}>
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={toggleAll}>
-              {selected.size === 0 ? "Select all" : "Clear selection"}
+              {selectedIds.length === 0 ? "Select all" : "Clear selection"}
             </Button>
           </div>
 
-          <div className="space-y-1.5">
-            {mods.map((mod) => (
-              <label
-                key={mod.id}
-                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 transition-colors hover:bg-raised"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.has(mod.id)}
-                  onChange={() => {
-                    setSelected((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(mod.id)) next.delete(mod.id);
-                      else next.add(mod.id);
-                      return next;
-                    });
-                  }}
-                  className="h-4 w-4 rounded border-line bg-raised accent-accent"
-                />
-                <span className="text-sm text-text">{mod.name}</span>
-                {mod.isBaseGame && <Tag tone="base">Base Game</Tag>}
-                <span className="ml-auto font-mono text-xs text-muted">
-                  {mod.entryCount}
-                </span>
-              </label>
-            ))}
-          </div>
+          {selectedMods.length === 0 ? (
+            <p className="text-sm text-muted">
+              No mods selected. Use the Library to select mods for export, or click "Select all".
+            </p>
+          ) : (
+            <>
+              {/* Overall progress */}
+              {hasAnyEntry && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-text">Overall progress</span>
+                    <span className="font-mono text-muted">
+                      {totalTranslated} / {totalEntries}
+                    </span>
+                  </div>
+                  <ProgressBar
+                    value={totalTranslated}
+                    max={totalEntries}
+                    color="dust"
+                    showValue
+                  />
+                </div>
+              )}
+
+              {/* Status cards */}
+              {allReady && (
+                <p className="text-sm text-success">✓ All selected mods are fully translated and ready for export.</p>
+              )}
+
+              {pendingMods.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm text-warning">
+                    {pendingMods.length} mod{pendingMods.length !== 1 ? "s" : ""} not yet complete:
+                  </p>
+                  <div className="max-h-60 space-y-1 overflow-y-auto">
+                    {pendingMods.map((mod) => (
+                      <div
+                        key={mod.id}
+                        className="flex items-center gap-2 rounded px-2 py-1 hover:bg-raised"
+                      >
+                        <span className="flex-1 text-sm text-text">{mod.name}</span>
+                        {mod.isBaseGame && <Tag tone="base">Base Game</Tag>}
+                        <span className="font-mono text-xs text-muted">
+                          {mod.translatedCount}/{mod.entryCount}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {emptyMods.length > 0 && (
+                <p className="text-sm text-muted">
+                  {emptyMods.length} mod{emptyMods.length !== 1 ? "s" : ""} have no translatable entries.
+                </p>
+              )}
+            </>
+          )}
 
           <Input
             label="Target folder"
@@ -127,7 +186,7 @@ export default function Exchange() {
           <div>
             <Button
               variant="primary"
-              disabled={selected.size === 0 || exportLoading}
+              disabled={selectedIds.length === 0 || exportLoading}
               onClick={handleExport}
             >
               {exportLoading ? "Exporting…" : "Export"}
