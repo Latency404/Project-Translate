@@ -3,13 +3,14 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-Phase 1 komplett + Phase 3.2 (Mod-Export) im Fake-Mode vorgezogen:
-Export-View zeigt Mod-Export (Mod-Auswahl, wählbarer Zielordner, Zielsprache
-→ POST /api/export/mod, Ergebnis listet pro Mod Zielpfad + geschriebene Dateien)
-+ LLM-Import (Vorschau matched/unmatched pro Mod, Apply per Modal). Editor hat
-eigenen Mod-Selektor (checkbox-Sidebar, multi-Mod) und LLM-Export/-Import-Buttons
-in der Toolbar. `npm run build` + `npm test` (18) grün. Nächster Punkt: 2.1
-(Phase 2 – Durchstich).
+Phase 1 komplett; 3.2 (Mod-Export) steht VOR — View + Fake-API, aber nicht
+abgenommen: Export-View zeigt nur noch Mod-Export (Mod-Auswahl, wählbarer
+Zielordner, Zielsprache → POST /api/export/mod, Ergebnis pro Mod); LLM-
+Export/-Import lebt ausschließlich im Editor (USER-Entscheidung), die
+Export-View hat keinen LLM-Teil mehr. Editor hat eigenen Mod-Selektor
+(checkbox-Sidebar, multi-Mod). `npm run build` + `npm test` (18) grün.
+Nächster Punkt: 2.1 (Phase 2 – Durchstich), danach 3.2/3.1 gegen echte Daten
+abnehmen.
 
 ## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -176,12 +177,12 @@ in der Toolbar. `npm run build` + `npm test` (18) grün. Nächster Punkt: 2.1
 
 ## Offene Punkte
 - **LLM-Export/-Import im Editor (USER-Entscheidung, andere Session):**
-  Gewollt — LLM-Export/Import sitzen in der Editor-Toolbar (nicht in der
-  Export-View, wie 1.5 vorgegeben); LLM-Import steht an beiden Stellen.
-  3.2 (Mod-Export) hat die Export-View. Kein Fix nötig.
-- **3.2 im Fake-Mode vorgezogen:** Mod-Export-View + Route sind fertig und
-  getestet; echte Abnahme (echte Pfade, installierbarer Mod) passiert mit 2.1.
-  In der TODO bleibt 3.2 offen, hängt formal an 2.1.
+  Gewollt — LLM-Export/Import sitzen ausschließlich in der Editor-Toolbar;
+  die Export-View zeigt nur Mod-Export (3.2), keinen LLM-Teil.
+- **3.2 steht VOR, ist aber kein abgenommener Slice:** View + Fake-API
+  (Route exportMod, exportMod() in api.js) existieren und sind im Fake-Mode
+  getestet; die eigentliche Abnahme (installierbarer Mod, echte Pfade) fehlt
+  und gehört erst ab 2.1.
 - Altes `config.json` im Projektroot (gitignored) aus Fake-Mode-Tests — beim
   nächsten echten Start überschrieben; kann auch weg.
 - Smoke-Tests, die `importApply`/`PUT entries` direkt gegen `server/fixtures/`
