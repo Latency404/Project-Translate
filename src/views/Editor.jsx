@@ -383,7 +383,7 @@ export default function Editor({ initialModIds, onReselect }) {
           </div>
           <Button
             variant="secondary"
-            icon={FileOutput}
+            icon={FileInput}
             onClick={handleLlmExport}
             disabled={modIds.length === 0 || exportLoading}
             title="Export selected mods as LLM JSON (EN originals)"
@@ -392,7 +392,7 @@ export default function Editor({ initialModIds, onReselect }) {
           </Button>
           <Button
             variant="secondary"
-            icon={FileInput}
+            icon={FileOutput}
             onClick={handleImportPreview}
             disabled={importLoading}
             title="Preview LLM import from the import folder"
