@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
-import Modal from "../components/Modal.jsx";
 import Tag from "../components/Tag.jsx";
 import * as api from "../api.js";
 
@@ -14,15 +13,6 @@ export default function Exchange() {
   const [exportLoading, setExportLoading] = useState(false);
   const [exportOk, setExportOk] = useState(null);
   const [exportErr, setExportErr] = useState("");
-
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [preview, setPreview] = useState(null);
-  const [previewErr, setPreviewErr] = useState("");
-
-  const [modalOpen, setModalOpen] = useState(false);
-  const [applyLoading, setApplyLoading] = useState(false);
-  const [applyOk, setApplyOk] = useState(null);
-  const [applyErr, setApplyErr] = useState("");
 
   // Load data
   useEffect(() => {
@@ -64,51 +54,12 @@ export default function Exchange() {
     }
   };
 
-  // Preview
-  const handlePreview = async () => {
-    setPreviewErr("");
-    setPreview(null);
-    setPreviewLoading(true);
-    try {
-      const result = await api.importPreview();
-      setPreview(result);
-    } catch (err) {
-      setPreviewErr(err.message);
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
-
-  // Totals
-  const totalMatched = preview
-    ? Object.values(preview.perMod).reduce((s, p) => s + p.matched, 0)
-    : 0;
-  const totalUnmatched = preview
-    ? Object.values(preview.perMod).reduce((s, p) => s + p.unmatched, 0)
-    : 0;
-
-  // Apply
-  const handleApply = async () => {
-    setApplyErr("");
-    setApplyOk(null);
-    setApplyLoading(true);
-    try {
-      const result = await api.importApply();
-      setApplyOk(result);
-      setModalOpen(false);
-    } catch (err) {
-      setApplyErr(err.message);
-    } finally {
-      setApplyLoading(false);
-    }
-  };
-
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-10">
       <header className="space-y-1">
         <h1 className="font-mono text-2xl font-bold text-accent">Export</h1>
         <p className="text-sm text-muted">
-          Export installable translation mods and import LLM translations.
+          Export installable translation mods.
         </p>
       </header>
 
@@ -206,105 +157,6 @@ export default function Exchange() {
           {exportErr && <p className="text-sm text-danger">{exportErr}</p>}
         </div>
       </Card>
-
-      {/* LLM Import */}
-      <Card title="LLM Import" subtitle="Preview and apply LLM translations.">
-        <div className="space-y-4">
-          <Button
-            variant="secondary"
-            disabled={previewLoading}
-            onClick={handlePreview}
-          >
-            {previewLoading ? "Loading…" : "Load preview"}
-          </Button>
-
-          {preview && (
-            <>
-              {totalMatched === 0 && totalUnmatched === 0 ? (
-                <p className="text-sm text-muted">
-                  No files found in the import folder.
-                </p>
-              ) : (
-                <>
-                  <div className="space-y-1">
-                    {Object.values(preview.perMod).map((pm) => (
-                      <div
-                        key={pm.mod}
-                        className="flex items-center gap-2 rounded px-2 py-1"
-                      >
-                        <span className="flex-1 text-sm text-text">
-                          {pm.mod}
-                        </span>
-                        <span className="font-mono text-sm text-success">
-                          {pm.matched}
-                        </span>
-                        {pm.unmatched > 0 && (
-                          <>
-                            <span className="font-mono text-sm text-warning">
-                              {pm.unmatched}
-                            </span>
-                            <Tag tone="warning">Warning</Tag>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center gap-2 border-t border-line pt-3">
-                    <span className="text-sm font-medium text-text">
-                      Total: {totalMatched} matched, {totalUnmatched} unmatched
-                    </span>
-                  </div>
-
-                  <Button variant="primary" onClick={() => setModalOpen(true)}>
-                    Apply
-                  </Button>
-                </>
-              )}
-            </>
-          )}
-
-          {previewErr && <p className="text-sm text-danger">{previewErr}</p>}
-          {applyOk && (
-            <p className="text-sm text-success">
-              {applyOk.saved} entries applied.
-            </p>
-          )}
-        </div>
-      </Card>
-
-      {/* Confirmation modal */}
-      <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title="Apply import"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-text">
-            {totalMatched} entries will be written to {targetLang} files.{" "}
-            {totalUnmatched > 0 &&
-              `(${totalUnmatched} unmatched will be discarded).`}
-          </p>
-
-          {applyErr && <p className="text-sm text-danger">{applyErr}</p>}
-
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => setModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              disabled={applyLoading}
-              onClick={handleApply}
-            >
-              {applyLoading ? "Applying…" : "Yes, apply"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }
