@@ -127,6 +127,21 @@ app.get('/base-game-poster.jpg', (req, res) => {
   res.type('image/jpeg').sendFile(BASE_POSTER_FILE)
 })
 
+// --- Workshop-Poster im echten Modus (Phase 2) ---
+// modId kommt als Query-Parameter (?m=<modId>) — der modId enthält "/" und
+// " " (PublishedFileID/Name) und würde als Route-Segment Probleme machen.
+// Der Dateipfad wird NICHT aus der URL gelesen, sondern aus dem gecachten Mod
+// (serverseitig erzeugt) — dadurch kein Pfad-Traversing. Nur Bilder (*.png)
+// werden gedient, so wie posterFor() sie anlegt.
+app.get('/mod-poster', (req, res) => {
+  const id = typeof req.query.m === 'string' ? req.query.m : ''
+  const mod = cache ? cache.mods.find((m) => m.id === id) : null
+  const file = mod && mod.poster
+  if (!file || !file.toLowerCase().endsWith('.png')) return fail(res, 404, 'Poster nicht gefunden')
+  if (!fs.existsSync(file)) return fail(res, 404, 'Poster nicht gefunden')
+  res.type('image/png').sendFile(file)
+})
+
 function getMod(res, modId) {
   if (!cache) {
     fail(res, 404, 'Noch kein Scan durchgeführt — POST /api/scan.')
@@ -263,8 +278,8 @@ app.post('/api/export/mod', (req, res) => {
 // jedem Modus über die feste Route /base-game-poster.jpg gelöst wird.
 // Server-Pfad des Posters → API-URL (über schreibgeschütztes Feld `poster`
 // im /api/mods-Response). In Fake-Mode liegt das Poster unter server/fixtures/
-// und wird über /fixtures/ gedient. In echtem Modus fehlt diese Route noch
-// (Phase 2 liefert die echten Pfade).
+// und wird über /fixtures/ gedient. Im echten Modus dient die Route
+// /mod-poster?m=<modId> die Datei von der Disk (s. oben).
 function posterUrl(mod) {
   if (mod.isBaseGame) return '/base-game-poster.jpg'
   if (!mod.poster) return null
@@ -272,7 +287,7 @@ function posterUrl(mod) {
     const rel = path.relative(fake.FIXTURES, mod.poster).split(path.sep).join('/')
     return '/fixtures/' + rel
   }
-  return null
+  return '/mod-poster?m=' + encodeURIComponent(mod.id)
 }
 
 // --- Fake-API: Mod-Poster aus server/fixtures/ über /fixtures/ dienen ---
