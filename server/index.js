@@ -31,6 +31,9 @@ const LLM_ROOT = path.join(EXPORT_ROOT, 'llm')
 const BACKUP_ROOT = path.join(EXPORT_ROOT, 'backups')
 const MOD_EXPORT_DEFAULT = path.join(EXPORT_ROOT, 'mods')
 
+// Fake-Mode: auch für Scan und Save die Fixture-Wurzel verwenden —
+// roots() kennt den Modus, alle Routen nutzen sie. (config.json dient
+// im Fake-Mode nur der targetLang, die Pfade bleiben Fixtures.)
 function roots() {
   if (FAKE) return fake.roots()
   const c = config.load()
@@ -53,6 +56,26 @@ let cache = null // { mods, entriesByModId }
 let scanRunning = false
 let scanProgress = { done: 0, total: 0, current: '' }
 let scanError = null
+
+// Fake-Mode: die Disk (Fixtures) ist die Quelle der Wahrheit. rescan()
+// spiegelt sie in den Cache, damit der Editor (GET /entries) gespeicherte
+// Änderungen sofort sieht. Im echten Modus (Phase 2) ist der Scan bewusst
+// der einzige Punkt, der die Disk neu einliest.
+function rescan() {
+  const r = roots()
+  rescanning = true
+  return scan(r.gameRoot, r.workshopDir, config.load().targetLang)
+    .then((result) => {
+      cache = result
+    })
+    .finally(() => {
+      rescanning = false
+    })
+}
+
+// True, wenn die Disk gerade neu eingelesen wird (rescan) — PUTs, die
+// währenddessen laufen, dürfen den Cache danach nicht alt machen.
+let rescanning = false
 
 app.get('/api/status', (req, res) => {
   const r = roots()
@@ -141,12 +164,23 @@ app.get('/api/mods/:modId/entries', (req, res) => {
 app.put('/api/mods/:modId/entries', (req, res) => {
   const mod = getMod(res, req.params.modId)
   if (!mod) return
+  const wasRescanning = rescanning
+  let result
   try {
-    const result = saveBatch(mod, req.body && req.body.entries, config.load().targetLang, BACKUP_ROOT)
-    res.json(result)
+    result = saveBatch(mod, req.body && req.body.entries, config.load().targetLang, BACKUP_ROOT)
   } catch (err) {
-    fail(res, err.status || 500, err.message || 'Speichern fehlgeschlagen')
+    return fail(res, err.status || 500, err.message || 'Speichern fehlgeschlagen')
   }
+  if (FAKE) {
+    // rescan spiegelt die Disk in den Cache. War zu Beginn des PUTs ein
+    // rescan aktiv, ist sein Snapshot (start < PUT-Schreib) veraltet —
+    // danach erneut einspielen, damit der PUT im Cache landet.
+    void rescan().then(
+      () => { if (wasRescanning) void rescan() },
+      () => {},
+    )
+  }
+  res.json(result)
 })
 
 // --- Config ---
@@ -190,11 +224,22 @@ app.get('/api/import/llm/preview', (req, res) => {
 app.post('/api/import/llm/apply', (req, res) => {
   const dir = importDirOf(req)
   const mods = cache ? cache.mods : []
+  const wasRescanning = rescanning
+  let result
   try {
-    res.json(llm.importApply(dir, mods, config.load().targetLang, BACKUP_ROOT))
+    result = llm.importApply(dir, mods, config.load().targetLang, BACKUP_ROOT)
   } catch (err) {
-    fail(res, err.status || 500, err.message || 'Import fehlgeschlagen')
+    return fail(res, err.status || 500, err.message || 'Import fehlgeschlagen')
   }
+  if (FAKE) {
+    // Wie beim PUT: laufender rescan hätte einen alten Snapshot —
+    // danach erneut einspielen.
+    void rescan().then(
+      () => { if (wasRescanning) void rescan() },
+      () => {},
+    )
+  }
+  res.json(result)
 })
 
 // --- Mod-Export ---

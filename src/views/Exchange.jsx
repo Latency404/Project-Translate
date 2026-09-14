@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
+import Input from "../components/Input.jsx";
 import Modal from "../components/Modal.jsx";
 import Tag from "../components/Tag.jsx";
 import * as api from "../api.js";
@@ -8,6 +9,7 @@ import * as api from "../api.js";
 export default function Exchange() {
   const [mods, setMods] = useState([]);
   const [targetLang, setTargetLang] = useState("DE");
+  const [targetDir, setTargetDir] = useState("");
   const [selected, setSelected] = useState(new Set());
   const [exportLoading, setExportLoading] = useState(false);
   const [exportOk, setExportOk] = useState(null);
@@ -49,7 +51,11 @@ export default function Exchange() {
     setExportOk(null);
     setExportLoading(true);
     try {
-      const result = await api.exportLlm(Array.from(selected), targetLang);
+      const result = await api.exportMod(
+        Array.from(selected),
+        targetDir.trim() || undefined,
+        targetLang
+      );
       setExportOk(result);
     } catch (err) {
       setExportErr(err.message);
@@ -102,12 +108,12 @@ export default function Exchange() {
       <header className="space-y-1">
         <h1 className="font-mono text-2xl font-bold text-accent">Export</h1>
         <p className="text-sm text-muted">
-          Manage LLM export and import for mods.
+          Export installable translation mods and import LLM translations.
         </p>
       </header>
 
-      {/* LLM Export */}
-      <Card title="LLM Export" subtitle="Select mods and language for the export.">
+      {/* Mod Export */}
+      <Card title="Mod Export" subtitle="Export installable translation mods.">
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={toggleAll}>
@@ -143,6 +149,14 @@ export default function Exchange() {
             ))}
           </div>
 
+          <Input
+            label="Target folder"
+            value={targetDir}
+            onChange={(e) => setTargetDir(e.target.value)}
+            hint="Empty = default export/mods"
+            className="font-mono"
+          />
+
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted">
               Target language
@@ -170,15 +184,21 @@ export default function Exchange() {
           </div>
 
           {exportOk && (
-            <div className="space-y-1">
+            <div className="space-y-2">
               <p className="text-sm text-success">
-                {exportOk.written.length} file{exportOk.written.length !== 1 ? "s" : ""} written.
+                {exportOk.results.length} mod{exportOk.results.length !== 1 ? "s" : ""} exported to{" "}
+                <span className="font-mono">{exportOk.targetDir}</span>
               </p>
-              <div className="max-h-40 space-y-0.5 overflow-y-auto">
-                {exportOk.written.map((p) => (
-                  <p key={p} className="font-mono text-xs text-muted">
-                    {p}
-                  </p>
+              <div className="max-h-40 space-y-1 overflow-y-auto">
+                {exportOk.results.map((r) => (
+                  <div key={r.modId} className="space-y-0.5">
+                    <p className="font-mono text-xs text-muted">{r.targetPath}</p>
+                    {r.written.map((p) => (
+                      <p key={p} className="pl-3 font-mono text-xs text-muted">
+                        {p}
+                      </p>
+                    ))}
+                  </div>
                 ))}
               </div>
             </div>

@@ -15,10 +15,23 @@ const VIEWS = [
 ];
 
 export default function App() {
-  const [view, setView] = useState("settings");
-  const [selectedModIds, setSelectedModIds] = useState([]);
-  // Library stays mounted so its selection survives navigating to/from the Editor
+  // Persist the active view in sessionStorage so it survives Vite HMR reloads
+  // (triggered by server restarts during save operations).
+  const [view, setViewState] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem("pt_active_view");
+      if (stored && VIEWS.some((v) => v.key === stored)) return stored;
+    } catch { /* ignore */ }
+    return "settings";
+  });
+  const setView = (v) => {
+    setViewState(v);
+    try { sessionStorage.setItem("pt_active_view", v); } catch { /* ignore */ }
+  };
   const [libraryKey, setLibraryKey] = useState(0);
+  // The Editor owns its own mod selection (persisted via sessionStorage).
+  // initialModIds is only the first-time selection from the Library.
+  const [initialModIds, setInitialModIds] = useState([]);
 
   return (
     <div className="min-h-screen bg-ink">
@@ -33,7 +46,8 @@ export default function App() {
                 size="sm"
                 variant={view === v.key ? "primary" : "secondary"}
                 onClick={() => {
-                  if (v.key === "mods" && view !== "mods") {
+                  // Fresh Library on every navigation to it
+                  if (v.key === "mods") {
                     setLibraryKey((k) => k + 1);
                   }
                   setView(v.key);
@@ -48,17 +62,17 @@ export default function App() {
 
       {/* Content */}
       <main>
-        <div className={view === "mods" ? "" : "hidden"}>
+        {view === "mods" && (
           <Library
             key={libraryKey}
             onGoToSetup={() => setView("settings")}
-            onSelectionChange={setSelectedModIds}
+            onSelectionChange={setInitialModIds}
           />
-        </div>
+        )}
         {view === "settings" && (
           <Setup
             onOpenMods={() => {
-              setLibraryKey((k) => k + 1); // fresh selection for a new scan
+              setLibraryKey((k) => k + 1);
               setView("mods");
             }}
           />
@@ -67,8 +81,7 @@ export default function App() {
         {view === "export" && <Exchange />}
         {view === "editor" && (
           <Editor
-            modIds={selectedModIds}
-            onBack={() => setView("mods")}
+            initialModIds={initialModIds}
             onReselect={() => {
               setLibraryKey((k) => k + 1);
               setView("mods");

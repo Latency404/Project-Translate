@@ -1,74 +1,140 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Save } from "lucide-react";
+import { FileInput, FileOutput, Save } from "lucide-react";
 import * as api from "../api.js";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
+import Modal from "../components/Modal.jsx";
 import ProgressBar from "../components/ProgressBar.jsx";
 import Tag from "../components/Tag.jsx";
 
-export default function Editor({ modIds, onBack, onReselect }) {
+const STORAGE_KEY = "pt_editor_selection";
+
+function loadStoredIds() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const ids = JSON.parse(raw);
+      if (Array.isArray(ids) && ids.length > 0) return ids;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+export default function Editor({ initialModIds, onReselect }) {
+  // --- Mod selection (persisted via sessionStorage) ---
+  const [modIds, setModIds] = useState(() => {
+    return (initialModIds && initialModIds.length > 0)
+      ? initialModIds
+      : loadStoredIds() || [];
+  });
+
   // --- State ---
-  const [modsMeta, setModsMeta] = useState([]);
-  const [activeIdx, setActiveIdx] = useState(0);
+  const [allMods, setAllMods] = useState([]);
   const [error, setError] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const [entries, setEntries] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(50);
+  // --- LLM export / import ---
+  const [targetLang, setTargetLang] = useState("DE");
+  const [exportLoading, setExportLoading] = useState(false);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [applyLoading, setApplyLoading] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+
+  const [entriesByMod, setEntriesByMod] = useState(new Map());
   const [search, setSearch] = useState("");
 
   const [dirty, setDirty] = useState(new Map());
   const [loading, setLoading] = useState(false);
 
-  // --- Load mod metadata ---
+  // --- Persist mod selection ---
   useEffect(() => {
-    if (!modIds || modIds.length === 0) return;
-    api
-      .getMods()
-      .then((data) => {
-        const mods = (data.mods || []).filter((m) => modIds.includes(m.id));
-        setModsMeta(mods);
-        setActiveIdx(0);
+    try {
+      if (modIds.length > 0) {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(modIds));
+      }
+    } catch { /* ignore */ }
+  }, [modIds]);
+
+  // --- Load the whole library; the sidebar shows every mod with a checkbox,
+  //     independent of the current selection ("None" must not empty the sidebar) ---
+  useEffect(() => {
+    Promise.all([api.getConfig(), api.getMods()])
+      .then(([cfg, data]) => {
+        setTargetLang(cfg.targetLang || "DE");
+        setAllMods(data.mods || []);
       })
       .catch((err) => {
         setError(err.message);
-        setModsMeta([]);
+        setAllMods([]);
       });
-  }, [modIds]);
+  }, []);
 
-  // --- Derived active mod ---
-  const activeMod = modsMeta[activeIdx] || null;
+  // Selected mods in selection order
+  const modsMeta = allMods
+    .filter((m) => modIds.includes(m.id))
+    .sort((a, b) => modIds.indexOf(a.id) - modIds.indexOf(b.id));
 
-  // --- Load entries (recalled on mod change, page, search) ---
-  const loadEntries = useCallback(
-    async (p, s) => {
-      if (!activeMod) return;
-      setLoading(true);
-      try {
-        const data = await api.getEntries(activeMod.id, { page: p, pageSize, search: s });
-        setEntries(data.entries || []);
-        setTotal(data.total || 0);
-        setSaveError("");
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [activeMod, pageSize],
-  );
+  const modsMetaIdsKey = modsMeta.map((m) => m.id).join("\u0000");
 
+  // --- Mod selection helpers ---
+  const toggleMod = (id) => {
+    setModIds((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
+    );
+  };
+
+  const allSelected =
+    allMods.length > 0 && allMods.every((m) => modIds.includes(m.id));
+
+  const toggleAllMods = () => {
+    if (allSelected) {
+      setModIds([]);
+    } else {
+      setModIds(allMods.map((m) => m.id));
+    }
+  };
+
+  // --- Load entries for every selected mod (recalled on selection/search) ---
   useEffect(() => {
-    loadEntries(page, search);
-  }, [activeMod, page, search, loadEntries]);
+    if (modsMeta.length === 0) {
+      setEntriesByMod(new Map());
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    Promise.all(
+      modsMeta.map(async (mod) => {
+        const data = await api.getEntries(mod.id, {
+          page: 1,
+          pageSize: 99999,
+          search,
+        });
+        return [mod.id, { entries: data.entries || [], total: data.total || 0 }];
+      }),
+    )
+      .then((pairs) => {
+        if (cancelled) return;
+        setEntriesByMod(new Map(pairs));
+        setSaveError("");
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modsMetaIdsKey, search]);
 
   // --- Search handler ---
   const handleSearch = (val) => {
     setSearch(val);
-    setPage(1);
   };
 
   // --- Dirty tracking: dirty only when the value differs from the loaded one ---
@@ -86,45 +152,102 @@ export default function Editor({ modIds, onBack, onReselect }) {
     }
   }, []);
 
+  // Grouped dirty entries per mod, in selection order
+  const dirtyByMod = modsMeta
+    .map((mod) => {
+      const ids = new Set((entriesByMod.get(mod.id)?.entries || []).map((e) => e.id));
+      return {
+        mod,
+        items: Array.from(dirty.entries()).filter(([id]) => ids.has(id)),
+      };
+    })
+    .filter((g) => g.items.length > 0);
+
   const dirtySize = dirty.size;
 
-  // --- Save ---
+  // --- Save all selected mods one after another ---
   const handleSave = async () => {
-    if (!activeMod) return;
-    const entriesArr = Array.from(dirty.entries());
+    const withDirty = dirtyByMod.filter((g) => g.items.length > 0);
+    if (withDirty.length === 0) return;
+    setSaving(true);
+    setSaveError("");
+    for (const { mod, items } of withDirty) {
+      try {
+        await api.saveEntries(
+          mod.id,
+          items.map(([entryId, translation]) => ({ entryId, translation })),
+        );
+      } catch (err) {
+        setSaveError(`${mod.name}: ${err.message}`);
+      }
+    }
+    setDirty(new Map());
+    setSaving(false);
+    // Reload entries + updated counts
+    setEntriesByMod(new Map());
+    setSearch((s) => s); // no-op, keep value
+    api
+      .getMods()
+      .then((data) => setAllMods(data.mods || []))
+      .catch(() => {});
+  };
+
+  // --- LLM export: selected mods to the configured target language ---
+  const handleLlmExport = async () => {
+    if (modIds.length === 0) return;
+    setExportLoading(true);
     setSaveError("");
     try {
-      await api.saveEntries(activeMod.id, entriesArr.map(([entryId, translation]) => ({ entryId, translation })));
-      setDirty(new Map());
-      loadEntries(page, search);
-      // Reload mod metadata for updated counts
-      api
-        .getMods()
-        .then((data) => {
-          const mods = (data.mods || []).filter((m) => modIds.includes(m.id));
-          setModsMeta(mods);
-        })
-        .catch(() => {});
+      await api.exportLlm(modIds, targetLang);
+      const data = await api.getMods();
+      setAllMods(data.mods || []);
     } catch (err) {
       setSaveError(err.message);
+    } finally {
+      setExportLoading(false);
     }
   };
 
-  // --- Navigation ---
-  const goToPrev = () => {
-    setPage(1);
-    setSearch("");
-    setActiveIdx((prev) => (prev - 1 + modsMeta.length) % modsMeta.length);
+  // --- LLM import: preview first, apply with confirmation ---
+  const handleImportPreview = async () => {
+    setImportLoading(true);
+    setSaveError("");
+    try {
+      const result = await api.importPreview();
+      setImportPreview(result);
+      setImportModalOpen(true);
+    } catch (err) {
+      setSaveError(err.message);
+    } finally {
+      setImportLoading(false);
+    }
   };
 
-  const goToNext = () => {
-    setPage(1);
-    setSearch("");
-    setActiveIdx((prev) => (prev + 1) % modsMeta.length);
+  const handleImportApply = async () => {
+    setApplyLoading(true);
+    setSaveError("");
+    try {
+      await api.importApply();
+      setImportModalOpen(false);
+      setImportPreview(null);
+      // Reload entries + counts so the editor shows the imported translations
+      const data = await api.getMods();
+      setAllMods(data.mods || []);
+      setEntriesByMod(new Map());
+      setSearch((s) => s);
+    } catch (err) {
+      setSaveError(err.message);
+    } finally {
+      setApplyLoading(false);
+    }
   };
 
-  // --- Max pages ---
-  const maxPage = Math.max(1, Math.ceil(total / pageSize));
+  const totalMatched = importPreview
+    ? Object.values(importPreview.perMod).reduce((s, p) => s + p.matched, 0)
+    : 0;
+  const totalUnmatched = importPreview
+    ? Object.values(importPreview.perMod).reduce((s, p) => s + p.unmatched, 0)
+    : 0;
 
   // --- Entry-by-entry dirty check ---
   const getEntryTranslation = useCallback(
@@ -141,14 +264,12 @@ export default function Editor({ modIds, onBack, onReselect }) {
     [dirty],
   );
 
-  // === Empty state: no mod selected ===
-  if (!modIds || modIds.length === 0) {
+  // === Error state (e.g. no scan) ===
+  if (error && allMods.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
         <Card title="Editor">
-          <p className="text-sm text-muted">
-            No mod selected. Select mods in the Library.
-          </p>
+          <p className="text-sm text-danger">{error}</p>
           <div className="mt-4">
             <Button variant="secondary" onClick={onReselect}>
               Go to Library
@@ -159,178 +280,306 @@ export default function Editor({ modIds, onBack, onReselect }) {
     );
   }
 
-  // === Error state (e.g. no scan) ===
-  if (error && modsMeta.length === 0) {
+  // === Loading mods ===
+  if (allMods.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
-        <Card title="Editor">
-          <p className="text-sm text-danger">{error}</p>
-          <div className="mt-4">
-            <Button variant="secondary" onClick={onBack}>
-              Back to Library
+        <p className="text-center text-muted">Loading...</p>
+      </div>
+    );
+  }
+
+  // === Main editor — the sidebar is always visible (all mods with checkboxes) ===
+  return (
+    <div className="flex min-h-[calc(100vh-49px)]">
+      {/* Sidebar: full library with multi-select */}
+      <aside className="w-64 shrink-0 overflow-y-auto border-r border-line bg-surface p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-mono font-medium text-muted uppercase">
+            Mods ({modIds.length}/{allMods.length})
+          </p>
+          <button
+            onClick={toggleAllMods}
+            className="rounded-md px-2 py-0.5 text-xs font-mono text-muted transition-colors hover:bg-raised hover:text-text"
+          >
+            {allSelected ? "None" : "All"}
+          </button>
+        </div>
+        <nav className="space-y-1">
+          {allMods.map((mod) => {
+            const isSelected = modIds.includes(mod.id);
+            return (
+              <div
+                key={mod.id}
+                className={`flex items-center gap-2 rounded-md px-2 py-2 transition-colors ${
+                  isSelected ? "" : "opacity-50"
+                } hover:bg-raised/50`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleMod(mod.id)}
+                  className="size-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
+                  aria-label={`Select ${mod.name}`}
+                />
+                <div className="min-w-0 flex-1 text-left text-sm">
+                  <span className={`block truncate ${isSelected ? "text-text" : "text-muted"}`}>
+                    {mod.name}
+                  </span>
+                  <span className="mt-0.5 block text-xs font-mono text-muted">
+                    {mod.translatedCount} / {mod.entryCount}
+                  </span>
+                </div>
+                {isSelected && (
+                  <button
+                    onClick={() => toggleMod(mod.id)}
+                    className="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono text-muted transition-colors hover:bg-raised hover:text-danger"
+                    title="Remove from editor"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </nav>
+      </aside>
+
+      {/* Main content */}
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Header */}
+        <header className="border-b border-line px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-lg font-bold text-accent">
+              {modsMeta.length === 0
+                ? "Editor"
+                : modsMeta.length > 1
+                  ? `${modsMeta.length} Mods`
+                  : modsMeta[0]?.name || ""}
+            </span>
+            {modsMeta.length === 1 && modsMeta[0].isBaseGame && (
+              <Tag tone="base">Base Game</Tag>
+            )}
+            <div className="flex-1" />
+          </div>
+          {modsMeta.length === 1 && (
+            <ProgressBar
+              value={modsMeta[0].translatedCount}
+              max={modsMeta[0].entryCount}
+              color="dust"
+              showValue
+            />
+          )}
+        </header>
+
+        {/* Search + Save + LLM Export/Import */}
+        <div className="flex items-center gap-3 border-b border-line px-4 py-3">
+          <div className="flex-1">
+            <Input
+              placeholder="Search... (all mods)"
+              value={search}
+              onChange={(e) => handleSearch(e.target.value)}
+            />
+          </div>
+          <Button
+            variant="secondary"
+            icon={FileOutput}
+            onClick={handleLlmExport}
+            disabled={modIds.length === 0 || exportLoading}
+            title="Export selected mods as LLM JSON (EN originals)"
+          >
+            {exportLoading ? "Exporting..." : "Export"}
+          </Button>
+          <Button
+            variant="secondary"
+            icon={FileInput}
+            onClick={handleImportPreview}
+            disabled={importLoading}
+            title="Preview LLM import from the import folder"
+          >
+            {importLoading ? "Loading..." : "Import"}
+          </Button>
+          <Button
+            variant="primary"
+            icon={Save}
+            onClick={handleSave}
+            disabled={dirtySize === 0 || saving}
+          >
+            {saving ? "Saving..." : dirtySize === 0 ? "Save" : `Save (${dirtySize})`}
+          </Button>
+        </div>
+
+        {/* Error display */}
+        {saveError && (
+          <p className="px-4 pt-2 text-sm text-danger">{saveError}</p>
+        )}
+
+        {/* Entry area — one block per selected mod */}
+        <div className="flex-1 overflow-auto">
+          {modsMeta.length === 0 && (
+            <div className="mx-auto max-w-md px-6 py-10">
+              <Card title="Editor">
+                <p className="text-sm text-muted">
+                  No mods selected. Check boxes in the sidebar or go to the Library.
+                </p>
+                <div className="mt-4 flex gap-2">
+                  <Button onClick={toggleAllMods}>Select all</Button>
+                  <Button variant="secondary" onClick={onReselect}>
+                    Go to Library
+                  </Button>
+                </div>
+              </Card>
+            </div>
+          )}
+
+          {modsMeta.length > 0 && loading && (
+            <p className="px-4 py-6 text-sm text-muted">Loading...</p>
+          )}
+
+          {modsMeta.length > 0 && !loading &&
+            modsMeta.map((mod, i) => {
+              const info = entriesByMod.get(mod.id);
+              const entries = info?.entries || [];
+              return (
+                <div key={mod.id}>
+                  {/* Mod block header: visual separation between mods */}
+                  <div
+                    className={`sticky top-0 z-10 border-b-2 border-accent bg-surface px-4 py-2 ${
+                      i > 0 ? "border-t-4 border-t-line" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-bold text-text">
+                        {mod.name}
+                      </span>
+                      {mod.isBaseGame && <Tag tone="base">Base Game</Tag>}
+                      <span className="text-xs font-mono text-muted">
+                        {info?.total ?? entries.length} entries
+                      </span>
+                      <div className="flex-1" />
+                      <ProgressBar
+                        value={mod.translatedCount}
+                        max={mod.entryCount}
+                        color="dust"
+                        showValue
+                        className="w-40"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Column headers per mod block */}
+                  <div className="border-b border-line bg-raised px-4 py-2 text-xs font-mono font-medium text-muted">
+                    <div className="flex items-center">
+                      <span className="w-[30%] shrink-0">Key</span>
+                      <span className="w-[40%] shrink-0">Translation</span>
+                      <span className="w-[30%]">Original</span>
+                    </div>
+                  </div>
+
+                  {entries.length === 0 ? (
+                    search !== "" ? (
+                      <p className="px-4 py-3 text-sm text-muted">
+                        No entries for this search.
+                      </p>
+                    ) : (
+                      <p className="px-4 py-3 text-sm text-muted">
+                        No entries.
+                      </p>
+                    )
+                  ) : (
+                    entries.map((entry) => {
+                      const currentTranslation = getEntryTranslation(entry);
+                      const entryDirty = isEntryDirty(entry);
+
+                      let statusClass = "outline-success";
+                      if (entryDirty) statusClass = "outline-accent";
+                      else if (!entry.translation) statusClass = "outline-warning";
+
+                      return (
+                        <div
+                          key={entry.id}
+                          className="flex items-center border-b border-line last:border-b-0 hover:bg-raised/30"
+                        >
+                          <span className="w-[30%] shrink-0 truncate px-4 py-2 text-xs font-mono text-text">
+                            {entry.key}
+                          </span>
+                          <span className="w-[40%] shrink-0 px-2 py-2">
+                            <input
+                              value={currentTranslation}
+                              onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation)}
+                              placeholder="Translation..."
+                              className={`h-9 w-full min-w-[20ch] rounded-md border border-line bg-raised px-3 text-sm text-text placeholder:text-muted/60 outline-2 outline-offset-1 focus-visible:outline-2 ${statusClass}`}
+                            />
+                          </span>
+                          <span className="w-[30%] truncate px-4 py-2 text-sm font-mono text-text">
+                            {entry.original}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              );
+            })}
+        </div>
+      </main>
+
+      {/* Import confirmation modal */}
+      <Modal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        title="Apply LLM import"
+      >
+        <div className="space-y-4">
+          {totalMatched === 0 && totalUnmatched === 0 ? (
+            <p className="text-sm text-muted">
+              No files found in the import folder.
+            </p>
+          ) : (
+            <>
+              <div className="space-y-1">
+                {Object.values(importPreview.perMod).map((pm) => (
+                  <div
+                    key={pm.mod}
+                    className="flex items-center gap-2 rounded px-2 py-1"
+                  >
+                    <span className="flex-1 text-sm text-text">{pm.mod}</span>
+                    <span className="font-mono text-sm text-success">
+                      {pm.matched}
+                    </span>
+                    {pm.unmatched > 0 && (
+                      <span className="font-mono text-sm text-warning">
+                        {pm.unmatched}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm text-text">
+                {totalMatched} entries will be written to {targetLang} files.
+                {totalUnmatched > 0 &&
+                  ` (${totalUnmatched} unmatched will be discarded).`}
+              </p>
+            </>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setImportModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={applyLoading || totalMatched === 0}
+              onClick={handleImportApply}
+            >
+              {applyLoading ? "Applying..." : "Yes, apply"}
             </Button>
           </div>
-        </Card>
-      </div>
-    );
-  }
-
-  // === Loading mods ===
-  if (modsMeta.length === 0) {
-    return (
-      <div className="mx-auto max-w-2xl px-6 py-10">
-        <p className="text-center text-muted">Loading…</p>
-      </div>
-    );
-  }
-
-  // === Main editor ===
-  return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      {/* Header */}
-      <header className="mb-4">
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-xl font-bold text-accent">
-            {activeMod?.name || ""}
-          </span>
-          {activeMod?.isBaseGame && <Tag tone="base">Base Game</Tag>}
-          <div className="flex-1" />
-          {/* Mod navigation */}
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={ChevronLeft}
-            onClick={goToPrev}
-            disabled={modsMeta.length <= 1}
-          >
-            Previous
-          </Button>
-          <span className="font-mono text-sm text-muted">
-            {activeIdx + 1} / {modsMeta.length}
-          </span>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={ChevronRight}
-            onClick={goToNext}
-            disabled={modsMeta.length <= 1}
-          >
-            Next
-          </Button>
         </div>
-        {/* Progress bar */}
-        {activeMod && (
-          <ProgressBar
-            value={activeMod.translatedCount}
-            max={activeMod.entryCount}
-            color="dust"
-            showValue
-          />
-        )}
-      </header>
-
-      {/* Page status */}
-      <p className="mb-2 text-xs text-muted">
-        {total} entries — {activeMod?.translatedCount || 0} translated
-      </p>
-
-      {/* Search + Save */}
-      <div className="mb-4 flex items-center gap-3">
-        <div className="flex-1">
-          <Input
-            placeholder="Search…"
-            value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-          />
-        </div>
-        <Button
-          variant="primary"
-          icon={Save}
-          onClick={handleSave}
-          disabled={dirtySize === 0}
-        >
-          {dirtySize === 0 ? "Save" : `Save (${dirtySize})`}
-        </Button>
-      </div>
-
-      {/* Error display */}
-      {saveError && (
-        <p className="mb-2 text-sm text-danger">{saveError}</p>
-      )}
-
-      {/* Entry list */}
-      {loading && <p className="text-sm text-muted">Loading…</p>}
-
-      {!loading && entries.length === 0 && total === 0 && search !== "" && (
-        <p className="text-sm text-muted">No entries for this search.</p>
-      )}
-
-      <div className="grid max-h-[50vh] grid-cols-2 gap-x-6 gap-y-2 overflow-y-auto rounded-lg border border-line bg-surface p-4">
-        {entries.map((entry) => {
-          const currentTranslation = getEntryTranslation(entry);
-          const entryDirty = isEntryDirty(entry);
-
-          // Status ring: yellow = missing, green = present, accent = unsaved change
-          let statusClass = "outline-success";
-          if (entryDirty) statusClass = "outline-accent";
-          else if (!entry.translation) statusClass = "outline-warning";
-
-          return (
-            <div key={entry.id} className="flex flex-col gap-1 sm:flex-row sm:gap-4 sm:items-start">
-              {/* Left: Translation */}
-              <div className="flex-1">
-                <label className="mb-1.5 block text-xs font-mono text-muted">
-                  {entry.key}
-                </label>
-                <input
-                  value={currentTranslation}
-                  onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation)}
-                  placeholder="Translation…"
-                  className={`h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text placeholder:text-muted/60 outline-2 outline-offset-1 focus-visible:outline-2 ${statusClass}`}
-                />
-              </div>
-              {/* Right: Original (readonly) */}
-              <div className="flex-1">
-                <label className="mb-1.5 block text-xs font-mono text-muted">
-                  Original
-                </label>
-                <div className="rounded-md bg-raised p-2">
-                  <p className="whitespace-pre-wrap break-words text-sm text-text font-mono">
-                    {entry.original}
-                  </p>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Pagination */}
-      <footer className="mt-4 flex items-center justify-between border-t border-line pt-3">
-        <span className="text-xs font-mono text-muted">
-          Page {page} of {maxPage}
-        </span>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={ChevronLeft}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-          >
-            Back
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={ChevronRight}
-            onClick={() => setPage((p) => Math.min(maxPage, p + 1))}
-            disabled={page >= maxPage}
-          >
-            Next
-          </Button>
-        </div>
-      </footer>
+      </Modal>
     </div>
   );
 }

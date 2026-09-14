@@ -67,6 +67,13 @@ export function exportLlm(modIds, targetLang) {
   });
 }
 
+export function exportMod(modIds, targetDir, targetLang) {
+  return request("/api/export/mod", {
+    method: "POST",
+    body: JSON.stringify({ modIds, targetDir, targetLang }),
+  });
+}
+
 export function importPreview(dir) {
   return request(
     `/api/import/llm/preview${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`,

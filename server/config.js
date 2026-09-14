@@ -18,6 +18,11 @@ const DEFAULTS = {
 const SOURCE_LANG = 'EN'
 
 function load() {
+  // config.json existieren lassen: existiert die Datei nicht, gibt load()
+  // DEFAULTS zurück, OHNE die Datei anzulegen — nur save() schreibt.
+  // (Davor hat load() DEFAULTS persistiert, wodurch im Fake-Mode ein
+  // config.json mit Steam-Pfaden im Projektroot landete.)
+  if (!fs.existsSync(CONFIG_PATH)) return { ...DEFAULTS }
   try {
     const raw = fs.readFileSync(CONFIG_PATH, 'utf8')
     const parsed = JSON.parse(raw)

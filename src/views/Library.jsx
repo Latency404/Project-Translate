@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Check, LayoutGrid, Search } from "lucide-react";
 import * as api from "../api.js";
 import Button from "../components/Button.jsx";
@@ -19,13 +19,49 @@ export default function Library({ onGoToSetup, onSelectionChange }) {
     onSelectionChange && onSelectionChange(Array.from(selected));
   }, [selected, onSelectionChange]);
 
-  // Load data
+  // Load data. If the API hasn't been scanned yet (e.g. after a server
+  // restart during dev), automatically trigger a scan and retry once it
+  // finishes.
+  const [autoScanning, setAutoScanning] = useState(false);
+
+  const doScanAndLoad = useCallback(async () => {
+    setAutoScanning(true);
+    try {
+      await api.startScan();
+      // Poll until the scan completes
+      const timer = setInterval(async () => {
+        try {
+          const st = await api.getStatus();
+          if (!st.scanRunning) {
+            clearInterval(timer);
+            const data = await api.getMods();
+            setMods(data.mods || []);
+          }
+        } catch {
+          clearInterval(timer);
+        } finally {
+          setAutoScanning(false);
+        }
+      }, 1000);
+    } catch (err) {
+      setError(err.message);
+      setAutoScanning(false);
+    }
+  }, []);
+
   useEffect(() => {
     api
       .getMods()
       .then((data) => setMods(data.mods || []))
-      .catch((err) => setError(err.message));
-  }, []);
+      .catch((err) => {
+        // 404 means no scan yet — try to auto-scan
+        if (err.message && err.message.includes('Scan')) {
+          doScanAndLoad();
+        } else {
+          setError(err.message);
+        }
+      });
+  }, [doScanAndLoad]);
 
   // Filter by search text
   const filtered =
@@ -92,11 +128,18 @@ export default function Library({ onGoToSetup, onSelectionChange }) {
     );
   }
 
-  // === Loading state ===
+  // === Loading state (includes auto-scan) ===
   if (mods.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
-        <p className="text-center text-muted">Loading…</p>
+        {autoScanning ? (
+          <div className="text-center space-y-2">
+            <p className="text-muted">Scanning mods…</p>
+            <ProgressBar value={0} max={1} color="dust" className="w-40 mx-auto" />
+          </div>
+        ) : (
+          <p className="text-center text-muted">Loading…</p>
+        )}
       </div>
     );
   }

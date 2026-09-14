@@ -92,7 +92,7 @@ test('GET /api/config liefert Defaults (DE)', async () => {
   assert.ok(json.workshopDir.startsWith('C:/'))
 })
 
-test('Scan: 4 Mods mit entryCount, Basisspiel dabei', async () => {
+test('Scan: 5 Mods mit entryCount, Basisspiel dabei', async () => {
   const scan = await api('POST', '/scan')
   assert.equal(scan.status, 202)
   const deadline = Date.now() + 10000
@@ -102,14 +102,15 @@ test('Scan: 4 Mods mit entryCount, Basisspiel dabei', async () => {
     if (Date.now() > deadline) throw new Error('Scan beendet nicht')
     await new Promise((r) => setTimeout(r, 50))
   }
-  assert.equal((await api('GET', '/status')).json.modCount, 4)
+  assert.equal((await api('GET', '/status')).json.modCount, 5)
 
   const { status, json } = await api('GET', '/mods')
   assert.equal(status, 200)
   const mods = json.mods
-  assert.equal(mods.length, 4)
+  assert.equal(mods.length, 5)
   const names = mods.map((m) => m.name)
   assert.ok(names.includes('Project Zomboid (Base Game)'))
+  assert.ok(names.includes('More Traits'))
   for (const m of mods) assert.ok(m.entryCount > 0, `entryCount für ${m.name}`)
 
   const base = mods.find((m) => m.id === 'BASE')
@@ -123,7 +124,13 @@ test('Scan: 4 Mods mit entryCount, Basisspiel dabei', async () => {
   assert.ok(coffee)
   assert.deepEqual(coffee.versions, ['42.20']) // nur die neueste Version
   assert.equal(coffee.entryCount, 11) // 42.20 (ContextMenu 5 + IG_UI 6)
-  assert.equal(coffee.translatedCount, 10) // 42.20 DE (4 + 6)
+  assert.equal(coffee.translatedCount, 11) // 42.20 DE (5 + 6)
+
+  const traits = mods.find((m) => m.id === '1299328280/More Traits')
+  assert.ok(traits)
+  assert.deepEqual(traits.versions, ['42.20'])
+  assert.equal(traits.entryCount, 3)
+  assert.equal(traits.translatedCount, 2)
 })
 
 test('GET /api/mods/:modId/entries — Pagination + Suche + id-Format', async () => {
