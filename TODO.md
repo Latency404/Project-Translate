@@ -3,13 +3,11 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-**Aktueller Stand:** Phasen 2–3 fertig. 2.2 (echtes Speichern mit Backup) abgenommen
-gegen echte Steam-Pfade: gespeicherter Wert überlebt Neustart, alte DE-Datei liegt in
-`export/backups/<stempel>/`, Rechtefehler (read-only Datei) liefert 403 mit sauberer
-deutscher Meldung inkl. exaktem Zielpfad, die der Editor in `saveError` anzeigt.
-`npm start` dient gebautes Frontend (Express-Static aus `dist/` + SPA-Catchall) und
-API zusammen auf :3100 — verifiziert mit echtem Scan (453 Mods); `npm run build` +
-`npm test` (37) grün. Nächstes: Phase 4 (4.1 Duplikate zusammenführen).
+**Aktueller Stand:** Phasen 2–3 fertig. Neue Entscheidung (2026-09-15, USER):
+Editor, Export und Library teilen eine gemeinsame Mod-Auswahl — die
+Library-Auswahl (mit neuem Lock-Button gegen versehentliches Abwählen) steuert
+Editor-Sidebar und Export-View. `npm run build` + `npm test` (37) grün.
+Nächstes: Phase 4 (4.1 Duplikate zusammenführen).
 
 ## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -117,14 +115,16 @@ API zusammen auf :3100 — verifiziert mit echtem Scan (453 Mods); `npm run buil
   (POST /api/export/mod) mit wählbarem Zielordner bekommen. Damit ist 3.2 (Mod-
   Export) im Fake-Mode vorgezogen; die View-Abnahme von 3.2 passiert mit 2.1
   gegen echte Pfade.
-- **Editor verwaltet eigene Mod-Auswahl (Nacht-Session 14.09):** Der Editor
-  kennt eine Sidebar mit allen Mods (checkbox), initialisiert aus der
-  Library-Auswahl; die Auswahl überlebt View-Wechsel via sessionStorage
-  (`pt_editor_selection`). Die App persistiert die aktive View ebenfalls in
-  sessionStorage (`pt_active_view`) — überlebt Vite-HMR-Reloads nach Server-
-  Neustarts. Vorher (Slices 5/6) las der Editor die Auswahl live von der
-  Library; die Library bleibt aber bei jedem Library-Klick remounted
-  (libraryKey++), deshalb hat der Editor jetzt seinen eigenen Zustand.
+- **Eine gemeinsame Mod-Auswahl (USER, 2026-09-15):** Editor, Export und
+  Library teilen eine einzige Auswahl (sessionStorage `pt_library_selected`) —
+  Editor-Sidebar und Export-View zeigen nur die ausgewählten Mods, keine
+  eigenständige Editor-Auswahl mehr (alter Key `pt_editor_selection` ist weg).
+  Library hat einen Lock-Button (`pt_library_locked`): gesperrt ignorieren
+  Karten-Klicks und „All" die Auswahl — auch im Editor (Sidebar-Checkboxes
+  disabled, Label „Selected (locked)"). App.jsx verdrahtet die Auswahl nicht
+  mehr (keine initialModIds/ onSelectionChange).
+- **Editor verwaltet eigene Mod-Auswahl (Nacht-Session 14.09):** [ersetzt —
+  siehe Auswahl-Verbund oben, 2026-09-15]
 - **Disk ist immer die Quelle der Wahrheit (2.2, 2026-09-15):** PUT (Speichern)
   und Import-Apply triggern in BEIDEN Modi einen Rescan, der die Disk in den
   Cache spiegelt — der Editor sieht gespeicherte Änderungen sofort (vorher nur
