@@ -3,17 +3,14 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-**Aktueller Stand:** Phase 3 in Arbeit; 3.1 (LLM-Export/-Import echt) und 3.2
-(Mod-Export echt) fertig. Mod-Export erzeugt jetzt installierbare Mods für ALLE
-Layouts: common-Layouts, root-Layouts (Translate am Mod-Root), reine common-Mods
-(ohne Versionsordner → kein game_version) und dual (common + Version); JSON und
-TXT (Lua-Translate, `writeLua`-Long-Strings). `layoutLocations()` in mod-export.js
-wiederholt die scanner.js-Traversal (common exklusiv mit root, dann Versionen).
-Gegen die echte Steam-Installation verifiziert: SwapIt (common+42.0, UI.json +
-UI_DE.txt), More Traits (Root + 42.20, beide Bäume, 8 Dateien), Radio-Mod-Layout.
-Exchange-View (Zielordner-Feld) und POST /api/export/mod existieren seit dem
-Fake-Mode-Vorgriff. `npm test` (31) + `npm run build` grün. Nächstes: 3.3
-(Finales Produktions-Setup) — 2.2 (echtes Speichern mit Backup) hängt noch offen.
+**Aktueller Stand:** Phase 3 fertig. 3.1 (LLM-Export/-Import echt), 3.2 (Mod-Export
+echt) und 3.3 (Produktions-Setup) abgenommen. `npm start` dient gebautes Frontend
+(Express-Static aus `dist/` + SPA-Catchall) und API zusammen auf :3100 — verifiziert
+mit echtem Scan (453 Mods) und Library-Ansicht im Browser; `npm run build` + `npm test`
+(31) grün. Nächstes: Phase 4 (4.1 Duplikate zusammenführen). Offener Punkt aus Phase 2:
+2.2 (echtes Speichern mit Backup) — 3.1/3.2 hängen laut TODO davon ab; die
+`saveBatch`/Backup-Logik in `entries.js` steht aber seit 3.1 und wurde im E2E mit
+Import-Apply (mit Backup) geübt.
 
 ## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -61,7 +58,7 @@ Fake-Mode-Vorgriff. `npm test` (31) + `npm run build` grün. Nächstes: 3.3
       fertig wenn: Eintrag im echten Mod speichern überlebt Neustart, alte Datei liegt
       in export/backups/, Rechtefehler (nicht Admin) wird sauber im UI gemeldet
 
-## Phase 3 – Funktionen [in Arbeit]
+## Phase 3 – Funktionen [fertig]
 - [x] 3.1 LLM-Export/-Import echt · selbst · braucht 2.1
       fertig wenn: Export erzeugt eine Datei pro Mod im richtigen Format
       (Versionen im Datei-Key), Import-Vorschau zuordnet korrekt, Apply schreibt
@@ -70,7 +67,7 @@ Fake-Mode-Vorgriff. `npm test` (31) + `npm run build` grün. Nächstes: 3.3
       fertig wenn: `POST /api/export/mod` erzeugt kompletten installierbaren
       Übersetzungs-Mod (mod.info pro Version, Translate/`<LANG>`/-Bäume, icon.png),
       Zielordner wählbar, View zeigt Export-Dialog mit Ordnerauswahl
-- [ ] 3.3 Finales Produktions-Setup · selbst · braucht 3.1, 3.2
+- [x] 3.3 Finales Produktions-Setup · selbst · braucht 3.1, 3.2
       fertig wenn: `npm start` — Express dient gebautes Frontend + API auf :3100,
       `npm run build` grün, kein Dev-Server nötig
 
@@ -201,6 +198,10 @@ Fake-Mode-Vorgriff. `npm test` (31) + `npm run build` grün. Nächstes: 3.3
 - **3.2: View + Fake-API-Vorgriff (14.09)** ist mit dem echten Slice 3.2 (15.09)
   abgeschlossen — Route, exportMod(), Exchange-View mit Zielordner und die
   Abnahme gegen echte Pfade stehen jetzt.
+- **2.2 ist funktional, aber offiziell nicht abgenommen:** `saveBatch` mit
+  Backup-Logik steht in `entries.js` (seit 3.1) und Import-Apply schreibt real
+  mit Backup — aber die Abnahme (Editor-Speichern überlebt Neustart, Rechtefehler
+  wird sauber im UI gemeldet) wurde nie als eigener Schritt durchgeführt.
 - Altes `config.json` im Projektroot (gitignored) aus Fake-Mode-Tests — beim
   nächsten echten Start überschrieben; kann auch weg.
 - Smoke-Tests, die `importApply`/`PUT entries` direkt gegen `server/fixtures/`
