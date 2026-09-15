@@ -1,15 +1,29 @@
 // Mod-Export: erzeugt einen installierbaren Übersetzungs-Mod.
 //
 // Ziel: <targetDir>/<ModName>-<targetLang>/
-//   mod.info                                   (am Root, game_version = höchste Version)
+//   mod.info                                   (am Root, game_version = höchste Version;
+//                                              fehlt bei reinen common/root-Layouts und
+//                                              beim Basisspiel)
 //   icon.png                                   (falls die Quelle eine hat)
-//   <version>/media/lua/shared/Translate/<targetLang>/<Kategorie>.json
-// Es werden nur übersetzte Einträge der NEUESTEN Version exportiert
-// (translation !== null). Ältere Versionen werden nicht exportiert.
-// Leere Dateien werden nicht erzeugt.
+//   [common/][<version>/]media/lua/shared/Translate/<targetLang>/<Datei>
+//
+// Es werden nur übersetzte Einträge exportiert (non-empty String-Value, der auch
+// in der EN-Datei existiert). Layout-Traversal wie scanner.scan():
+// common → root (nur wenn kein common) → Versionen. JSON und TXT (Lua-Translate)
+// werden unterstützt; TXT wird als Lua-Table serialisiert. Leere Dateien werden
+// nicht erzeugt.
 const fs = require('node:fs')
 const path = require('node:path')
-const { versionDirOf, toPosix } = require('./scanner')
+const {
+  versionDirOf,
+  translateDir,
+  toPosix,
+  readFlatMap,
+  readTxtMap,
+  targetFileName,
+  SOURCE_LANG
+} = require('./scanner')
+const { writeLua } = require('./entries')
 
 // Höchste Version: numerisch segmentweise vergleichen (42.20 > 42.15 > 42).
 function highestVersion(versions) {
@@ -41,6 +55,27 @@ function writeJson(filePath, obj) {
   fs.writeFileSync(filePath, JSON.stringify(obj, null, 4) + '\n', 'utf8')
 }
 
+// Übersetzungs-Stellen eines Mods: [{ rel, vdir }] — rel ist das Pfad-Prefix im
+// exportierten Mod ('' für root/Base, 'common', Versionsnummer), vdir der
+// Quell-Translate-Root. Gleiche Reihenfolge wie scanner.scan():
+// common (exklusiv mit root), root nur ohne common, dann die Versionen.
+function layoutLocations(mod) {
+  if (mod.isBaseGame) {
+    return [{ rel: '', vdir: mod.rootPath }]
+  }
+  const locs = []
+  const commonDir = path.join(mod.rootPath, 'common')
+  if (fs.existsSync(translateDir(commonDir, SOURCE_LANG))) {
+    locs.push({ rel: 'common', vdir: commonDir })
+  } else if (fs.existsSync(translateDir(mod.rootPath, SOURCE_LANG))) {
+    locs.push({ rel: '', vdir: mod.rootPath })
+  }
+  for (const v of mod.versions) {
+    locs.push({ rel: v, vdir: versionDirOf(mod, v) })
+  }
+  return locs
+}
+
 // Ein Mod exportieren. Liest die targetLang-Dateien direkt aus dem Mod (Pre-Fill
 // und gespeicherte Werte sind identisch = die Werte der Datei).
 function exportMod(mod, targetLang, targetDir) {
@@ -48,8 +83,8 @@ function exportMod(mod, targetLang, targetDir) {
   fs.mkdirSync(outRoot, { recursive: true })
   const written = []
 
-  // mod.info am Root (Einordnung: ein mod.info, game_version = höchste Version).
-  // Das Basisspiel hat keinen Version-Ordner → kein game_version-Feld.
+  // mod.info am Root. game_version = höchste Version; bei reinen common/root-
+  // Layouts (versions leer) und beim Basisspiel fehlt das Feld.
   const version = mod.isBaseGame ? null : highestVersion(mod.versions)
   const infoLines = [
     `name=${mod.name} Translation (${targetLang})`,
@@ -58,7 +93,7 @@ function exportMod(mod, targetLang, targetDir) {
   ].filter(Boolean)
   const infoPath = path.join(outRoot, 'mod.info')
   fs.writeFileSync(infoPath, infoLines.join('\n') + '\n', 'utf8')
-  written.push(toPosix(path.relative(targetDir, infoPath)))
+  written.push(toPosix('mod.info'))
 
   // icon.png falls die Quelle eine hat.
   if (mod.poster) {
@@ -66,55 +101,53 @@ function exportMod(mod, targetLang, targetDir) {
       const src = path.join(path.dirname(mod.poster), candidate)
       if (fs.existsSync(src)) {
         fs.copyFileSync(src, path.join(outRoot, 'icon.png'))
-        written.push(toPosix(path.relative(targetDir, path.join(outRoot, 'icon.png'))))
+        written.push('icon.png')
         break
       }
     }
   }
 
-  // Übersetzte Einträge pro Version.
-  for (const v of mod.versions) {
-    const vdir = versionDirOf(mod, v)
-    const tgtDir = path.join(vdir, 'media', 'lua', 'shared', 'Translate', targetLang)
-    if (!fs.existsSync(tgtDir)) continue
-    const enDir = path.join(vdir, 'media', 'lua', 'shared', 'Translate', 'EN')
-    let names = []
+  // Übersetzte Einträge pro Stelle (common / root / Versionen).
+  for (const { rel, vdir } of layoutLocations(mod)) {
+    const enDir = translateDir(vdir, SOURCE_LANG)
+    const tgtDir = translateDir(vdir, targetLang)
+    let names
     try {
-      names = fs.readdirSync(tgtDir).filter((f) => f.endsWith('.json')).sort()
+      names = fs.readdirSync(enDir).sort()
     } catch {
       continue
     }
     for (const f of names) {
-      const obj = (() => {
-        try {
-          return JSON.parse(fs.readFileSync(path.join(tgtDir, f), 'utf8'))
-        } catch {
-          return null
-        }
-      })()
-      if (!obj || typeof obj !== 'object') continue
-      const en = (() => {
-        try {
-          return JSON.parse(fs.readFileSync(path.join(enDir, f), 'utf8'))
-        } catch {
-          return null
-        }
-      })()
-      // Nur Keys, die auch in EN existieren (unmatched-Keys aus Import verwerfen).
+      const isTxt = f.toLowerCase().endsWith('.txt')
+      const isJson = f.toLowerCase().endsWith('.json')
+      if (!isTxt && !isJson) continue
+      // EN-Datei (tolerant: Trailing Comma / Lua-Keys, TXT: Lua-Translate) —
+      // die Quelle für die gültigen Keys.
+      const en = isTxt ? readTxtMap(path.join(enDir, f)) : readFlatMap(path.join(enDir, f))
+      if (!en) continue
+      // Zieldatei: JSON identisch, TXT _EN → _<TGT>.
+      const tgtFileName = targetFileName(f, targetLang, enDir)
+      const tgtPath = path.join(tgtDir, tgtFileName)
+      if (!fs.existsSync(tgtPath)) continue
+      const tgt = isTxt ? readTxtMap(tgtPath) : readFlatMap(tgtPath)
+      if (!tgt) continue
+      // Nur übersetzte Keys, die auch in EN existieren (unmatched verwerfen).
       const out = {}
-      for (const [k, val] of Object.entries(obj)) {
-        if (typeof val === 'string' && val !== '' && en && k in en) out[k] = val
+      for (const [k, val] of Object.entries(tgt)) {
+        if (typeof val === 'string' && val !== '' && k in en) out[k] = val
       }
       if (!Object.keys(out).length) continue
-      // Basisspiel: kein Version-Ordner, Translate direkt am Mod-Root
-      const rel = mod.isBaseGame
-        ? path.join('media', 'lua', 'shared', 'Translate', targetLang, f)
-        : path.join(v, 'media', 'lua', 'shared', 'Translate', targetLang, f)
-      writeJson(path.join(outRoot, rel), out)
-      written.push(toPosix(rel))
+      const relPath = path.join(rel, 'media', 'lua', 'shared', 'Translate', targetLang, tgtFileName)
+      if (isTxt) {
+        // Lua-Tabelle heißt nach dem targetLang-Dateinamen: Sandbox_DE.txt → Sandbox_DE.
+        writeLua(path.join(outRoot, relPath), tgtFileName.slice(0, -4), out)
+      } else {
+        writeJson(path.join(outRoot, relPath), out)
+      }
+      written.push(toPosix(relPath))
     }
   }
   return { modId: mod.id, targetPath: toPosix(outRoot), written }
 }
 
-module.exports = { exportMod, highestVersion }
+module.exports = { exportMod, highestVersion, layoutLocations }
