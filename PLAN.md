@@ -14,11 +14,11 @@ oder Theme — außer ein Punkt hier verlangt es ausdrücklich.
   den Browser-Save-Dialog, LLM-Import mit Vorschau und Bestätigung, Mod-Export als
   gebündelter Übersetzungs-Mod.
 
-Erledigt an diesem Tag: **A1–A3** (Datenverlust), **B2** (Library-Poster),
+Erledigt an diesem Tag: **A1–A3** (Datenverlust), **B1** (Editor-Nachladen), **B2** (Library-Poster),
 **C1–C4** (B42-konforme mod.info), **D1** (doppelte Export-Logik), **E2**
 (Config-Validierung), **E8** (Vite-Warnung).
 
-Noch offen: **B1** (Editor lädt beim Scrollen nach), **C5** (Abnahme im Spiel — nur
+Noch offen: **C5** (Abnahme im Spiel — nur
 der Nutzer kann das), **D2/D3** (Reste, Quellsprache), **E1**, **E3–E7**.
 
 Testabdeckung: Backend solide. Nicht abgedeckt: die Routen `POST /api/export/mod`
@@ -68,7 +68,12 @@ Braucht A2, damit der Zustand eindeutig ist.
 
 ## Phase B – Skalierung auf die echte Mod-Zahl
 
-### B1 Editor lädt und rendert alles auf einmal
+### B1 Editor lädt und rendert alles auf einmal [erledigt 2026-09-16]
+Gelöst mit seitenweisem Nachladen (200 pro Anfrage) und einem IntersectionObserver
+am Ende jedes Mod-Blocks. Geprüft an 453 echten Mods und am Basisspiel mit 47.239
+Einträgen. Sortierung lädt den Bestand der sichtbaren Mods einmalig vollständig nach
+(Basisspiel rund vier Sekunden), weil eine einzelne Seite sich nicht korrekt über den
+ganzen Bestand sortieren lässt; ohne Sortierung bleibt das Scrollen schnell.
 `src/views/Editor.jsx:183` fordert `pageSize: 99999` für **jeden** ausgewählten Mod an
 und rendert jede Zeile ins DOM. Die API kann bereits paginieren und suchen
 (`server/index.js:158-176`, Default 50, Maximum 500). Bei einer großen Auswahl —
