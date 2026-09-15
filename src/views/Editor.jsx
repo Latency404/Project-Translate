@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileInput, FileOutput, Save } from "lucide-react";
 import * as api from "../api.js";
 import Button from "../components/Button.jsx";
@@ -16,19 +16,41 @@ const UNIVERSE_KEY = "pt_library_selected";
 // Library. Persisted in its own key so per-mod visibility survives view
 // switches without touching the Library selection at all.
 const VISIBLE_KEY = "pt_editor_visible";
-// Unsaved edits (entryId -> translation). Persisted so a view switch (the
-// Editor is unmounted by App.jsx) doesn't silently drop them. Loaded ids are
-// validated against the freshly loaded entries below — a rescan can make an
-// entryId stale, and saving against a path that no longer exists must not
-// happen.
+// Unsaved edits (entryId -> { modId, value }). Persisted so a view switch (the
+// Editor is unmounted by App.jsx) doesn't silently drop them. modId is
+// recorded at edit time — grouping edits by mod for saving never depends on
+// what happens to be loaded in the DOM (see dirtyByMod below).
 const DIRTY_KEY = "pt_editor_dirty";
+
+// Nachladen beim Scrollen statt „alles auf einmal":
+// - Ohne aktive Sortierung holt jedes Mod-Block sein eigenes Fenster
+//   (Server-Pagination, PAGE_SIZE pro Anfrage) und lädt beim Erreichen des
+//   unteren Rands nach — der Server filtert (search) und paginiert bereits.
+// - Mit aktiver Sortierung ist eine Seite für sich genommen nicht sortierbar
+//   (die alphabetisch erste Zeile kann auf einer späteren Seite liegen) — der
+//   ganze (such-gefilterte) Bestand des Mods wird einmalig geholt (mehrere
+//   Anfragen à PAGE_SIZE) und dann clientseitig sortiert. Damit das nicht
+//   wieder zehntausende DOM-Zeilen erzeugt, wird davon weiterhin nur ein
+//   Fenster gerendert; „unten ankommen" vergrößert dieses Fenster aus dem
+//   bereits geladenen Array (keine Netzwerkanfrage mehr nötig).
+const PAGE_SIZE = 200;
 
 function loadStoredDirty() {
   try {
     const raw = sessionStorage.getItem(DIRTY_KEY);
     if (raw) {
       const pairs = JSON.parse(raw);
-      if (Array.isArray(pairs)) return new Map(pairs);
+      if (Array.isArray(pairs)) {
+        // Alte Form (vor dem Nachladen-Umbau) war [id, "Wert"] — modId war
+        // implizit „was gerade geladen ist". Migriert als modId: null; eine
+        // spätere Effekt (s.u.) füllt das nach, sobald der Mod bekannt ist.
+        return new Map(
+          pairs.map(([id, val]) => [
+            id,
+            val && typeof val === "object" ? val : { modId: null, value: val },
+          ]),
+        );
+      }
     }
   } catch { /* ignore */ }
   return new Map();
@@ -43,6 +65,37 @@ function loadUniverseIds() {
     }
   } catch { /* ignore */ }
   return [];
+}
+
+// Pure, wiederverwendbar (auch im memoisierten ModEntryList unten): sortiert
+// eine Liste geladener Einträge nach Key/Translation/Original. `dirty` liefert
+// den LIVE-Wert einer noch ungespeicherten Übersetzung, damit Tippen während
+// aktiver Sortierung-nach-Translation die Reihenfolge konsistent hält.
+function sortEntries(entries, sort, dirty) {
+  if (!sort || entries.length <= 1) return entries;
+  const { field, dir } = sort;
+  const factor = dir === "asc" ? 1 : -1;
+  const val = (e) => {
+    if (field === "key") return String(e.key ?? "");
+    if (field === "translation") {
+      const d = dirty.get(e.id);
+      const t = d ? d.value : e.translation;
+      return t === null || t === undefined ? "" : String(t);
+    }
+    return String(e.original ?? "");
+  };
+  return [...entries].sort((a, b) =>
+    val(a) < val(b) ? -factor : val(a) > val(b) ? factor : 0,
+  );
+}
+
+function currentTranslationOf(entry, dirty) {
+  const d = dirty.get(entry.id);
+  return d ? d.value : entry.translation;
+}
+
+function isDirtyEntry(entry, dirty) {
+  return dirty.has(entry.id);
 }
 
 // Sortable column header (Key / Translation / Original). Shared `sort`
@@ -64,6 +117,89 @@ function SortHeader({ field, label, className, sort, onCycle }) {
         {arrow}
       </span>
     </button>
+  );
+}
+
+// One mod's rows. A separate component so useMemo can skip re-sorting on
+// every keystroke elsewhere in the Editor (a re-render of the parent alone
+// does not re-run this memo unless this mod's own props changed).
+function ModEntryList({ mod, info, search, sort, dirty, updateDirty, observerRef }) {
+  const sortActive = sort !== null;
+  const displayEntries = useMemo(() => {
+    if (!sortActive) return info.entries;
+    return sortEntries(info.entries, sort, dirty).slice(0, info.renderCount);
+  }, [
+    info.entries,
+    info.renderCount,
+    sortActive,
+    sort && sort.field,
+    sort && sort.dir,
+    // Nur bei Sortierung nach Translation muss ein Tastendruck neu sortieren
+    // (Key/Original ändern sich durch Tippen nicht) — sonst bliebe `dirty`
+    // hier ein unnötig teurer Abhängigkeits-Trigger für jeden Mod-Block.
+    sortActive && sort.field === "translation" ? dirty : null,
+  ]);
+
+  const total = info.total ?? info.entries.length;
+  const hasMore = sortActive
+    ? info.renderCount < info.entries.length
+    : !info.fetchedAll;
+
+  const sentinelRef = (node) => {
+    if (node && observerRef.current) observerRef.current.observe(node);
+  };
+
+  if (total === 0) {
+    return (
+      <p className="px-4 py-3 text-sm text-muted">
+        {search !== "" ? "No entries for this search." : "No entries."}
+      </p>
+    );
+  }
+
+  return (
+    <>
+      {displayEntries.map((entry) => {
+        const currentTranslation = currentTranslationOf(entry, dirty);
+        const entryDirty = isDirtyEntry(entry, dirty);
+
+        let statusClass = "outline-success";
+        if (entryDirty) statusClass = "outline-accent";
+        else if (!entry.translation) statusClass = "outline-warning";
+
+        return (
+          <div
+            key={entry.id}
+            className="flex items-center border-b border-line last:border-b-0 hover:bg-raised/30"
+          >
+            <span className="w-[30%] shrink-0 truncate px-4 py-2 text-xs font-mono text-text">
+              {entry.key}
+            </span>
+            <span className="w-[40%] shrink-0 px-2 py-2">
+              <input
+                value={currentTranslation}
+                onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation, mod.id)}
+                placeholder="Translation..."
+                className={`h-9 w-full min-w-[20ch] rounded-md border border-line bg-raised px-3 text-sm text-text placeholder:text-muted/60 outline-2 outline-offset-1 focus-visible:outline-2 ${statusClass}`}
+              />
+            </span>
+            <span className="w-[30%] truncate px-4 py-2 text-sm font-mono text-text">
+              {entry.original}
+            </span>
+          </div>
+        );
+      })}
+      {hasMore && (
+        <div
+          ref={sentinelRef}
+          data-mod-id={mod.id}
+          data-sentinel-mode={sortActive ? "reveal" : "page"}
+          className="px-4 py-3 text-xs font-mono text-muted"
+        >
+          {info.fetching ? "Loading more..." : "Loading more..."}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -107,19 +243,34 @@ export default function Editor({ onReselect }) {
   const [importText, setImportText] = useState(null);
   const fileInputRef = useRef(null);
 
+  // entriesByMod: Map(modId -> { entries, total, renderCount, fetchedAll, fetching }).
+  // entries ist NICHT mehr zwangsläufig der volle Bestand — siehe PAGE_SIZE-
+  // Kommentar oben.
   const [entriesByMod, setEntriesByMod] = useState(new Map());
   const [search, setSearch] = useState("");
   // Column sort for Key / Translation / Original (asc | desc); null = server order.
   const [sort, setSort] = useState(null);
+  const sortActive = sort !== null;
 
   const [dirty, setDirty] = useState(() => loadStoredDirty());
   const [loading, setLoading] = useState(false);
   // Bumped after save/import: the entries effect depends on this, so the
   // list reloads after a save (the no-op setSearch() trick below is gone).
   const [reloadKey, setReloadKey] = useState(0);
-  // Guards the one-time pruning of stale dirty ids after the first entries
-  // load post-mount (see the entries effect below).
-  const dirtyPrunedRef = useRef(false);
+
+  // Refs mirroring the latest state for use inside async callbacks
+  // (loadMoreEntries) without re-creating that callback on every change.
+  const entriesByModRef = useRef(entriesByMod);
+  useEffect(() => {
+    entriesByModRef.current = entriesByMod;
+  }, [entriesByMod]);
+  const searchRef = useRef(search);
+  useEffect(() => {
+    searchRef.current = search;
+  }, [search]);
+  // Guards against firing a second network page-fetch for the same mod while
+  // one is already in flight (the scroll sentinel can re-intersect quickly).
+  const fetchingRef = useRef(new Set());
 
   // --- Load config + library ---
   useEffect(() => {
@@ -198,7 +349,12 @@ export default function Editor({ onReselect }) {
     setVisibleIds(allVisible ? [] : [...universeIds]);
   };
 
-  // --- Load entries for the full Library selection (recalled on search) ---
+  // --- Load entries for the full Library selection ---
+  // Without an active sort: one page per mod (server-paginated + searched);
+  // more pages are fetched on demand by loadMoreEntries (scroll sentinel).
+  // With an active sort: the whole (search-filtered) stock of each mod is
+  // fetched up front — see the PAGE_SIZE comment — because a partial page
+  // cannot be sorted correctly on its own.
   useEffect(() => {
     const mods = universe;
     if (mods.length === 0) {
@@ -209,40 +365,50 @@ export default function Editor({ onReselect }) {
     setLoading(true);
     Promise.all(
       mods.map(async (mod) => {
-        const data = await api.getEntries(mod.id, {
-          page: 1,
-          pageSize: 99999,
-          search,
-        });
-        return [mod.id, { entries: data.entries || [], total: data.total || 0 }];
+        if (sortActive) {
+          let all = [];
+          let total = Infinity;
+          let page = 1;
+          let guard = 0;
+          while (all.length < total && guard < 1000) {
+            const data = await api.getEntries(mod.id, { page, pageSize: PAGE_SIZE, search });
+            total = data.total ?? 0;
+            const batch = data.entries || [];
+            all = all.concat(batch);
+            if (batch.length === 0) break;
+            page += 1;
+            guard += 1;
+          }
+          return [
+            mod.id,
+            {
+              entries: all,
+              total,
+              renderCount: Math.min(all.length, PAGE_SIZE),
+              fetchedAll: true,
+              fetching: false,
+            },
+          ];
+        }
+        const data = await api.getEntries(mod.id, { page: 1, pageSize: PAGE_SIZE, search });
+        const entries = data.entries || [];
+        const total = data.total ?? 0;
+        return [
+          mod.id,
+          {
+            entries,
+            total,
+            renderCount: entries.length,
+            fetchedAll: entries.length >= total,
+            fetching: false,
+          },
+        ];
       }),
     )
       .then((pairs) => {
         if (cancelled) return;
         setEntriesByMod(new Map(pairs));
         setSaveError("");
-        // One-time prune (per mount) of dirty ids restored from sessionStorage:
-        // a rescan can remove or rename entries, leaving stale entryIds that
-        // would otherwise try to save against paths that no longer exist.
-        if (!dirtyPrunedRef.current) {
-          dirtyPrunedRef.current = true;
-          const validIds = new Set();
-          for (const [, info] of pairs) {
-            for (const entry of info.entries) validIds.add(entry.id);
-          }
-          setDirty((prev) => {
-            let changed = false;
-            const next = new Map();
-            for (const [id, value] of prev) {
-              if (validIds.has(id)) {
-                next.set(id, value);
-              } else {
-                changed = true;
-              }
-            }
-            return changed ? next : prev;
-          });
-        }
       })
       .catch((err) => {
         if (!cancelled) setError(err.message);
@@ -254,7 +420,145 @@ export default function Editor({ onReselect }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadModsKey, search, reloadKey]);
+  }, [loadModsKey, search, reloadKey, sortActive]);
+
+  // --- Prune stale dirty ids, but ONLY once a mod's full (unfiltered) stock
+  // is actually known (entries.length reaches the server-reported total) ---
+  // A rescan can remove/rename an entry, leaving a stale entryId that would
+  // fail to save (its EN file is gone). Pruning it early — before the mod is
+  // fully loaded — would instead throw away perfectly valid edits on entries
+  // that simply haven't scrolled into view yet, which is exactly the data
+  // loss B1 must not (re-)introduce. `search !== ""` means the loaded set is
+  // filtered, not the whole stock, so it never qualifies as "fully known".
+  useEffect(() => {
+    if (search !== "") return;
+    setDirty((prev) => {
+      let next = null;
+      for (const [modId, info] of entriesByMod) {
+        const total = info.total ?? Infinity;
+        if (info.entries.length < total) continue; // not fully known yet
+        const validIds = new Set(info.entries.map((e) => e.id));
+        for (const [id, val] of prev) {
+          if (val.modId === modId && !validIds.has(id)) {
+            if (!next) next = new Map(prev);
+            next.delete(id);
+          }
+        }
+      }
+      return next || prev;
+    });
+  }, [entriesByMod, search]);
+
+  // --- Backward-compat: fill in modId for dirty entries restored from an
+  // older sessionStorage shape (modId: null) once we can identify their mod
+  // from loaded entries. Never deletes anything — only annotates. ---
+  useEffect(() => {
+    if (entriesByMod.size === 0) return;
+    setDirty((prev) => {
+      let next = null;
+      for (const [id, val] of prev) {
+        if (val.modId != null) continue;
+        for (const [modId, info] of entriesByMod) {
+          if (info.entries.some((e) => e.id === id)) {
+            if (!next) next = new Map(prev);
+            next.set(id, { modId, value: val.value });
+            break;
+          }
+        }
+      }
+      return next || prev;
+    });
+  }, [entriesByMod]);
+
+  // --- Infinite scroll: one shared IntersectionObserver, one sentinel per
+  // mod block (see ModEntryList). `root` is the Editor's own scroll
+  // container, not the browser viewport — the entry area scrolls on its own. ---
+  const scrollContainerRef = useRef(null);
+  const observerRef = useRef(null);
+
+  // Next network page for a mod (non-sort mode only — see revealMore for the
+  // sort-mode counterpart, which needs no network call).
+  const loadMoreEntries = useCallback((modId) => {
+    if (fetchingRef.current.has(modId)) return;
+    const info = entriesByModRef.current.get(modId);
+    if (!info || info.fetchedAll) return;
+    fetchingRef.current.add(modId);
+    setEntriesByMod((prev) => {
+      const cur = prev.get(modId);
+      if (!cur) return prev;
+      const next = new Map(prev);
+      next.set(modId, { ...cur, fetching: true });
+      return next;
+    });
+    const nextPage = Math.floor(info.entries.length / PAGE_SIZE) + 1;
+    api
+      .getEntries(modId, { page: nextPage, pageSize: PAGE_SIZE, search: searchRef.current })
+      .then((data) => {
+        setEntriesByMod((prev) => {
+          const cur = prev.get(modId);
+          if (!cur) return prev;
+          const merged = cur.entries.concat(data.entries || []);
+          const total = data.total ?? cur.total;
+          const next = new Map(prev);
+          next.set(modId, {
+            ...cur,
+            entries: merged,
+            total,
+            renderCount: merged.length,
+            fetching: false,
+            fetchedAll: merged.length >= total,
+          });
+          return next;
+        });
+      })
+      .catch((err) => {
+        setEntriesByMod((prev) => {
+          const cur = prev.get(modId);
+          if (!cur) return prev;
+          const next = new Map(prev);
+          next.set(modId, { ...cur, fetching: false });
+          return next;
+        });
+        setSaveError(err.message);
+      })
+      .finally(() => {
+        fetchingRef.current.delete(modId);
+      });
+  }, []);
+
+  // Sort-mode reveal: the full sorted array is already in memory, so this
+  // just widens the render window — no network round-trip.
+  const revealMore = useCallback((modId) => {
+    setEntriesByMod((prev) => {
+      const cur = prev.get(modId);
+      if (!cur || cur.renderCount >= cur.entries.length) return prev;
+      const next = new Map(prev);
+      next.set(modId, {
+        ...cur,
+        renderCount: Math.min(cur.entries.length, cur.renderCount + PAGE_SIZE),
+      });
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const root = scrollContainerRef.current;
+    const observer = new IntersectionObserver(
+      (observedEntries) => {
+        for (const oe of observedEntries) {
+          if (!oe.isIntersecting) continue;
+          const modId = oe.target.getAttribute("data-mod-id");
+          const mode = oe.target.getAttribute("data-sentinel-mode");
+          if (!modId) continue;
+          if (mode === "reveal") revealMore(modId);
+          else loadMoreEntries(modId);
+        }
+      },
+      { root, rootMargin: "600px 0px" },
+    );
+    observerRef.current = observer;
+    return () => observer.disconnect();
+  }, [loadMoreEntries, revealMore]);
 
   // --- Search handler ---
   const handleSearch = (val) => {
@@ -262,7 +566,7 @@ export default function Editor({ onReselect }) {
   };
 
   // --- Dirty tracking: dirty only when the value differs from the loaded one ---
-  const updateDirty = useCallback((id, translation, original) => {
+  const updateDirty = useCallback((id, translation, original, modId) => {
     const value = translation === null ? "" : String(translation);
     setNotice("");
     if (value === original) {
@@ -273,20 +577,26 @@ export default function Editor({ onReselect }) {
         return next;
       });
     } else {
-      setDirty((prev) => new Map(prev).set(id, value));
+      setDirty((prev) => {
+        const next = new Map(prev);
+        next.set(id, { modId, value });
+        return next;
+      });
     }
   }, []);
 
   // Grouped dirty entries per SELECTED mod (visibility-independent: a hidden
-  // mod keeps its edits savable — hiding is display-only).
+  // mod keeps its edits savable — hiding is display-only). Grouping uses the
+  // modId recorded on each edit — it never depends on what is currently
+  // loaded/rendered, so an edit on an entry that has since scrolled out of
+  // the loaded window is still found and saved.
   const dirtyByMod = sidebarMods
-    .map((mod) => {
-      const ids = new Set((entriesByMod.get(mod.id)?.entries || []).map((e) => e.id));
-      return {
-        mod,
-        items: Array.from(dirty.entries()).filter(([id]) => ids.has(id)),
-      };
-    })
+    .map((mod) => ({
+      mod,
+      items: Array.from(dirty.entries())
+        .filter(([, val]) => val.modId === mod.id)
+        .map(([id, val]) => [id, val.value]),
+    }))
     .filter((g) => g.items.length > 0);
 
   const dirtySize = dirty.size;
@@ -425,21 +735,6 @@ export default function Editor({ onReselect }) {
     ? Object.values(importPreview.perMod).reduce((s, p) => s + p.unmatched, 0)
     : 0;
 
-  // --- Entry-by-entry dirty check ---
-  const getEntryTranslation = useCallback(
-    (entry) => {
-      return dirty.has(entry.id) ? dirty.get(entry.id) : entry.translation;
-    },
-    [dirty],
-  );
-
-  const isEntryDirty = useCallback(
-    (entry) => {
-      return dirty.has(entry.id);
-    },
-    [dirty],
-  );
-
   // --- Column sort: click a header to toggle asc → desc → (server order) ---
   const cycleSort = (field) => {
     setSort((prev) => {
@@ -448,23 +743,6 @@ export default function Editor({ onReselect }) {
       }
       return { field, dir: "asc" };
     });
-  };
-
-  const sortEntries = (entries) => {
-    if (!sort || entries.length <= 1) return entries;
-    const { field, dir } = sort;
-    const factor = dir === "asc" ? 1 : -1;
-    const val = (e) => {
-      if (field === "key") return String(e.key ?? "");
-      if (field === "translation") {
-        const t = dirty.has(e.id) ? dirty.get(e.id) : e.translation;
-        return t === null || t === undefined ? "" : String(t);
-      }
-      return String(e.original ?? "");
-    };
-    return [...entries].sort((a, b) =>
-      val(a) < val(b) ? -factor : val(a) > val(b) ? factor : 0,
-    );
   };
 
   // === Error state (e.g. no scan) ===
@@ -625,7 +903,7 @@ export default function Editor({ onReselect }) {
         )}
 
         {/* Entry area — one block per selected mod */}
-        <div className="flex-1 overflow-auto">
+        <div ref={scrollContainerRef} className="flex-1 overflow-auto">
           {entryMods.length === 0 && (
             <div className="mx-auto max-w-md px-6 py-10">
               <Card title="Editor">
@@ -656,9 +934,15 @@ export default function Editor({ onReselect }) {
           )}
 
           {entryMods.length > 0 && !loading &&
-            entryMods.map((mod, i) => {
-              const info = entriesByMod.get(mod.id);
-              const entries = info?.entries || [];
+            entryMods.map((mod) => {
+              const info = entriesByMod.get(mod.id) || {
+                entries: [],
+                total: 0,
+                renderCount: 0,
+                fetchedAll: true,
+                fetching: false,
+              };
+              const entries = info.entries;
               return (
                 <div key={mod.id}>
                   {/* Mod block header: visual separation between mods —
@@ -672,7 +956,7 @@ export default function Editor({ onReselect }) {
                       </span>
                       {mod.isBaseGame && <Tag tone="base">Base Game</Tag>}
                       <span className="text-xs font-mono text-muted">
-                        {info?.total ?? entries.length} entries
+                        {info.total ?? entries.length} entries
                       </span>
                       <div className="flex-1" />
                       <ProgressBar
@@ -694,48 +978,15 @@ export default function Editor({ onReselect }) {
                     </div>
                   </div>
 
-                  {entries.length === 0 ? (
-                    search !== "" ? (
-                      <p className="px-4 py-3 text-sm text-muted">
-                        No entries for this search.
-                      </p>
-                    ) : (
-                      <p className="px-4 py-3 text-sm text-muted">
-                        No entries.
-                      </p>
-                    )
-                  ) : (
-                    sortEntries(entries).map((entry) => {
-                      const currentTranslation = getEntryTranslation(entry);
-                      const entryDirty = isEntryDirty(entry);
-
-                      let statusClass = "outline-success";
-                      if (entryDirty) statusClass = "outline-accent";
-                      else if (!entry.translation) statusClass = "outline-warning";
-
-                      return (
-                        <div
-                          key={entry.id}
-                          className="flex items-center border-b border-line last:border-b-0 hover:bg-raised/30"
-                        >
-                          <span className="w-[30%] shrink-0 truncate px-4 py-2 text-xs font-mono text-text">
-                            {entry.key}
-                          </span>
-                          <span className="w-[40%] shrink-0 px-2 py-2">
-                            <input
-                              value={currentTranslation}
-                              onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation)}
-                              placeholder="Translation..."
-                              className={`h-9 w-full min-w-[20ch] rounded-md border border-line bg-raised px-3 text-sm text-text placeholder:text-muted/60 outline-2 outline-offset-1 focus-visible:outline-2 ${statusClass}`}
-                            />
-                          </span>
-                          <span className="w-[30%] truncate px-4 py-2 text-sm font-mono text-text">
-                            {entry.original}
-                          </span>
-                        </div>
-                      );
-                    })
-                  )}
+                  <ModEntryList
+                    mod={mod}
+                    info={info}
+                    search={search}
+                    sort={sort}
+                    dirty={dirty}
+                    updateDirty={updateDirty}
+                    observerRef={observerRef}
+                  />
                 </div>
               );
             })}
