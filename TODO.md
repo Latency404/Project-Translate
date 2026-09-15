@@ -3,16 +3,17 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-Phase 3 in Arbeit; 3.1 (LLM-Export/-Import echt) fertig: Export erzeugt eine
-Datei pro Mod (Datei-Keys `<version>/<Kategorie>.json|txt`, Versionen im Key),
-Import-Vorschau zuordnet matched/unmatched korrekt, Apply schreibt
-targetLang-Dateien (JSON + TXT als Lua-Table) mit Backup, unmatched-Keys
-werden verworfen. TXT-Files werden als Lua-Translate gelesen
-(`Sandbox_DE = { Key = "Value" }`), JSON tolerant (Trailing Comma, unquoted
-Keys, BOM); common-/root-Layouts werden bei Scan und Import unterstützt.
-Gegen die echte Steam-Installation verifiziert: 453 Mods, More Traits 42.20
-mit 1228 Einträgen (412 übersetzt), export+preview laufen end-to-end.
-`npm run build` + `npm test` (27) grün. Nächstes: 3.2 (Mod-Export echt).
+**Aktueller Stand:** Phase 3 in Arbeit; 3.1 (LLM-Export/-Import echt) und 3.2
+(Mod-Export echt) fertig. Mod-Export erzeugt jetzt installierbare Mods für ALLE
+Layouts: common-Layouts, root-Layouts (Translate am Mod-Root), reine common-Mods
+(ohne Versionsordner → kein game_version) und dual (common + Version); JSON und
+TXT (Lua-Translate, `writeLua`-Long-Strings). `layoutLocations()` in mod-export.js
+wiederholt die scanner.js-Traversal (common exklusiv mit root, dann Versionen).
+Gegen die echte Steam-Installation verifiziert: SwapIt (common+42.0, UI.json +
+UI_DE.txt), More Traits (Root + 42.20, beide Bäume, 8 Dateien), Radio-Mod-Layout.
+Exchange-View (Zielordner-Feld) und POST /api/export/mod existieren seit dem
+Fake-Mode-Vorgriff. `npm test` (31) + `npm run build` grün. Nächstes: 3.3
+(Finales Produktions-Setup) — 2.2 (echtes Speichern mit Backup) hängt noch offen.
 
 ## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -60,12 +61,12 @@ mit 1228 Einträgen (412 übersetzt), export+preview laufen end-to-end.
       fertig wenn: Eintrag im echten Mod speichern überlebt Neustart, alte Datei liegt
       in export/backups/, Rechtefehler (nicht Admin) wird sauber im UI gemeldet
 
-## Phase 3 – Funktionen [geplant]
+## Phase 3 – Funktionen [in Arbeit]
 - [x] 3.1 LLM-Export/-Import echt · selbst · braucht 2.1
       fertig wenn: Export erzeugt eine Datei pro Mod im richtigen Format
       (Versionen im Datei-Key), Import-Vorschau zuordnet korrekt, Apply schreibt
       targetLang-Dateien mit Backup, unmatched-Keys werden verworfen
-- [ ] 3.2 Mod-Export · selbst · braucht 2.1
+- [x] 3.2 Mod-Export · selbst · braucht 2.1
       fertig wenn: `POST /api/export/mod` erzeugt kompletten installierbaren
       Übersetzungs-Mod (mod.info pro Version, Translate/`<LANG>`/-Bäume, icon.png),
       Zielordner wählbar, View zeigt Export-Dialog mit Ordnerauswahl
@@ -164,9 +165,17 @@ mit 1228 Einträgen (412 übersetzt), export+preview laufen end-to-end.
   den Standard-Ordner `export/llm/<targetLang>` (dir-Parameter der API bleibt für
   spätere Slices/CLI). Mod-Export (3.2) bekommt dagegen wahlweise einen Zielordner.
 - Git-Identität repo-lokal: `Latency <latency@localhost>` (global nicht gesetzt).
+- **3.2: Layout-Traversal gehört in mod-export.js, nicht in den Mod-Cache
+  (2026-09-15):** `layoutLocations()` (common exklusiv mit root, dann
+  `mod.versions`) folgt der Reihenfolge aus `scanner.scan()` und prüft die
+  Translate-Direktoren auf der Platte statt `mod.versions` — so exportieren
+  auch reine common-/root-Mods (versions = []) ihre Bäume. `written` in
+  `exportMod()` ist einheitlich relativ zum exportierten Mod-Ordner
+  (vorher gemischt: mod.info/icon relativ zum targetDir).
 - **mod.info beim Mod-Export liegt am Root** des exportierten Mods (nicht pro
   Version, wie in der ARCHITECTURE.md geschrieben) — `game_version` = höchste
-  Version; Basisspiel-Export hat kein `game_version`. USER-Entscheidung, entspricht
+  Version; Basisspiel-Export hat kein `game_version`; ein reines common/root-
+  Layout (keine Versionsordner) ebenfalls. USER-Entscheidung, entspricht
   echten PZ-Mods. → ARCHITECTURE.md entsprechend anpassen (ist "nie anfassen",
   daher hier vermerkt).
 - Eintrags-Pfade: `entryId` = `<version>/<EN-Pfad relativ zum Version-Ordner>::<key>`,
@@ -189,10 +198,9 @@ mit 1228 Einträgen (412 übersetzt), export+preview laufen end-to-end.
 - **LLM-Export/-Import im Editor (USER-Entscheidung, andere Session):**
   Gewollt — LLM-Export/Import sitzen ausschließlich in der Editor-Toolbar;
   die Export-View zeigt nur Mod-Export (3.2), keinen LLM-Teil.
-- **3.2 steht VOR, ist aber kein abgenommener Slice:** View + Fake-API
-  (Route exportMod, exportMod() in api.js) existieren und sind im Fake-Mode
-  getestet; die eigentliche Abnahme (installierbarer Mod, echte Pfade) fehlt
-  und gehört erst ab 2.1.
+- **3.2: View + Fake-API-Vorgriff (14.09)** ist mit dem echten Slice 3.2 (15.09)
+  abgeschlossen — Route, exportMod(), Exchange-View mit Zielordner und die
+  Abnahme gegen echte Pfade stehen jetzt.
 - Altes `config.json` im Projektroot (gitignored) aus Fake-Mode-Tests — beim
   nächsten echten Start überschrieben; kann auch weg.
 - Smoke-Tests, die `importApply`/`PUT entries` direkt gegen `server/fixtures/`
