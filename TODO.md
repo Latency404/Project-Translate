@@ -3,14 +3,13 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-**Aktueller Stand:** Phase 3 fertig. 3.1 (LLM-Export/-Import echt), 3.2 (Mod-Export
-echt) und 3.3 (Produktions-Setup) abgenommen. `npm start` dient gebautes Frontend
-(Express-Static aus `dist/` + SPA-Catchall) und API zusammen auf :3100 — verifiziert
-mit echtem Scan (453 Mods) und Library-Ansicht im Browser; `npm run build` + `npm test`
-(31) grün. Nächstes: Phase 4 (4.1 Duplikate zusammenführen). Offener Punkt aus Phase 2:
-2.2 (echtes Speichern mit Backup) — 3.1/3.2 hängen laut TODO davon ab; die
-`saveBatch`/Backup-Logik in `entries.js` steht aber seit 3.1 und wurde im E2E mit
-Import-Apply (mit Backup) geübt.
+**Aktueller Stand:** Phasen 2–3 fertig. 2.2 (echtes Speichern mit Backup) abgenommen
+gegen echte Steam-Pfade: gespeicherter Wert überlebt Neustart, alte DE-Datei liegt in
+`export/backups/<stempel>/`, Rechtefehler (read-only Datei) liefert 403 mit sauberer
+deutscher Meldung inkl. exaktem Zielpfad, die der Editor in `saveError` anzeigt.
+`npm start` dient gebautes Frontend (Express-Static aus `dist/` + SPA-Catchall) und
+API zusammen auf :3100 — verifiziert mit echtem Scan (453 Mods); `npm run build` +
+`npm test` (37) grün. Nächstes: Phase 4 (4.1 Duplikate zusammenführen).
 
 ## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -49,12 +48,12 @@ Import-Apply (mit Backup) geübt.
       schreibt nach export/llm/, Import zeigt Vorschau (matched/unmatched pro Mod)
       mit Bestätigung, beide gegen Fake-API
 
-## Phase 2 – Durchstich [in Arbeit]
+## Phase 2 – Durchstich [fertig]
 - [x] 2.1 Echter Scan + echtes Einlesen · delegieren · braucht 0.3, 1.3
       fertig wenn: `npm start` — Setup zeigt echten Status, Scan findet die echten
       362+ Mods, Mod-Liste zeigt echte Eintragszahlen, Editor zeigt echte
       Originaltexte inkl. Pre-Fill vorhandener DE-Werte (grün)
-- [ ] 2.2 Echtes Speichern mit Backup · selbst · braucht 2.1
+- [x] 2.2 Echtes Speichern mit Backup · selbst · braucht 2.1
       fertig wenn: Eintrag im echten Mod speichern überlebt Neustart, alte Datei liegt
       in export/backups/, Rechtefehler (nicht Admin) wird sauber im UI gemeldet
 
@@ -126,11 +125,22 @@ Import-Apply (mit Backup) geübt.
   Neustarts. Vorher (Slices 5/6) las der Editor die Auswahl live von der
   Library; die Library bleibt aber bei jedem Library-Klick remounted
   (libraryKey++), deshalb hat der Editor jetzt seinen eigenen Zustand.
-- **Fake-Mode: Disk ist Quelle der Wahrheit (Nacht-Session 14.09):** PUT
-  (Speichern) und Import-Apply triggern im Fake-Mode einen Rescan, der die
-  Fixture-Disk in den Cache spiegelt — der Editor sieht gespeicherte Änderungen
-  sofort. `rescan()` + `rescanning`-Flag in server/index.js. Im echten Modus
-  (Phase 2) bleibt der Scan der einzige Punkt, der die Disk neu einliest.
+- **Disk ist immer die Quelle der Wahrheit (2.2, 2026-09-15):** PUT (Speichern)
+  und Import-Apply triggern in BEIDEN Modi einen Rescan, der die Disk in den
+  Cache spiegelt — der Editor sieht gespeicherte Änderungen sofort (vorher nur
+  Fake-Mode; im echten Modus sah der Editor nach PUT alte Werte, bis zum nächsten
+  manuellen Scan). Race-Case unverändert: war beim PUT-Schreib ein rescan aktiv,
+  läuft danach ein zweiter (das erste Snapshot ist veraltet). `rescan()` +
+  `rescanning`-Flag in server/index.js.
+- **2.2: Rechtefehler-Klassifikation (2026-09-15):** `classifyFsError(err, pfad)`
+  in `entries.js` übersetzt fs-Fehler in deutsche, menschenlesbare Meldungen
+  (EACCES/EPERM → „Zielordner nicht schreibbar: <Pfad> — Schreibrechte fehlen …",
+  EBUSY/EAGAIN/EMFILE/ENFILE → „Datei belegt …", sonst `err.message`) und setzt
+  `err.status = 403` bei Rechtefehlern. Idempotent (`.ptFsClassified`): wer zuerst
+  klassifiziert, gewinnt — `saveBatch` kennt den exakten Zielpfad und wird
+  vor der Route-Classifier in `index.js` (die nur den Mod-Root kennt) gemeldet.
+  PUT und Import-Apply verdrahten sie im catch; Backup-Copy-Fehler fallen unter
+  500, da dort keine 4xx-Meldung passt.
 - **config.load() schreibt nichts mehr (Nacht-Session 14.09):** Existiert
   config.json nicht, liefert load() DEFAULTS ohne die Datei anzulegen — nur
   save() schreibt. Davor landete im Fake-Mode ein config.json mit Steam-Pfaden
@@ -198,10 +208,6 @@ Import-Apply (mit Backup) geübt.
 - **3.2: View + Fake-API-Vorgriff (14.09)** ist mit dem echten Slice 3.2 (15.09)
   abgeschlossen — Route, exportMod(), Exchange-View mit Zielordner und die
   Abnahme gegen echte Pfade stehen jetzt.
-- **2.2 ist funktional, aber offiziell nicht abgenommen:** `saveBatch` mit
-  Backup-Logik steht in `entries.js` (seit 3.1) und Import-Apply schreibt real
-  mit Backup — aber die Abnahme (Editor-Speichern überlebt Neustart, Rechtefehler
-  wird sauber im UI gemeldet) wurde nie als eigener Schritt durchgeführt.
 - Altes `config.json` im Projektroot (gitignored) aus Fake-Mode-Tests — beim
   nächsten echten Start überschrieben; kann auch weg.
 - Smoke-Tests, die `importApply`/`PUT entries` direkt gegen `server/fixtures/`
