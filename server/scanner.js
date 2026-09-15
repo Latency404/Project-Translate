@@ -328,7 +328,9 @@ function scanEntriesForDir(mod, version, enDir, targetLang, modRoot) {
     const enMap = readTxtMap(path.join(enDir, f))
     if (!enMap) continue
     const deFileName = targetFileName(f, targetLang, enDir)
-    const deMap = readFlatMap(path.join(langDir, deFileName))
+    // TXT ist Lua-Translate (kein JSON) — readFlatMap würde null liefern und
+    // vorhandene targetLang-Übersetzungen (Pre-Fill) unentdeckt lassen.
+    const deMap = readTxtMap(path.join(langDir, deFileName))
     const relPath = path.relative(modRoot, path.join(enDir, f))
     const file = toPosix(relPath)
     for (const [key, value] of Object.entries(enMap)) {
@@ -501,4 +503,4 @@ async function scan(gameRoot, workshopDir, targetLang, { onProgress } = {}) {
   return { mods, entriesByModId }
 }
 
-module.exports = { scan, readFlatMap, versionDirOf, translateDir, toPosix, SOURCE_LANG, BASE_ID, BASE_NAME }
+module.exports = { scan, readFlatMap, readTxtMap, targetFileName, versionDirOf, translateDir, toPosix, SOURCE_LANG, BASE_ID, BASE_NAME }

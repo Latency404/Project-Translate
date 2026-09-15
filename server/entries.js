@@ -1,17 +1,20 @@
 // Lesen/Schreiben von Übersetzungs-Einträgen + Backup.
 //
 // Ein Eintrag schreibt die targetLang-Datei, die zu seiner EN-Datei gehört:
-//   EN:  <versionDir>/media/lua/shared/Translate/EN/<Kategorie>.json
-//   TGT: <versionDir>/media/lua/shared/Translate/<targetLang>/<Kategorie>.json
-// Die Datei wird als flaches key → string-Map geschrieben, bestehende Keys
-// bleiben erhalten (nur der neue Key wird gesetzt/gelöscht).
+//   EN-JSON: <versionDir>/media/lua/shared/Translate/EN/<Kategorie>.json
+//     TGT:   <versionDir>/media/lua/shared/Translate/<targetLang>/<Kategorie>.json
+//   EN-TXT:  <versionDir>/media/lua/shared/Translate/EN/<Name>_EN.txt
+//     TGT:   <versionDir>/media/lua/shared/Translate/<targetLang>/<Name>_<TGT>.txt
+//            (Name ohne _EN-Suffix; EN.txt ohne Suffix → Name_<TGT>.txt)
+// Beide Formate sind flache key → string-Maps; bestehende Keys bleiben erhalten
+// (nur der neue Key wird gesetzt/gelöscht).
 //
 // Backup: Vor jedem Überschreiben einer targetLang-Datei wird die alte Datei
 // kopiert nach export/backups/<YYYY-MM-DD_HH-mm>/<modId>__<version>__<file>.
 // Ein Ordner pro Speicher-Batch, Backups werden nie automatisch gelöscht.
 const fs = require('node:fs')
 const path = require('node:path')
-const { versionDirOf, toPosix, readFlatMap } = require('./scanner')
+const { versionDirOf, toPosix, readFlatMap, readTxtMap, targetFileName } = require('./scanner')
 
 // <modId>__<version>__<file> — Slashes und Sonderzeichen im Namen abtragen.
 function backupName(modId, version, file) {
@@ -28,6 +31,37 @@ function timestampDir() {
 function writeJson(filePath, obj) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
   fs.writeFileSync(filePath, JSON.stringify(obj, null, 4) + '\n', 'utf8')
+}
+
+// Lua-Translate-Datei serialisieren: <TableName> = { Key = "Value", ... }
+// Werte als Long-String [[ ... ]], außer sie enthalten ]] oder starten mit
+// Whitespace (dann als quoted string mit Escapes). Schlüssel werden quoted,
+// wenn sie nicht reiner Identifier sind.
+function writeLua(filePath, tableName, obj) {
+  const esc = (s) =>
+    s
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t')
+  const lines = []
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v !== 'string') continue
+    const key = /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) ? k : `"${esc(k)}"`
+    let val
+    if (v.includes(']]') || v.length === 0 || /^\s/.test(v)) {
+      val = `"${esc(v)}"`
+    } else {
+      val = `[[${v}]]`
+    }
+    lines.push(`\t${key} = ${val},`)
+  }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  const body = lines.length
+    ? `${tableName} = {\n${lines.join('\n')}\n}\n`
+    : `${tableName} = {}\n`
+  fs.writeFileSync(filePath, body, 'utf8')
 }
 
 // Ein Batch speichern: { entries: [{ entryId, translation }] }.
@@ -50,8 +84,11 @@ function saveBatch(mod, entries, targetLang, backupRoot) {
     const version = before.slice(0, slash)
     const file = before.slice(slash + 1)
     const translation = e.translation === null ? '' : String(e.translation)
-    if (!byFile.has(file)) byFile.set(file, { version, file, items: [] })
-    byFile.get(file).items.push({ key, translation })
+    // Version+Datei als Schlüssel: dieselbe Dateinamen-Kategorie kann unter
+    // mehreren Layouts liegen (common/root/42.20) und gehört getrennt.
+    const fileKey = `${version}/${file}`
+    if (!byFile.has(fileKey)) byFile.set(fileKey, { version, file, items: [] })
+    byFile.get(fileKey).items.push({ key, translation })
   }
 
   const stamp = timestampDir()
@@ -59,7 +96,11 @@ function saveBatch(mod, entries, targetLang, backupRoot) {
   for (const { version, file, items } of byFile.values()) {
     const vdir = versionDirOf(mod, version)
     const enPath = path.join(vdir, file)
-    const tgtPath = path.join(vdir, 'media', 'lua', 'shared', 'Translate', targetLang, path.basename(file))
+    // Zielpfad: Translate/<targetLang>/, Dateiname nach targetFileName()
+    // (JSON: identisch, TXT: _EN → _<TGT>). Nur der Basisname — der EN-Pfad
+    // liegt ja schon unter Translate/EN/.
+    const tgtFileName = targetFileName(path.basename(file), targetLang)
+    const tgtPath = path.join(vdir, 'media', 'lua', 'shared', 'Translate', targetLang, tgtFileName)
     // EN-Datei muss existieren, sonst ist der Key erfunden (unmatched).
     if (!fs.existsSync(enPath)) {
       throw Object.assign(new Error(`EN-Datei nicht gefunden: ${toPosix(enPath)}`), { status: 404 })
@@ -67,19 +108,28 @@ function saveBatch(mod, entries, targetLang, backupRoot) {
     if (fs.existsSync(tgtPath)) {
       const bdir = path.join(backupRoot, stamp, backupName(mod.id, version, file))
       fs.mkdirSync(bdir, { recursive: true })
-      fs.copyFileSync(tgtPath, path.join(bdir, path.basename(file)))
+      fs.copyFileSync(tgtPath, path.join(bdir, tgtFileName))
     }
-    // readFlatMap parse tolerant (Trailing Comma / Lua-Keys) — eine
-    // handgeschriebene DE-Datei wird beim Speichern nicht plattgemacht.
-    const obj = readFlatMap(tgtPath) || {}
+    // Tolerantes Einlesen (JSON: Trailing Comma / Lua-Keys, TXT: Lua-Translate)
+    // — eine handgeschriebene targetLang-Datei wird beim Speichern nicht
+    // plattgemacht.
+    const isTxt = tgtFileName.toLowerCase().endsWith('.txt')
+    const existing = isTxt ? readTxtMap(tgtPath) : readFlatMap(tgtPath)
+    const obj = existing || {}
     for (const { key, translation } of items) {
       if (translation === '') delete obj[key]
       else obj[key] = translation
       saved++
     }
-    writeJson(tgtPath, obj)
+    if (isTxt) {
+      // Lua-Tabelle heißt nach dem targetLang-Dateinamen: Sandbox_DE.txt → Sandbox_DE.
+      const tableName = tgtFileName.slice(0, tgtFileName.length - 4)
+      writeLua(tgtPath, tableName, obj)
+    } else {
+      writeJson(tgtPath, obj)
+    }
   }
   return { saved }
 }
 
-module.exports = { saveBatch, backupName, timestampDir }
+module.exports = { saveBatch, backupName, timestampDir, writeLua }

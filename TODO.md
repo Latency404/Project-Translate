@@ -3,16 +3,16 @@
 Abnahme: nach jedem Slice
 
 ## Aktueller Stand
-Phase 2 in Arbeit; 2.1 (Echter Scan + echtes Einlesen) fertig und abgenommen:
-`npm start` ohne `PT_FAKE` dient das gebaute Frontend + echte API — Setup zeigt
-echten Status, Scan findet 453 Mods (362+ Kriterium erfüllt), Mod-Liste zeigt
-echte Eintragszahlen (BASE 47 239, MoreBuilds 1 363 …), Editor zeigt echte
-Originaltexte mit Pre-Fill-DE-Werten (grün). Zusätzlich: Workshop-Poster im
-echten Modus fix (Route `/mod-poster?m=<modId>`, `posterUrl()` liefert sie
-statt null) — 131 von 453 Mods zeigen jetzt Poster statt „No poster".
-`npm run build` + `npm test` (18) grün.
-Nächster Punkt: 2.2 (Echtes Speichern mit Backup), danach 3.1 / 3.2 gegen
-echte Daten abnehmen.
+Phase 3 in Arbeit; 3.1 (LLM-Export/-Import echt) fertig: Export erzeugt eine
+Datei pro Mod (Datei-Keys `<version>/<Kategorie>.json|txt`, Versionen im Key),
+Import-Vorschau zuordnet matched/unmatched korrekt, Apply schreibt
+targetLang-Dateien (JSON + TXT als Lua-Table) mit Backup, unmatched-Keys
+werden verworfen. TXT-Files werden als Lua-Translate gelesen
+(`Sandbox_DE = { Key = "Value" }`), JSON tolerant (Trailing Comma, unquoted
+Keys, BOM); common-/root-Layouts werden bei Scan und Import unterstützt.
+Gegen die echte Steam-Installation verifiziert: 453 Mods, More Traits 42.20
+mit 1228 Einträgen (412 übersetzt), export+preview laufen end-to-end.
+`npm run build` + `npm test` (27) grün. Nächstes: 3.2 (Mod-Export echt).
 
 ## Phase 0 – Fundament [fertig]
 - [x] 0.1 Projekt aufsetzen · selbst
@@ -61,7 +61,7 @@ echte Daten abnehmen.
       in export/backups/, Rechtefehler (nicht Admin) wird sauber im UI gemeldet
 
 ## Phase 3 – Funktionen [geplant]
-- [ ] 3.1 LLM-Export/-Import echt · selbst · braucht 2.1
+- [x] 3.1 LLM-Export/-Import echt · selbst · braucht 2.1
       fertig wenn: Export erzeugt eine Datei pro Mod im richtigen Format
       (Versionen im Datei-Key), Import-Vorschau zuordnet korrekt, Apply schreibt
       targetLang-Dateien mit Backup, unmatched-Keys werden verworfen

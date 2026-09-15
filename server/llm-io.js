@@ -1,50 +1,96 @@
 // LLM-Export/-Import.
 //
 // Export (eine Datei pro Mod): export/llm/<targetLang>/<ModName>.json
-//   { mod, modId, targetLang, files: { "<version>/<Kategorie>.json": { key: original } } }
-// Datei-Keys unter files tragen das Versions-Segment, damit mehrere Versionen
-// desselben Mods keine Kollisionen erzeugen. Der LLM übersetzt die Werte;
-// Struktur und Keys bleiben unverändert.
+//   { mod, modId, targetLang, files: { "<version>/<Kategorie>.json|txt": { key: original } } }
+// Datei-Keys tragen das Versions-Segment (42.20 / common / root / base), damit
+// mehrere Versionen desselben Mods keine Kollisionen erzeugen. Der LLM
+// übersetzt die Werte; Struktur und Keys bleiben unverändert.
 //
 // Import: liest export/llm/<targetLang>/ (oder einen gewählten Ordner).
 // Zuordnung über (modId oder mod-Name, Datei-Key, JSON-Key). Keys, die nicht
 // existieren, werden als unmatched gelistet und nicht übernommen.
+//
+// Layout-Traversal entspricht scanner.scan(): Base Game "base" direkt am Root;
+// Mods common → root (nur wenn kein common) → neueste Version. JSON- und
+// TXT-Dateien (Lua-Translate) werden gelesen; JSON-Dateien mit Trailing
+// Comma / Lua-Style-Keys tolerant via readFlatMap().
 const fs = require('node:fs')
 const path = require('node:path')
-const { versionDirOf, toPosix } = require('./scanner')
+const {
+  toPosix,
+  translateDir,
+  versionDirOf,
+  readFlatMap,
+  readTxtMap,
+  targetFileName,
+  SOURCE_LANG
+} = require('./scanner')
 const { saveBatch } = require('./entries')
 
-function listEnFiles(vdir) {
-  const enDir = path.join(vdir, 'media', 'lua', 'shared', 'Translate', 'EN')
-  if (!fs.existsSync(enDir)) return []
-  try {
-    return fs.readdirSync(enDir).filter((x) => x.endsWith('.json')).sort()
-  } catch {
-    return []
+// EN-Pfad relativ zum Version-Ordner — POSIX, identisch zum file-Segment
+// der entryIds (media/lua/shared/Translate/EN/...).
+const EN_REL = 'media/lua/shared/Translate/EN/'
+
+// EN-Stellen eines Mods: [{ version, enDir }] — dieselben Regeln wie
+// scanner.scan(): common (exklusiv mit root), root nur ohne common, die
+// neueste Version zusätzlich. Base Game: ein Ort mit version "base".
+function enLocations(mod) {
+  if (mod.isBaseGame) {
+    return [{ version: 'base', enDir: translateDir(mod.rootPath, SOURCE_LANG) }]
   }
+  const locs = []
+  const commonEnDir = translateDir(path.join(mod.rootPath, 'common'), SOURCE_LANG)
+  if (fs.existsSync(commonEnDir)) {
+    locs.push({ version: 'common', enDir: commonEnDir })
+  } else {
+    const rootEnDir = translateDir(mod.rootPath, SOURCE_LANG)
+    if (fs.existsSync(rootEnDir)) {
+      locs.push({ version: 'root', enDir: rootEnDir })
+    }
+  }
+  const newest = mod.versions[0]
+  if (newest) {
+    locs.push({ version: newest, enDir: translateDir(path.join(mod.rootPath, newest), SOURCE_LANG) })
+  }
+  return locs
 }
 
-function readFlatMap(filePath) {
+// Eine EN-Dir einlesen: Map "<Dateiname>" → { key: original } (nur String-
+// Werte). JSON via readFlatMap (tolerant), TXT via readTxtMap (Lua-Translate).
+function readEnDir(enDir) {
+  const files = {}
+  let names
   try {
-    const obj = JSON.parse(fs.readFileSync(filePath, 'utf8'))
-    if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return null
-    return obj
+    names = fs.readdirSync(enDir).sort()
   } catch {
-    return null
+    return files
   }
+  for (const f of names) {
+    const p = path.join(enDir, f)
+    let map
+    if (f.toLowerCase().endsWith('.json')) map = readFlatMap(p)
+    else if (f.toLowerCase().endsWith('.txt')) map = readTxtMap(p)
+    else continue
+    if (!map) continue
+    const obj = {}
+    for (const [k, v] of Object.entries(map)) {
+      if (typeof v === 'string') obj[k] = v
+    }
+    if (Object.keys(obj).length) files[f] = obj
+  }
+  return files
 }
 
-// Alle gültigen Einträge eines Sets Mods: Map "modId::version/<cat>.json::key".
+// Alle gültigen Einträge eines Sets Mods: Set "<modId>::<version>/<cat>::<key>".
+// cat ist der Datei-Name (Kategorie.json / Kategorie.txt) — dieselbe Short-
+// Form wie die Datei-Keys des Exports.
 function buildValidKeys(mods) {
   const valid = new Set()
   for (const mod of mods) {
-    for (const version of mod.versions) {
-      const vdir = versionDirOf(mod, version)
-      for (const f of listEnFiles(vdir)) {
-        const obj = readFlatMap(path.join(vdir, 'media', 'lua', 'shared', 'Translate', 'EN', f))
-        if (!obj) continue
+    for (const { version, enDir } of enLocations(mod)) {
+      for (const [cat, obj] of Object.entries(readEnDir(enDir))) {
         for (const key of Object.keys(obj)) {
-          valid.add(`${mod.id}::${version}/${f}::${key}`)
+          valid.add(`${mod.id}::${version}/${cat}::${key}`)
         }
       }
     }
@@ -58,15 +104,10 @@ function exportLlm(mods, targetLang, llmRoot) {
   const written = []
   for (const mod of mods) {
     const files = {}
-    for (const version of mod.versions) {
-      const vdir = versionDirOf(mod, version)
-      for (const f of listEnFiles(vdir)) {
-        const obj = readFlatMap(path.join(vdir, 'media', 'lua', 'shared', 'Translate', 'EN', f))
-        if (!obj) continue
-        if (!files[`${version}/${f}`]) files[`${version}/${f}`] = {}
-        for (const [k, v] of Object.entries(obj)) {
-          if (typeof v === 'string') files[`${version}/${f}`][k] = v
-        }
+    for (const { version, enDir } of enLocations(mod)) {
+      for (const [cat, obj] of Object.entries(readEnDir(enDir))) {
+        if (!files[`${version}/${cat}`]) files[`${version}/${cat}`] = {}
+        Object.assign(files[`${version}/${cat}`], obj)
       }
     }
     const doc = { mod: mod.name, modId: mod.id, targetLang, files }
@@ -77,6 +118,8 @@ function exportLlm(mods, targetLang, llmRoot) {
   return { written }
 }
 
+// LLM-Dateien lesen (tolerant: BOM / Trailing-Comma, falls der LLM kein
+// strenges JSON abliefert).
 function readLlmFiles(dir) {
   if (!fs.existsSync(dir)) return []
   return fs
@@ -85,9 +128,16 @@ function readLlmFiles(dir) {
     .sort()
     .map((f) => {
       const obj = readFlatMap(path.join(dir, f))
-      return obj ? { file: f, doc: obj } : null
+      return obj && typeof obj === 'object' ? { file: f, doc: obj } : null
     })
     .filter(Boolean)
+}
+
+// Datei-Key "<version>/<cat>" in Version + Kategorienamen zerlegen.
+function fileKeyParts(fileKey) {
+  const slash = fileKey.lastIndexOf('/')
+  if (slash === -1) return null
+  return { version: fileKey.slice(0, slash), cat: fileKey.slice(slash + 1) }
 }
 
 // Import-Vorschau: { matched, unmatched, perMod: { <modId>: { mod, matched, unmatched } } }.
@@ -102,14 +152,12 @@ function importPreview(dir, mods, targetLang) {
 
   for (const { doc } of readLlmFiles(dir)) {
     const mod = (doc.modId && byId.get(doc.modId)) || byName.get(doc.mod) || null
-    if (!mod || typeof doc.files !== 'object') continue
+    if (!mod || typeof doc.files !== 'object' || doc.files === null) continue
     if (!perMod[mod.id]) perMod[mod.id] = { mod: mod.name, matched: 0, unmatched: 0 }
     for (const [fileKey, keys] of Object.entries(doc.files)) {
-      const slash = fileKey.lastIndexOf('/')
-      const version = slash === -1 ? '' : fileKey.slice(0, slash)
-      const cat = slash === -1 ? '' : fileKey.slice(slash + 1)
+      const parts = fileKeyParts(fileKey)
       for (const [key, value] of Object.entries(keys || {})) {
-        const ok = valid.has(`${mod.id}::${version}/${cat}::${key}`) && typeof value === 'string'
+        const ok = parts !== null && valid.has(`${mod.id}::${fileKey}::${key}`) && typeof value === 'string'
         if (ok) {
           matched++
           perMod[mod.id].matched++
@@ -125,6 +173,9 @@ function importPreview(dir, mods, targetLang) {
 
 // Apply: übernimmt die gültigen Keys und schreibt die targetLang-Dateien
 // (inkl. Backup via saveBatch). Ungültige/fehlende Keys bleiben unverändert.
+// Aus dem Short-Form-Datei-Key wird die entryId rekonstruiert:
+// "<version>/<EN_REL><cat>::<key>" — saveBatch leitet Zielpfad und
+// targetLang-Dateinamen (JSON: identisch, TXT: _EN → _<TGT>) davon ab.
 function importApply(dir, mods, targetLang, backupRoot) {
   const byId = new Map(mods.map((m) => [m.id, m]))
   const byName = new Map(mods.map((m) => [m.name, m]))
@@ -132,33 +183,25 @@ function importApply(dir, mods, targetLang, backupRoot) {
   let saved = 0
   for (const { doc } of readLlmFiles(dir)) {
     const mod = (doc.modId && byId.get(doc.modId)) || byName.get(doc.mod) || null
-    if (!mod || typeof doc.files !== 'object') continue
+    if (!mod || typeof doc.files !== 'object' || doc.files === null) continue
     const byFile = new Map()
     for (const [fileKey, keys] of Object.entries(doc.files)) {
-      const slash = fileKey.lastIndexOf('/')
-      if (slash === -1) continue
-      const version = fileKey.slice(0, slash)
-      const cat = fileKey.slice(slash + 1)
+      const parts = fileKeyParts(fileKey)
+      if (!parts) continue
       for (const [key, value] of Object.entries(keys || {})) {
-        if (valid.has(`${mod.id}::${version}/${cat}::${key}`) && typeof value === 'string') {
+        if (valid.has(`${mod.id}::${fileKey}::${key}`) && typeof value === 'string') {
           if (!byFile.has(fileKey)) byFile.set(fileKey, [])
-          // entryId braucht den vollen EN-Pfad relativ zum Version-Ordner
-          byFile
-            .get(fileKey)
-            .push({
-              entryId: `${version}/media/lua/shared/Translate/EN/${cat}::${key}`,
-              translation: value
-            })
+          // entryId braucht den vollen EN-Pfad relativ zum Version-Ordner —
+          // den Short-Form-Key "<version>/<cat>" um EN_REL ergänzen.
+          byFile.get(fileKey).push({ entryId: `${parts.version}/${EN_REL}${parts.cat}::${key}`, translation: value })
         }
       }
     }
-    if (byFile.size) {
-      for (const items of byFile.values()) {
-        saved += saveBatch(mod, items, targetLang, backupRoot).saved
-      }
+    for (const items of byFile.values()) {
+      saved += saveBatch(mod, items, targetLang, backupRoot).saved
     }
   }
   return { saved }
 }
 
-module.exports = { exportLlm, importPreview, importApply }
+module.exports = { exportLlm, importPreview, importApply, enLocations, buildValidKeys }
