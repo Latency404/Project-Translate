@@ -136,6 +136,17 @@ in `server/index.js`, Komponenten/Theme.
       starten, `npm run build && npm test` grün, letzter Commit
 
 ## Entscheidungen & Abweichungen
+- **Cleanup (2026-09-16, Claude):** `export/backups/`, `export/mods/`, `export/llm/`
+  geleert (waren Entwicklungs-/Testdaten, kein Verlust echter Arbeit — Ordner
+  bleiben als leere, git-ignorierte Laufzeit-Ziele bestehen), `dist/` gelöscht
+  (Build-Artefakt, `npm run build` erzeugt es neu). `IDEA.md` entfernt (Vision-
+  Doc widersprach an mehreren Stellen den echten Entscheidungen unten, z. B.
+  Steam-Workshop-Auto-Upload, Marker-Sammel-Export — Kernkontext steht jetzt
+  oben in ARCHITECTURE.md unter „Kontext", Volltext bleibt per `git log` da).
+  `ARCHITECTURE.md` an zwei Stellen an die Realität angepasst: Ordnerbaum
+  (`server/paths.js` existiert nicht — Pfad-Logik liegt in `config.js`;
+  `views/` hieß noch Setup/Mods statt Settings/Library/Showcase) und
+  Mod-Export-Abschnitt (ein `mod.info` am Root statt pro Version).
 - **2.1: Poster-Fix als Nachbesserung (USER-Entscheidung):** Im echten Modus
   lieferte `posterUrl()` für alle Workshop-Mods `null` (nur BASE bekam
   `/base-game-poster.jpg`) — die Library zeigte für alle 452 echten Mods
@@ -246,15 +257,10 @@ in `server/index.js`, Komponenten/Theme.
 - **3.2: View + Fake-API-Vorgriff (14.09)** ist mit dem echten Slice 3.2 (15.09)
   abgeschlossen — Route, exportMod(), Exchange-View mit Zielordner und die
   Abnahme gegen echte Pfade stehen jetzt.
-- Altes `config.json` im Projektroot (gitignored) aus Fake-Mode-Tests — beim
-  nächsten echten Start überschrieben; kann auch weg.
 - Smoke-Tests, die `importApply`/`PUT entries` direkt gegen `server/fixtures/`
   rufen, ändern die Fixture-Dateien (DE-Bäume/Backups) — nach solchen Tests
   `git status` auf Fixtures prüfen und mit `git checkout -- server/fixtures`
   zurücksetzen (war beim Review von 1.5 der Fall).
-- `ARCHITECTURE.md`: Zeile "mod.info pro Version" in "Mod-Export" auf "ein
-  mod.info am Root, game_version = höchste Version" aktualisieren (Benutzer-
-  Entscheidung, s. Entscheidungen).
 - Vite 8 warnt, dass die ESM-Syntax in `vite.config.js` mit dem künftigen
   Default `configLoader: 'native'` nicht zusammenpasst — bei Gelegenheit auf
   `.mjs` umtauschen.

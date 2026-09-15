@@ -1,5 +1,11 @@
 # Architektur – Project Translate
 
+## Kontext
+Project Zomboid hat 350+ Mods im Workshop, jeder mit eigenen Übersetzungs-JSONs.
+Manuell jeden Mod-Ordner aufspüren, die EN-Datei öffnen, jeden Key übersetzen und
+zurückspeichern ist für die Menge nicht praktikabel. Project Translate zentralisiert
+diesen Workflow in einem Tool statt in Handarbeit pro Mod-Ordner.
+
 ## Was die App tut
 Desktop-Tool (Web-App auf localhost) zum Übersetzen der Mod- und Basisspiel-Texte von
 Project Zomboid: es scannt die Steam-Installation, zeigt alle übersetzbaren Einträge in
@@ -105,8 +111,10 @@ werden in der Vorschau als `unmatched` gelistet und nicht übernommen.
 Ziel: `<ExportZiel>/<ModName>-<targetLang>/` mit:
 - `media/lua/shared/Translate/<targetLang>/<Kategorie>.json` (pro Version im
   Version-Ordner `<version>/media/...`, wie im echten Mod)
-- `mod.info` pro Version mit: `name = "<ModName> Translation (<targetLang>)"`,
-  `author = "Project Translate"`, `game_version = <höchste Version>`
+- **Ein** `mod.info` am Root des exportierten Mods (nicht pro Version) mit:
+  `name = "<ModName> Translation (<targetLang>)"`, `author = "Project Translate"`,
+  `game_version = <höchste Version>` — bei Basisspiel-Export oder reinem
+  common-/root-Layout (keine Versionsordner) entfällt `game_version`
 - `icon.png` falls die Quelle eine hat
 
 ### Backup
@@ -124,21 +132,20 @@ Modell.
 project-translate/
 ├── server/            Express-API (Node, CommonJS)
 │   ├── index.js       Einstieg: API-Routen + dient dist/ (Production)
-│   ├── config.js      Lese/schreibe config.json, Standardpfade
-│   ├── paths.js       Steam-Pfade erkennen/validieren
+│   ├── config.js      Lese/schreibe config.json, Standardpfade, Steam-Pfade
 │   ├── scanner.js     Reine Funktion: Wurzel-Dir → Mods + Einträge (fixtures-fähig)
 │   ├── entries.js     Lesen/Schreiben von Übersetzungs-Einträge + Backup
 │   ├── llm-io.js      LLM-Export/-Import
 │   ├── mod-export.js  Übersetzungs-Mod-Ordner generieren
-│   ├── fake-api.js    Gleiche Routen, auf server/fixtures/ gerichtet (Phase 0–3)
+│   ├── fake-api.js    Gleiche Routen, auf server/fixtures/ gerichtet (nur mit PT_FAKE=1)
 │   └── fixtures/      Beispieldaten im echten PZ-Ordnerlayout (3 SampleMods + Mini-Base-Game)
 ├── src/               React-App
 │   ├── main.jsx
-│   ├── App.jsx        View-Umschaltung (Setup / Mods / Editor / Austausch), kein Router-Paket
+│   ├── App.jsx        View-Umschaltung (Settings / Library / Editor / Export / Design), kein Router-Paket
 │   ├── api.js         Einziger Zugriffspunkt auf die API (fetch-Wrapper)
 │   ├── styles/theme.css   Design-Tokens (CSS-Variablen)
 │   ├── components/    Design-Fundament: Button, Card, Input, ProgressBar, Tag, Modal
-│   └── views/         Setup.jsx, Mods.jsx, Editor.jsx, Exchange.jsx
+│   └── views/         Settings.jsx, Library.jsx, Editor.jsx, Exchange.jsx, Showcase.jsx
 ├── Resources/         Vorhanden: SampleMods (Quelle für fixtures/), Logo
 ├── export/            Laufzeit: llm/, mods/, backups/ (git-ignoriert)
 ├── config.json        Laufzeit (git-ignoriert)
