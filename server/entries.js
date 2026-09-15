@@ -64,6 +64,37 @@ function writeLua(filePath, tableName, obj) {
   fs.writeFileSync(filePath, body, 'utf8')
 }
 
+// fs-Fehler in eine menschenlesbare, deutsche Nachricht übersetzen.
+// Der Error wird (über .message) nicht ersetzt — Status bleibt erhalten.
+// Idempotent: wer zuerst klassifiziert (saveBatch kennt den exakten
+// Zielpfad), liefert die präzisere Meldung — der spätere Aufruf in der
+// Route (nur Mod-Root bekannt) übersteuert nicht mehr.
+function classifyFsError(err, filePath) {
+  if (err._classified) return err
+  err._classified = true
+  const p = toPosix(filePath)
+  const causes = []
+  for (let e = err; e; e = e.cause) {
+    if (e.code) causes.push(e.code)
+  }
+  if (causes.includes('EPERM') || causes.includes('EACCES')) {
+    err.message = `Zielordner nicht schreibbar: ${p} — Schreibrechte fehlen (Pfad schreibgeschützt). Berechtigungen prüfen und erneut versuchen.`
+    if (!err.status) err.status = 403
+  } else if (causes.includes('ENOENT')) {
+    err.message = `Ordner nicht gefunden: ${p} — der Mod-Pfad existiert nicht mehr (Mod entfernt oder verschoben?).`
+    if (!err.status) err.status = 404
+  } else if (causes.includes('ENOTDIR')) {
+    err.message = `Unerwartetes Verzeichnis-Layout: ${p}`
+    if (!err.status) err.status = 500
+  }
+  return err
+}
+
+function safeWriteError(err, filePath) {
+  if (!err.code) return err
+  return classifyFsError(err, filePath)
+}
+
 // Ein Batch speichern: { entries: [{ entryId, translation }] }.
 // entryId-Format: <version>/<file>::<key>, file relativ zum Version-Ordner
 // (immer der EN-Pfad). translation = "" löscht den Key (leere Übersetzung),
@@ -107,8 +138,12 @@ function saveBatch(mod, entries, targetLang, backupRoot) {
     }
     if (fs.existsSync(tgtPath)) {
       const bdir = path.join(backupRoot, stamp, backupName(mod.id, version, file))
-      fs.mkdirSync(bdir, { recursive: true })
-      fs.copyFileSync(tgtPath, path.join(bdir, tgtFileName))
+      try {
+        fs.mkdirSync(bdir, { recursive: true })
+        fs.copyFileSync(tgtPath, path.join(bdir, tgtFileName))
+      } catch (e) {
+        throw safeWriteError(e, bdir)
+      }
     }
     // Tolerantes Einlesen (JSON: Trailing Comma / Lua-Keys, TXT: Lua-Translate)
     // — eine handgeschriebene targetLang-Datei wird beim Speichern nicht
@@ -124,12 +159,20 @@ function saveBatch(mod, entries, targetLang, backupRoot) {
     if (isTxt) {
       // Lua-Tabelle heißt nach dem targetLang-Dateinamen: Sandbox_DE.txt → Sandbox_DE.
       const tableName = tgtFileName.slice(0, tgtFileName.length - 4)
-      writeLua(tgtPath, tableName, obj)
+      try {
+        writeLua(tgtPath, tableName, obj)
+      } catch (e) {
+        throw safeWriteError(e, tgtPath)
+      }
     } else {
-      writeJson(tgtPath, obj)
+      try {
+        writeJson(tgtPath, obj)
+      } catch (e) {
+        throw safeWriteError(e, tgtPath)
+      }
     }
   }
   return { saved }
 }
 
-module.exports = { saveBatch, backupName, timestampDir, writeLua }
+module.exports = { saveBatch, backupName, timestampDir, writeLua, classifyFsError }
