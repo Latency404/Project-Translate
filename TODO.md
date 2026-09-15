@@ -163,9 +163,10 @@ Nächstes: Phase 4 (4.1 Duplikate zusammenführen).
   Button-Schrift (alle Größen/Varianten mit Akzent) steht in text-text.
 - `npm run dev` startet Vite + API über `scripts/dev.js` (eigenes Skript mit
   `child_process`), damit kein zusätzliches Paket wie `concurrently` nötig ist.
-- **Dev läuft mit PT_FAKE=1** (scripts/dev.js setzt die Env für beide Kinder), damit
-  die Frontend-Slices 1.2–1.5 gegen Fixtures arbeiten. Slice 3.3 stellt das echte
-  Dev-Verhalten wieder her.
+- **Dev startet permanent im echten Modus (USER, 2026-09-15):** `scripts/dev.js`
+  setzt `PT_FAKE` nicht mehr (Default war `'1'`); Vite und API erben die
+  Umgebung 1:1. Fake-API nur noch bewusst via `PT_FAKE=1 npm run dev` —
+  Tests sind davon unberührt (`server/index.test.js` setzt `PT_FAKE: '1'` selbst).
 - `GET /api/status` liefert zusätzlich `scanProgress: { done, total, current }`
   (aus dem in-memory-Scan-State in server/index.js) — die Routenform sonst unverändert.
 - **Exchange-View ohne Ordner-Auswahl (Slice 1.5):** LLM-Export/Import nutzen immer

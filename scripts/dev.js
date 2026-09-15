@@ -37,7 +37,9 @@ function killAll() {
 
 const vite = spawn(process.execPath, [path.join(root, 'node_modules', 'vite', 'bin', 'vite.js')], {
   cwd: root,
-  env: { ...process.env, PT_FAKE: process.env.PT_FAKE || '1' },
+  // PT_FAKE wird nicht mehr gesetzt → echter Modus gegen die Steam-Pfade.
+  // Wer die Fake-API braucht: `PT_FAKE=1 npm run dev` (wird durchgegereicht).
+  env: process.env,
   stdio: 'inherit',
   detached: true
 })
@@ -54,7 +56,8 @@ let debounce = null
 function startApi() {
   api = spawn(process.execPath, [path.join(root, 'server', 'index.js')], {
     cwd: root,
-    env: { ...process.env, PT_FAKE: process.env.PT_FAKE || '1', PT_FAKE_SERVE: '1' },
+    // PT_FAKE nicht gesetzt → echter Modus (wird via process.env durchgereicht).
+    env: process.env,
     stdio: 'inherit'
   })
   children.push(api)
