@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, LayoutGrid, Search } from "lucide-react";
+import { Check, LayoutGrid, Lock, LockOpen, Search } from "lucide-react";
 import * as api from "../api.js";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
@@ -7,7 +7,7 @@ import Input from "../components/Input.jsx";
 import ProgressBar from "../components/ProgressBar.jsx";
 import Tag from "../components/Tag.jsx";
 
-export default function Library({ onGoToSetup, onSelectionChange }) {
+export default function Library({ onGoToSetup }) {
   const [mods, setMods] = useState([]);
   const [error, setError] = useState("");
 
@@ -21,14 +21,29 @@ export default function Library({ onGoToSetup, onSelectionChange }) {
     } catch { /* ignore */ }
     return new Set();
   });
+  // Lock: freezes the selection so cards / "All" can't change it by accident.
+  // Persisted like the selection itself (sessionStorage).
+  const [locked, setLocked] = useState(() => {
+    try {
+      return sessionStorage.getItem("pt_library_locked") === "1";
+    } catch { /* ignore */ }
+    return false;
+  });
+  const toggleLocked = () => {
+    setLocked((prev) => {
+      try {
+        sessionStorage.setItem("pt_library_locked", prev ? "0" : "1");
+      } catch { /* ignore */ }
+      return !prev;
+    });
+  };
 
-  // Notify parent whenever the selection changes (immediately, not on Save)
+  // Persist the selection — Editor and Exchange read this same key.
   useEffect(() => {
-    onSelectionChange && onSelectionChange(Array.from(selected));
     try {
       sessionStorage.setItem("pt_library_selected", JSON.stringify(Array.from(selected)));
     } catch { /* ignore */ }
-  }, [selected, onSelectionChange]);
+  }, [selected]);
 
   // Load data. If the API hasn't been scanned yet (e.g. after a server
   // restart during dev), automatically trigger a scan and retry once it
@@ -91,8 +106,9 @@ export default function Library({ onGoToSetup, onSelectionChange }) {
   const allVisibleSelected =
     filtered.length > 0 && filtered.every((m) => selected.has(m.id));
 
-  // Toggle selection for a single card
+  // Toggle selection for a single card (no-op while locked)
   const toggleOne = (id) => {
+    if (locked) return;
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -101,8 +117,9 @@ export default function Library({ onGoToSetup, onSelectionChange }) {
     });
   };
 
-  // Toggle all on/off (only visible ones)
+  // Toggle all on/off (only visible ones; no-op while locked)
   const toggleAll = () => {
+    if (locked) return;
     if (allVisibleSelected) {
       setSelected((prev) => {
         const next = new Set(prev);
@@ -181,8 +198,18 @@ export default function Library({ onGoToSetup, onSelectionChange }) {
           size="md"
           icon={Check}
           onClick={toggleAll}
+          disabled={locked}
         >
           All ({filtered.length})
+        </Button>
+        <Button
+          variant={locked ? "primary" : "secondary"}
+          size="md"
+          icon={locked ? Lock : LockOpen}
+          onClick={toggleLocked}
+          title={locked ? "Unlock selection" : "Lock selection (cards and \"All\" won't change it)"}
+        >
+          {locked ? "Locked" : "Lock"}
         </Button>
       </div>
 
@@ -193,9 +220,9 @@ export default function Library({ onGoToSetup, onSelectionChange }) {
           return (
             <div
               key={mod.id}
-              className={`relative cursor-pointer rounded-lg border border-line bg-surface p-4 transition-colors duration-150 hover:border-line ${
-                isSelected ? "border-accent" : ""
-              }`}
+              className={`relative rounded-lg border border-line bg-surface p-4 transition-colors duration-150 hover:border-line ${
+                locked ? "cursor-default" : "cursor-pointer"
+              } ${isSelected ? "border-accent" : ""}`}
               onClick={() => toggleOne(mod.id)}
             >
               {/* Checkmark top right */}

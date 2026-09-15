@@ -29,9 +29,6 @@ export default function App() {
     try { sessionStorage.setItem("pt_active_view", v); } catch { /* ignore */ }
   };
   const [libraryKey, setLibraryKey] = useState(0);
-  // The Editor owns its own mod selection (persisted via sessionStorage).
-  // initialModIds is only the first-time selection from the Library.
-  const [initialModIds, setInitialModIds] = useState([]);
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-ink">
@@ -63,11 +60,7 @@ export default function App() {
       {/* Content — der Seiten-Scrollbar lebt hier, also unterhalb des Nav */}
       <main className="min-h-0 flex-1 overflow-y-auto">
         {view === "mods" && (
-          <Library
-            key={libraryKey}
-            onGoToSetup={() => setView("settings")}
-            onSelectionChange={setInitialModIds}
-          />
+          <Library key={libraryKey} onGoToSetup={() => setView("settings")} />
         )}
         {view === "settings" && (
           <Setup
@@ -88,7 +81,6 @@ export default function App() {
         )}
         {view === "editor" && (
           <Editor
-            initialModIds={initialModIds}
             onReselect={() => {
               setLibraryKey((k) => k + 1);
               setView("mods");

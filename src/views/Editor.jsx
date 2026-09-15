@@ -8,25 +8,31 @@ import Modal from "../components/Modal.jsx";
 import ProgressBar from "../components/ProgressBar.jsx";
 import Tag from "../components/Tag.jsx";
 
-const STORAGE_KEY = "pt_editor_selection";
+// The mod selection IS the Library selection — one shared sessionStorage key,
+// so the Editor shows exactly what was picked in the Library (and vice versa).
+const STORAGE_KEY = "pt_library_selected";
+const LOCK_KEY = "pt_library_locked";
 
 function loadStoredIds() {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (raw) {
       const ids = JSON.parse(raw);
-      if (Array.isArray(ids) && ids.length > 0) return ids;
+      if (Array.isArray(ids)) return ids;
     }
   } catch { /* ignore */ }
-  return null;
+  return [];
 }
 
-export default function Editor({ initialModIds, onReselect }) {
-  // --- Mod selection (persisted via sessionStorage) ---
-  const [modIds, setModIds] = useState(() => {
-    return (initialModIds && initialModIds.length > 0)
-      ? initialModIds
-      : loadStoredIds() || [];
+export default function Editor({ onReselect }) {
+  // --- Mod selection (shared with the Library, persisted via sessionStorage) ---
+  const [modIds, setModIds] = useState(() => loadStoredIds());
+  // Lock set in the Library freezes the shared selection everywhere.
+  const [locked, setLocked] = useState(() => {
+    try {
+      return sessionStorage.getItem(LOCK_KEY) === "1";
+    } catch { /* ignore */ }
+    return false;
   });
 
   // --- State ---
@@ -49,12 +55,10 @@ export default function Editor({ initialModIds, onReselect }) {
   const [dirty, setDirty] = useState(new Map());
   const [loading, setLoading] = useState(false);
 
-  // --- Persist mod selection ---
+  // --- Persist mod selection (shared key — the Library reads it too) ---
   useEffect(() => {
     try {
-      if (modIds.length > 0) {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(modIds));
-      }
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(modIds));
     } catch { /* ignore */ }
   }, [modIds]);
 
@@ -71,24 +75,16 @@ export default function Editor({ initialModIds, onReselect }) {
       });
   }, []);
 
-  // Sidebar: ALL mods sorted by selection order (selected first, then alphabetical)
-  const sidebarMods = allMods.slice().sort((a, b) => {
-    const aIn = modIds.indexOf(a.id);
-    const bIn = modIds.indexOf(b.id);
-    const aOk = aIn !== -1;
-    const bOk = bIn !== -1;
-    if (aOk && !bOk) return -1;
-    if (!aOk && bOk) return 1;
-    if (aOk && bOk) return aIn - bIn;
-    return a.name.localeCompare(b.name);
-  });
+  // Sidebar: only the SELECTED mods, in selection order
+  const sidebarMods = allMods.filter((m) => modIds.includes(m.id));
 
   // Selected mods only (for entries loading, dirty tracking, etc.)
   const entryMods = allMods.filter((m) => modIds.includes(m.id));
   const entryModsKey = entryMods.map((m) => m.id).join("\u0000");
 
-  // --- Mod selection helpers ---
+  // --- Mod selection helpers (locked in the Library → frozen everywhere) ---
   const toggleMod = (id) => {
+    if (locked) return;
     setModIds((prev) =>
       prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
     );
@@ -98,6 +94,7 @@ export default function Editor({ initialModIds, onReselect }) {
     allMods.length > 0 && allMods.every((m) => modIds.includes(m.id));
 
   const toggleAllMods = () => {
+    if (locked) return;
     if (allSelected) {
       setModIds([]);
     } else {
@@ -300,15 +297,19 @@ export default function Editor({ initialModIds, onReselect }) {
   // === Main editor --- sidebar = ALL mods, content = selected mods ===
   return (
     <div className="flex h-full">
-      {/* Sidebar: ALL mods with checkbox status, scrollable independently */}
+      {/* Sidebar: selected mods only (shared Library selection), scrollable independently */}
       <aside className="w-64 shrink-0 self-stretch overflow-y-auto border-r border-line bg-surface p-3">
         <div className="mb-2 flex items-center justify-between">
           <p className="text-xs font-mono font-medium text-muted uppercase">
-            All mods
+            {locked ? "Selected (locked)" : "Selected"}
+            {sidebarMods.length > 0 && (
+              <span className="ml-1 text-muted">{`(${sidebarMods.length})`}</span>
+            )}
           </p>
           <button
             onClick={toggleAllMods}
-            className="rounded-md px-2 py-0.5 text-xs font-mono text-muted transition-colors hover:bg-raised hover:text-text"
+            disabled={locked}
+            className="rounded-md px-2 py-0.5 text-xs font-mono text-muted transition-colors hover:bg-raised hover:text-text disabled:cursor-not-allowed disabled:opacity-50"
           >
             {allSelected ? "None" : "All"}
           </button>
@@ -317,15 +318,14 @@ export default function Editor({ initialModIds, onReselect }) {
           {sidebarMods.map((mod) => (
             <div
               key={mod.id}
-              className={`flex items-center gap-2 rounded-md px-2 py-2 transition-colors ${
-                modIds.includes(mod.id) ? "hover:bg-raised/50 bg-raised/30" : "hover:bg-raised/50"
-              }`}
+              className="flex items-center gap-2 rounded-md px-2 py-2 transition-colors hover:bg-raised/50 bg-raised/30"
             >
               <input
                 type="checkbox"
                 checked={modIds.includes(mod.id)}
                 onChange={() => toggleMod(mod.id)}
-                className="size-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
+                disabled={locked}
+                className="size-4 shrink-0 cursor-pointer accent-[var(--color-accent)] disabled:cursor-default"
                 aria-label={`Select ${mod.name}`}
               />
               <div className="min-w-0 flex-1 text-left text-sm">
@@ -414,10 +414,10 @@ export default function Editor({ initialModIds, onReselect }) {
             <div className="mx-auto max-w-md px-6 py-10">
               <Card title="Editor">
                 <p className="text-sm text-muted">
-                  No mods selected. Check boxes in the sidebar or go to the Library.
+                  No mods selected. Pick them in the Library
+                  {locked ? " (unlock the selection there first)" : ""}.
                 </p>
                 <div className="mt-4 flex gap-2">
-                  <Button onClick={toggleAllMods}>Select all</Button>
                   <Button variant="secondary" onClick={onReselect}>
                     Go to Library
                   </Button>
