@@ -6,7 +6,14 @@ Abnahme: nach jedem Slice
 **Aktueller Stand:** Phasen 2–3 fertig. Neue Entscheidung (2026-09-15, USER):
 Editor, Export und Library teilen eine gemeinsame Mod-Auswahl — die
 Library-Auswahl (mit neuem Lock-Button gegen versehentliches Abwählen) steuert
-Editor-Sidebar und Export-View. `npm run build` + `npm test` (37) grün.
+Editor-Sidebar und Export-View. **Editor-Übersicht im Lock-Status (USER,
+2026-09-15):** Im gelockten Editor steuern die Sidebar-Checkboxes nur ein
+lokales Sichtbarkeits-Overlay („Show/Hide", „Hide all"/„Show all", Label
+„Selected · visible (n/m)") — die gelockte Auswahl, die Library und der
+Export bleiben unverändert; das Overlay ist nicht persistiert und greift
+nur, solange gelockt. Ungeändert bleibt, dass der Editor `modIds` nie mehr
+schreibt (Library = einziger Writer) und Save die volle Auswahl umspannt
+(versteckte Mods behalten ihre Edits). `npm run build` + `npm test` (37) grün.
 Nächstes: Phase 4 (4.1 Duplikate zusammenführen).
 
 ## Phase 0 – Fundament [fertig]

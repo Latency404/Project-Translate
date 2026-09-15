@@ -26,14 +26,20 @@ function loadStoredIds() {
 
 export default function Editor({ onReselect }) {
   // --- Mod selection (shared with the Library, persisted via sessionStorage) ---
+  // Never written by the Editor: the Library is the only writer, so a lock set
+  // there keeps the shared selection (and the Export) frozen.
   const [modIds, setModIds] = useState(() => loadStoredIds());
-  // Lock set in the Library freezes the shared selection everywhere.
   const [locked, setLocked] = useState(() => {
     try {
       return sessionStorage.getItem(LOCK_KEY) === "1";
     } catch { /* ignore */ }
     return false;
   });
+  // --- Editor-only visibility overlay (local overview, never persisted) ---
+  // While the shared selection is locked, the sidebar checkboxes toggle this
+  // overlay instead: it hides/shows mods in the Editor only — modIds, the
+  // Library and the Export keep the locked selection untouched.
+  const [visibleIds, setVisibleIds] = useState(null); // null = everything visible
 
   // --- State ---
   const [allMods, setAllMods] = useState([]);
@@ -55,13 +61,6 @@ export default function Editor({ onReselect }) {
   const [dirty, setDirty] = useState(new Map());
   const [loading, setLoading] = useState(false);
 
-  // --- Persist mod selection (shared key — the Library reads it too) ---
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(modIds));
-    } catch { /* ignore */ }
-  }, [modIds]);
-
   // --- Load config + library ---
   useEffect(() => {
     Promise.all([api.getConfig(), api.getMods()])
@@ -75,16 +74,34 @@ export default function Editor({ onReselect }) {
       });
   }, []);
 
-  // Sidebar: only the SELECTED mods, in selection order
+  // Sidebar: the FULL shared selection (locked or not — the Library is the source)
   const sidebarMods = allMods.filter((m) => modIds.includes(m.id));
+  // What is actually VISIBLE in the editor. The overlay only applies while
+  // locked; unlocked, the editor shows the whole shared selection.
+  const visible = locked ? (visibleIds ?? modIds) : modIds;
+  const entryMods = locked
+    ? sidebarMods.filter((m) => visible.includes(m.id))
+    : sidebarMods;
 
-  // Selected mods only (for entries loading, dirty tracking, etc.)
-  const entryMods = allMods.filter((m) => modIds.includes(m.id));
-  const entryModsKey = entryMods.map((m) => m.id).join("\u0000");
+  // Entries are loaded for the full shared selection, so hiding a mod is
+  // display-only: its entries stay loaded, tracked, and savable.
+  const loadModsKey = sidebarMods.map((m) => m.id).join("\u0000");
 
-  // --- Mod selection helpers (locked in the Library → frozen everywhere) ---
+  // --- Mod selection helpers ---
+  // Unlocked: checkboxes change the SHARED selection (Library + Export follow).
+  // Locked: checkboxes toggle the local visibility overlay only — modIds,
+  // the Library and the Export keep the locked selection untouched.
   const toggleMod = (id) => {
-    if (locked) return;
+    if (locked) {
+      setVisibleIds((prev) => {
+        const current = prev || modIds;
+        const next = current.includes(id)
+          ? current.filter((x) => x !== id)
+          : [...current, id];
+        return next.length === modIds.length ? null : next;
+      });
+      return;
+    }
     setModIds((prev) =>
       prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
     );
@@ -92,9 +109,15 @@ export default function Editor({ onReselect }) {
 
   const allSelected =
     allMods.length > 0 && allMods.every((m) => modIds.includes(m.id));
+  const allVisible =
+    modIds.length > 0 && modIds.every((id) => visible.includes(id));
 
   const toggleAllMods = () => {
-    if (locked) return;
+    if (locked) {
+      // Locked: "Hide all" / "Show all" on the local overlay
+      setVisibleIds(allVisible ? [] : [...modIds]);
+      return;
+    }
     if (allSelected) {
       setModIds([]);
     } else {
@@ -104,14 +127,15 @@ export default function Editor({ onReselect }) {
 
   // --- Load entries for every selected mod (recalled on selection/search) ---
   useEffect(() => {
-    if (entryMods.length === 0) {
+    const mods = allMods.filter((m) => modIds.includes(m.id));
+    if (mods.length === 0) {
       setEntriesByMod(new Map());
       return;
     }
     let cancelled = false;
     setLoading(true);
     Promise.all(
-      entryMods.map(async (mod) => {
+      mods.map(async (mod) => {
         const data = await api.getEntries(mod.id, {
           page: 1,
           pageSize: 99999,
@@ -135,7 +159,7 @@ export default function Editor({ onReselect }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entryModsKey, search]);
+  }, [loadModsKey, search]);
 
   // --- Search handler ---
   const handleSearch = (val) => {
@@ -157,8 +181,9 @@ export default function Editor({ onReselect }) {
     }
   }, []);
 
-  // Grouped dirty entries per selected mod, in selection order
-  const dirtyByMod = entryMods
+  // Grouped dirty entries per SELECTED mod (visibility-independent: a hidden
+  // mod keeps its edits savable — hiding is display-only).
+  const dirtyByMod = sidebarMods
     .map((mod) => {
       const ids = new Set((entriesByMod.get(mod.id)?.entries || []).map((e) => e.id));
       return {
@@ -297,23 +322,40 @@ export default function Editor({ onReselect }) {
   // === Main editor --- sidebar = ALL mods, content = selected mods ===
   return (
     <div className="flex h-full">
-      {/* Sidebar: selected mods only (shared Library selection), scrollable independently */}
+      {/* Sidebar: shared Library selection. Unlocked: checkboxes change it.
+          Locked: checkboxes toggle LOCAL visibility only (overview). */}
       <aside className="w-64 shrink-0 self-stretch overflow-y-auto border-r border-line bg-surface p-3">
         <div className="mb-2 flex items-center justify-between">
           <p className="text-xs font-mono font-medium text-muted uppercase">
-            {locked ? "Selected (locked)" : "Selected"}
+            {locked ? "Selected · visible" : "Selected"}
             {sidebarMods.length > 0 && (
-              <span className="ml-1 text-muted">{`(${sidebarMods.length})`}</span>
+              <span className="ml-1 text-muted">
+                {locked
+                  ? `(${visible.length}/${sidebarMods.length})`
+                  : `(${sidebarMods.length})`}
+              </span>
             )}
           </p>
           <button
             onClick={toggleAllMods}
-            disabled={locked}
-            className="rounded-md px-2 py-0.5 text-xs font-mono text-muted transition-colors hover:bg-raised hover:text-text disabled:cursor-not-allowed disabled:opacity-50"
+            title={locked ? "Show/hide all selected mods (Editor overview only — the locked selection stays untouched)" : "Select/deselect all mods"}
+            className="rounded-md px-2 py-0.5 text-xs font-mono text-muted transition-colors hover:bg-raised hover:text-text"
           >
-            {allSelected ? "None" : "All"}
+            {locked
+              ? allVisible
+                ? "Hide all"
+                : "Show all"
+              : allSelected
+                ? "None"
+                : "All"}
           </button>
         </div>
+        {locked && (
+          <p className="mb-2 rounded-md bg-raised px-2 py-1 text-xs text-muted">
+            Locked — show/hide here doesn't change the locked selection or the
+            Export.
+          </p>
+        )}
         <nav className="space-y-1">
           {sidebarMods.map((mod) => (
             <div
@@ -322,11 +364,10 @@ export default function Editor({ onReselect }) {
             >
               <input
                 type="checkbox"
-                checked={modIds.includes(mod.id)}
+                checked={visible.includes(mod.id)}
                 onChange={() => toggleMod(mod.id)}
-                disabled={locked}
-                className="size-4 shrink-0 cursor-pointer accent-[var(--color-accent)] disabled:cursor-default"
-                aria-label={`Select ${mod.name}`}
+                className="size-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
+                aria-label={locked ? `Show ${mod.name} in editor` : `Select ${mod.name}`}
               />
               <div className="min-w-0 flex-1 text-left text-sm">
                 <span className="block truncate text-text">{mod.name}</span>
@@ -413,15 +454,25 @@ export default function Editor({ onReselect }) {
           {entryMods.length === 0 && (
             <div className="mx-auto max-w-md px-6 py-10">
               <Card title="Editor">
-                <p className="text-sm text-muted">
-                  No mods selected. Pick them in the Library
-                  {locked ? " (unlock the selection there first)" : ""}.
-                </p>
-                <div className="mt-4 flex gap-2">
-                  <Button variant="secondary" onClick={onReselect}>
-                    Go to Library
-                  </Button>
-                </div>
+                {locked && sidebarMods.length > 0 ? (
+                  <p className="text-sm text-muted">
+                    All selected mods are hidden in the Editor. Show them via
+                    the sidebar or „Show all" — the locked selection itself is
+                    untouched.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted">
+                      No mods selected. Pick them in the Library
+                      {locked ? " (unlock the selection there first)" : ""}.
+                    </p>
+                    <div className="mt-4 flex gap-2">
+                      <Button variant="secondary" onClick={onReselect}>
+                        Go to Library
+                      </Button>
+                    </div>
+                  </>
+                )}
               </Card>
             </div>
           )}
