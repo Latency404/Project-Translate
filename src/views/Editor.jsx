@@ -350,12 +350,6 @@ export default function Editor({ onReselect }) {
                 : "All"}
           </button>
         </div>
-        {locked && (
-          <p className="mb-2 rounded-md bg-raised px-2 py-1 text-xs text-muted">
-            Locked — show/hide here doesn't change the locked selection or the
-            Export.
-          </p>
-        )}
         <nav className="space-y-1">
           {sidebarMods.map((mod) => (
             <div

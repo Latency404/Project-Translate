@@ -127,8 +127,10 @@ Nächstes: Phase 4 (4.1 Duplikate zusammenführen).
   Editor-Sidebar und Export-View zeigen nur die ausgewählten Mods, keine
   eigenständige Editor-Auswahl mehr (alter Key `pt_editor_selection` ist weg).
   Library hat einen Lock-Button (`pt_library_locked`): gesperrt ignorieren
-  Karten-Klicks und „All" die Auswahl — auch im Editor (Sidebar-Checkboxes
-  disabled, Label „Selected (locked)"). App.jsx verdrahtet die Auswahl nicht
+  Karten-Klicks und „All" die Auswahl. Im Editor sind die Sidebar-Checkboxes
+  im Lock-Status trotzdem aktiv, steuern aber nur ein lokales
+  Sichtbarkeits-Overlay (siehe Auswahl-Verbund in „Aktueller Stand") — die
+  gelockte Auswahl bleibt unverändert. App.jsx verdrahtet die Auswahl nicht
   mehr (keine initialModIds/ onSelectionChange).
 - **Editor verwaltet eigene Mod-Auswahl (Nacht-Session 14.09):** [ersetzt —
   siehe Auswahl-Verbund oben, 2026-09-15]
