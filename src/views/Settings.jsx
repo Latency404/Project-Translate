@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScanSearch } from "lucide-react";
+import { ScanSearch, Save } from "lucide-react";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
@@ -36,6 +36,9 @@ export default function Settings({ onOpenMods }) {
   const [scanning, setScanning] = useState(false);
   const [scanDone, setScanDone] = useState(false);
   const [scanProgress, setScanProgress] = useState({ done: 0, total: 0, current: "" });
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
+  const [saveErr, setSaveErr] = useState("");
 
   // Initial load
   useEffect(() => {
@@ -73,9 +76,18 @@ export default function Settings({ onOpenMods }) {
     return () => clearInterval(timer);
   }, [scanning]);
 
+  // Unsaved changes: any field differs from the last loaded/saved config.
+  const configDirty =
+    !!config &&
+    (gameRoot !== config.gameRoot ||
+      workshopDir !== config.workshopDir ||
+      sourceLang !== (config.sourceLang || "EN") ||
+      targetLang !== config.targetLang);
+
   const handleSave = async () => {
-    setError("");
-    setScanDone(false);
+    setSaveErr("");
+    setSaveMsg("");
+    setSaving(true);
     try {
       const saved = await api.saveConfig({
         gameRoot,
@@ -84,9 +96,16 @@ export default function Settings({ onOpenMods }) {
         targetLang,
       });
       setConfig(saved);
+      setGameRoot(saved.gameRoot);
+      setWorkshopDir(saved.workshopDir);
+      setSourceLang(saved.sourceLang || "EN");
+      setTargetLang(saved.targetLang);
       setStatus(await api.getStatus());
+      setSaveMsg("Configuration saved.");
     } catch (err) {
-      setError(err.message);
+      setSaveErr(err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -172,6 +191,19 @@ export default function Settings({ onOpenMods }) {
               </select>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Save}
+              onClick={handleSave}
+              disabled={!configDirty || saving}
+            >
+              {saving ? "Saving..." : "Save"}
+            </Button>
+          </div>
+          {saveErr && <p className="text-sm text-danger">{saveErr}</p>}
+          {!saveErr && saveMsg && <p className="text-sm text-success">{saveMsg}</p>}
         </div>
       </Card>
 

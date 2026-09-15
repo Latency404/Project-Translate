@@ -16,6 +16,23 @@ const UNIVERSE_KEY = "pt_library_selected";
 // Library. Persisted in its own key so per-mod visibility survives view
 // switches without touching the Library selection at all.
 const VISIBLE_KEY = "pt_editor_visible";
+// Unsaved edits (entryId -> translation). Persisted so a view switch (the
+// Editor is unmounted by App.jsx) doesn't silently drop them. Loaded ids are
+// validated against the freshly loaded entries below — a rescan can make an
+// entryId stale, and saving against a path that no longer exists must not
+// happen.
+const DIRTY_KEY = "pt_editor_dirty";
+
+function loadStoredDirty() {
+  try {
+    const raw = sessionStorage.getItem(DIRTY_KEY);
+    if (raw) {
+      const pairs = JSON.parse(raw);
+      if (Array.isArray(pairs)) return new Map(pairs);
+    }
+  } catch { /* ignore */ }
+  return new Map();
+}
 
 function loadUniverseIds() {
   try {
@@ -95,11 +112,14 @@ export default function Editor({ onReselect }) {
   // Column sort for Key / Translation / Original (asc | desc); null = server order.
   const [sort, setSort] = useState(null);
 
-  const [dirty, setDirty] = useState(new Map());
+  const [dirty, setDirty] = useState(() => loadStoredDirty());
   const [loading, setLoading] = useState(false);
   // Bumped after save/import: the entries effect depends on this, so the
   // list reloads after a save (the no-op setSearch() trick below is gone).
   const [reloadKey, setReloadKey] = useState(0);
+  // Guards the one-time pruning of stale dirty ids after the first entries
+  // load post-mount (see the entries effect below).
+  const dirtyPrunedRef = useRef(false);
 
   // --- Load config + library ---
   useEffect(() => {
@@ -126,6 +146,17 @@ export default function Editor({ onReselect }) {
       }
     } catch { /* ignore */ }
   }, [visibleIds]);
+
+  // --- Persist unsaved edits so they survive a view switch (Editor unmount) ---
+  useEffect(() => {
+    try {
+      if (dirty.size === 0) {
+        sessionStorage.removeItem(DIRTY_KEY);
+      } else {
+        sessionStorage.setItem(DIRTY_KEY, JSON.stringify(Array.from(dirty.entries())));
+      }
+    } catch { /* ignore */ }
+  }, [dirty]);
 
   // Universe: the mods picked in the Library (read-only source for the Editor).
   const universe = allMods.filter((m) => universeIds.includes(m.id));
@@ -190,6 +221,28 @@ export default function Editor({ onReselect }) {
         if (cancelled) return;
         setEntriesByMod(new Map(pairs));
         setSaveError("");
+        // One-time prune (per mount) of dirty ids restored from sessionStorage:
+        // a rescan can remove or rename entries, leaving stale entryIds that
+        // would otherwise try to save against paths that no longer exist.
+        if (!dirtyPrunedRef.current) {
+          dirtyPrunedRef.current = true;
+          const validIds = new Set();
+          for (const [, info] of pairs) {
+            for (const entry of info.entries) validIds.add(entry.id);
+          }
+          setDirty((prev) => {
+            let changed = false;
+            const next = new Map();
+            for (const [id, value] of prev) {
+              if (validIds.has(id)) {
+                next.set(id, value);
+              } else {
+                changed = true;
+              }
+            }
+            return changed ? next : prev;
+          });
+        }
       })
       .catch((err) => {
         if (!cancelled) setError(err.message);
@@ -239,29 +292,51 @@ export default function Editor({ onReselect }) {
   const dirtySize = dirty.size;
 
   // --- Save all selected mods one after another ---
+  // Each mod is saved independently: a failure for one mod must not discard
+  // the edits of another, nor hide any but the last error message.
   const handleSave = async () => {
     const withDirty = dirtyByMod.filter((g) => g.items.length > 0);
     if (withDirty.length === 0) return;
-    const dirtyCount = withDirty.reduce((s, g) => s + g.items.length, 0);
     setSaving(true);
     setSaveError("");
     setNotice("");
+    const failures = [];
+    const savedIds = new Set();
+    let savedModCount = 0;
     for (const { mod, items } of withDirty) {
       try {
         await api.saveEntries(
           mod.id,
           items.map(([entryId, translation]) => ({ entryId, translation })),
         );
+        items.forEach(([entryId]) => savedIds.add(entryId));
+        savedModCount += 1;
       } catch (err) {
-        setSaveError(`${mod.name}: ${err.message}`);
+        failures.push(`${mod.name} (${err.message})`);
       }
     }
-    setDirty(new Map());
+    // Only drop entries that actually saved — failed mods keep their edits.
+    setDirty((prev) => {
+      if (savedIds.size === 0) return prev;
+      const next = new Map(prev);
+      for (const id of savedIds) next.delete(id);
+      return next;
+    });
     setSaving(false);
+    const savedMsg =
+      savedIds.size > 0
+        ? `Saved ${savedIds.size} entries in ${savedModCount} mod(s).`
+        : "";
+    if (failures.length > 0) {
+      setSaveError(
+        `${savedMsg ? savedMsg + " " : ""}Failed to save: ${failures.join("; ")}`,
+      );
+    } else if (savedMsg) {
+      setNotice(savedMsg);
+    }
     // Reload entries + updated counts. The save route awaits its rescan,
     // so the cache is already fresh when this fires — reloadKey re-triggers
     // the entries effect (the Library selection doesn't change on save).
-    setNotice(`Gespeichert: ${dirtyCount} Einträge in ${withDirty.length} Mod(s).`);
     setReloadKey((k) => k + 1);
     api
       .getMods()
