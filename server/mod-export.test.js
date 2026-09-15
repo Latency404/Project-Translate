@@ -265,7 +265,9 @@ test('exportModsBundle: zwei Mods → EINE Mod, Key-Vereinigung pro Pfad', () =>
   assert.equal(targetPath, outRoot.replace(/\\/g, '/'))
   assert.ok(existsSync(path.join(outRoot, '42.20', 'mod.info')))
   const info = readFileSync(path.join(outRoot, '42.20', 'mod.info'), 'utf8')
-  assert.match(info, /^name=Coffee Machines Fix \+ Expanded Belt Translation \(DE\)$/m)
+  // Nachbesserung 1: name= ist bei mehreren Mods eine kurze zählende Form
+  // (wie der Ordnername), keine mit '+' verkettete Namensliste mehr.
+  assert.match(info, /^name=Translation Bundle \(2 mods\) \(DE\)$/m)
   assert.match(info, /^author=Project Translate$/m)
   // id ist deterministisch aus der Mod-Menge (nicht game_version).
   assert.equal(info.match(/^id=(.+)$/m)[1], bundleModInfoId([coffee, belt], 'DE'))
@@ -356,7 +358,8 @@ test('exportModsBundle: Key-Kollision → späterer Mod gewinnt', () => {
   assert.deepEqual(ui, { UI_X: 'Von Mod B' })
   // mod.info: reines common-Layout → kein versionMin/versionMax.
   const info = readFileSync(path.join(outRoot, 'common', 'mod.info'), 'utf8')
-  assert.match(info, /^name=Mod A \+ Mod B Translation \(DE\)$/m)
+  // Nachbesserung 1: kurze zählende Form statt 'Mod A + Mod B'.
+  assert.match(info, /^name=Translation Bundle \(2 mods\) \(DE\)$/m)
   assert.ok(!info.includes('versionMin'))
   assert.ok(!info.includes('versionMax'))
   assert.ok(!info.includes('game_version'))
@@ -393,4 +396,23 @@ test('C4: Bundle aus vielen Mods mit langen/unzulässigen Namen legt einen gült
   assert.ok(existsSync(targetPath))
   // Windows: keine der verbotenen Zeichen im Ordnernamen.
   assert.ok(!/[<>:"/\\|?*]/.test(folderName))
+})
+
+test('Nachbesserung 1: name= wächst nicht mit der Mod-Anzahl (kurze zählende Form statt Namenskette)', () => {
+  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
+  const base = mods.find((m) => m.id === 'BASE')
+  const targetDir = path.join(workdir, 'exportBundleManyNames')
+  const { targetPath } = exportModsBundle([coffee, belt, base], 'DE', targetDir)
+  const info = readFileSync(path.join(targetPath, 'mod.info'), 'utf8')
+  const nameLine = info.match(/^name=(.+)$/m)[1]
+  assert.equal(nameLine, 'Translation Bundle (3 mods) (DE)')
+  // keine verkettete Namensliste mehr im Wert.
+  assert.ok(!nameLine.includes(' + '))
+  assert.ok(nameLine.length < 60)
+  // Einzelmod bleibt unverändert: sein eigener Name, nicht die zählende Form.
+  const soloDir = path.join(workdir, 'exportSoloName')
+  const solo = exportModsBundle([coffee], 'DE', soloDir)
+  const soloInfo = readFileSync(path.join(solo.targetPath, '42.20', 'mod.info'), 'utf8')
+  assert.match(soloInfo, /^name=Coffee Machines Fix Translation \(DE\)$/m)
 })

@@ -6,8 +6,9 @@
 //                                              echtem Root-Layout/Basisspiel am
 //                                              Wurzelordner. id/name/author/
 //                                              description gleich in jeder Datei;
-//                                              versionMin/versionMax nur, wenn der
-//                                              Ort ein echter Versionsordner ist.)
+//                                              versionMin nur, wenn der Ort ein
+//                                              echter Versionsordner ist —
+//                                              versionMax bewusst nie, s.u.)
 //   [common/][<version>/]icon.png              (falls die Quelle ein Bild hat; via
 //                                              poster=/icon= in derselben mod.info
 //                                              deklariert)
@@ -111,6 +112,15 @@ function bundleFolderBaseName(mods) {
   return `Translation Bundle (${mods.length} mods)`
 }
 
+// Anzeigename fürs `name=`-Feld der mod.info: dieselbe Regel wie beim
+// Ordnernamen (bundleFolderBaseName) — ein Mod → sein Name, mehrere → eine
+// kurze zählende Form statt der mit ' + ' verketteten Namensliste, die bei
+// vielen Mods eine unlesbare Zeile im Mod-Manager des Spiels ergibt.
+function bundleDisplayName(mods, targetLang) {
+  if (mods.length === 1) return `${mods[0].name} Translation (${targetLang})`
+  return `Translation Bundle (${mods.length} mods) (${targetLang})`
+}
+
 // Übersetzungs-Stellen eines Mods: [{ rel, vdir }] — rel ist das Pfad-Prefix im
 // exportierten Mod ('' für root/Base, 'common', Versionsnummer), vdir der
 // Quell-Translate-Root. Gleiche Reihenfolge wie scanner.scan():
@@ -144,9 +154,10 @@ function findIconSrc(mod) {
 }
 
 // Für jeden Layout-Ort eine eigene mod.info (+ ggf. icon.png) schreiben.
-// id/name/author/description sind an jedem Ort identisch; versionMin/versionMax
-// nur an einem echten Versionsordner (common/root sind Fallback-Orte ohne
-// Versionsbindung). Gibt die geschriebenen Pfade (POSIX, relativ zu outRoot) zurück.
+// id/name/author/description sind an jedem Ort identisch; versionMin nur an
+// einem echten Versionsordner (common/root sind Fallback-Orte ohne
+// Versionsbindung; versionMax wird nie geschrieben, s. Kopfkommentar).
+// Gibt die geschriebenen Pfade (POSIX, relativ zu outRoot) zurück.
 function writeModInfoFiles(outRoot, locations, { id, name, author, description, iconSrc }) {
   const written = []
   for (const { rel } of locations) {
@@ -223,56 +234,21 @@ function readTranslatedFiles(rel, vdir, targetLang) {
   return results
 }
 
-// Ein Mod exportieren. Liest die targetLang-Dateien direkt aus dem Mod (Pre-Fill
-// und gespeicherte Werte sind identisch = die Werte der Datei).
-function exportMod(mod, targetLang, targetDir) {
-  const outRoot = path.join(targetDir, `${sanitizeFolderName(mod.name)}-${targetLang}`)
-  fs.mkdirSync(outRoot, { recursive: true })
-
-  const locations = layoutLocations(mod)
-  const id = singleModInfoId(mod, targetLang)
-  const name = `${mod.name} Translation (${targetLang})`
-  const author = 'Project Translate'
-  const description = mod.isBaseGame
-    ? `Community translation of the Project Zomboid base game into ${targetLang}.`
-    : `Community translation of ${mod.name} into ${targetLang}.`
-  const iconSrc = findIconSrc(mod)
-
-  const written = writeModInfoFiles(outRoot, locations, { id, name, author, description, iconSrc })
-
-  // Übersetzte Einträge pro Stelle (common / root / Versionen).
-  for (const { rel, vdir } of locations) {
-    for (const { relPath, isTxt, tgtFileName, out } of readTranslatedFiles(rel, vdir, targetLang)) {
-      if (isTxt) {
-        // Lua-Tabelle heißt nach dem targetLang-Dateinamen: Sandbox_DE.txt → Sandbox_DE.
-        writeLua(path.join(outRoot, relPath), tgtFileName.slice(0, -4), out)
-      } else {
-        writeJson(path.join(outRoot, relPath), out)
-      }
-      written.push(toPosix(relPath))
-    }
-  }
-  return { modId: mod.id, targetPath: toPosix(outRoot), written }
-}
-
-// Mehrere ausgewählte Mods in EINE installierbare Mod bündeln.
-//
-// Ziel: <targetDir>/<Name>-<targetLang>/ — ein einziger Mod, der alle
-// Übersetzungen der Auswahl enthält (statt je einem Ordner pro Mod).
-//   - Ordnername: ein Mod → sein Name; mehrere → fester Name + Anzahl (C4).
-//   - mod.info je Layout-Ort (wie exportMod); id deterministisch aus der
-//     sortierten Menge der Mod-ids + Zielsprache (Auswahlreihenfolge egal).
-//   - Übersetzte Dateien aller Mods werden in EINEN Baum gemergt: gleiche
-//     Zielpfade (z. B. beide common/.../DE/UI.json) vereinigen ihre Key-Mengen;
-//     bei Key-Kollision gewinnt der spätere Mod (in der Reihenfolge von modIds).
-//   - icon.png: das erste vorhandene Poster der Auswahl, an jedem Layout-Ort.
-// Ein einzelner Mod erzeugt exakt dasselbe Ergebnis wie exportMod().
-function exportModsBundle(mods, targetLang, targetDir) {
+// Gemeinsamer Kern von exportMod und exportModsBundle (D1): baut den Zielordner,
+// eine mod.info je Layout-Ort (über alle Mods hinweg vereinigt) und mergt die
+// übersetzten Dateien aller Mods in einen Baum. Nimmt IMMER ein Array (auch für
+// den Einzelmod-Fall) — Ordnername, id, name/description und die Datei-Merge-Regel
+// sind für ein einzelnes Element dieselben Regeln wie für mehrere, siehe
+// bundleFolderBaseName/bundleDisplayName. `written` ist ein Set in
+// Einfüge-Reihenfolge (mod.info/icon je Layout-Ort zuerst, dann die Dateien) —
+// ob/wie sortiert wird, entscheidet der Aufrufer.
+function buildExport(mods, targetLang, targetDir) {
   const outRoot = path.join(targetDir, `${bundleFolderBaseName(mods)}-${targetLang}`)
   fs.mkdirSync(outRoot, { recursive: true })
 
   // Layout-Orte über alle Mods hinweg (rel-Werte können sich über Mods
   // wiederholen, z. B. mehrere Mods mit '42.20' — mod.info dort nur einmal).
+  // Für einen einzelnen Mod ist das exakt layoutLocations(mod).
   const locByRel = new Map()
   for (const mod of mods) {
     for (const loc of layoutLocations(mod)) {
@@ -282,15 +258,14 @@ function exportModsBundle(mods, targetLang, targetDir) {
   const locations = [...locByRel.values()]
 
   const id = mods.length === 1 ? singleModInfoId(mods[0], targetLang) : bundleModInfoId(mods, targetLang)
-  const combinedName = mods.length === 1 ? mods[0].name : mods.map((m) => m.name).join(' + ')
-  const name = `${combinedName} Translation (${targetLang})`
+  const name = bundleDisplayName(mods, targetLang)
   const author = 'Project Translate'
   const description = mods.length === 1
     ? (mods[0].isBaseGame
         ? `Community translation of the Project Zomboid base game into ${targetLang}.`
         : `Community translation of ${mods[0].name} into ${targetLang}.`)
     : `Community translation bundle (${mods.length} mods) into ${targetLang}.`
-  // icon.png: das erste Poster, das vorhanden ist.
+  // icon.png: das erste Poster, das vorhanden ist (bei einem Mod: dessen Poster).
   let iconSrc = null
   for (const mod of mods) {
     iconSrc = findIconSrc(mod)
@@ -299,7 +274,9 @@ function exportModsBundle(mods, targetLang, targetDir) {
 
   const written = new Set(writeModInfoFiles(outRoot, locations, { id, name, author, description, iconSrc }))
 
-  // Übersetzte Dateien aller Mods in EINEN Baum mergen (Key-Vereinigung pro Pfad).
+  // Übersetzte Dateien aller Mods in EINEN Baum mergen (Key-Vereinigung pro Pfad;
+  // bei einem einzelnen Mod gibt es nie zwei Quellen für denselben relPath, das
+  // Mergen ist dann ein No-Op).
   const fileAcc = new Map() // relPath -> { isTxt, fileName, merged }
   for (const mod of mods) {
     for (const { rel, vdir } of layoutLocations(mod)) {
@@ -323,7 +300,38 @@ function exportModsBundle(mods, targetLang, targetDir) {
     written.add(toPosix(relPath))
   }
 
-  return { modId: mods.map((m) => m.id).join(' + '), targetPath: toPosix(outRoot), written: [...written].sort() }
+  // mods.map(id).join(' + ') ist bei einem Element exakt dieses eine mod.id
+  // (kein Trenner ohne zweites Element) — exportMod muss modId nicht separat bilden.
+  return { modId: mods.map((m) => m.id).join(' + '), targetPath: toPosix(outRoot), written }
+}
+
+// Ein Mod exportieren. Liest die targetLang-Dateien direkt aus dem Mod (Pre-Fill
+// und gespeicherte Werte sind identisch = die Werte der Datei). Dünner Aufruf von
+// buildExport mit einem einelementigen Array — `written` bleibt bewusst in
+// Einfüge-Reihenfolge (unsortiert), das ist das historische, getestete Verhalten
+// dieser Funktion und unterscheidet sich damit von exportModsBundle, das sortiert.
+function exportMod(mod, targetLang, targetDir) {
+  const { modId, targetPath, written } = buildExport([mod], targetLang, targetDir)
+  return { modId, targetPath, written: [...written] }
+}
+
+// Mehrere ausgewählte Mods in EINE installierbare Mod bündeln.
+//
+// Ziel: <targetDir>/<Name>-<targetLang>/ — ein einziger Mod, der alle
+// Übersetzungen der Auswahl enthält (statt je einem Ordner pro Mod).
+//   - Ordnername: ein Mod → sein Name; mehrere → fester Name + Anzahl (C4).
+//   - Anzeigename (`name=`): dieselbe Regel wie beim Ordnernamen (Nachbesserung 1).
+//   - mod.info je Layout-Ort (wie exportMod); id deterministisch aus der
+//     sortierten Menge der Mod-ids + Zielsprache (Auswahlreihenfolge egal).
+//   - Übersetzte Dateien aller Mods werden in EINEN Baum gemergt: gleiche
+//     Zielpfade (z. B. beide common/.../DE/UI.json) vereinigen ihre Key-Mengen;
+//     bei Key-Kollision gewinnt der spätere Mod (in der Reihenfolge von modIds).
+//   - icon.png: das erste vorhandene Poster der Auswahl, an jedem Layout-Ort.
+// Ein einzelner Mod erzeugt exakt dasselbe Ergebnis wie exportMod(), bis auf die
+// Reihenfolge von `written` (hier alphabetisch sortiert, s. buildExport).
+function exportModsBundle(mods, targetLang, targetDir) {
+  const { modId, targetPath, written } = buildExport(mods, targetLang, targetDir)
+  return { modId, targetPath, written: [...written].sort() }
 }
 
 module.exports = {
