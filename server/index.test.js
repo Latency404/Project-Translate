@@ -219,3 +219,88 @@ test('POST /api/export/llm + POST /api/import/llm/preview → Roundtrip über di
   assert.equal(empty.status, 400)
   assert.ok(typeof empty.json.error === 'string')
 })
+
+test('POST /api/config — gültige Config wird übernommen', async () => {
+  const gameRoot = path.join(fakeRoot, 'gameRoot')
+  const workshopDir = path.join(fakeRoot, 'workshop')
+  const res = await api('POST', '/config', {
+    gameRoot,
+    workshopDir,
+    sourceLang: 'EN',
+    targetLang: 'FR'
+  })
+  assert.equal(res.status, 200)
+  assert.equal(res.json.targetLang, 'FR')
+
+  const got = await api('GET', '/config')
+  assert.equal(got.json.targetLang, 'FR')
+
+  // Zurück auf DE, damit nachfolgende Tests (Scan lief bereits mit DE-Fixtures)
+  // von einer bekannten targetLang ausgehen können.
+  const reset = await api('POST', '/config', {
+    gameRoot,
+    workshopDir,
+    sourceLang: 'EN',
+    targetLang: 'DE'
+  })
+  assert.equal(reset.status, 200)
+})
+
+test('POST /api/config — nicht existierender gameRoot → 400', async () => {
+  const res = await api('POST', '/config', {
+    gameRoot: path.join(fakeRoot, 'does-not-exist'),
+    workshopDir: path.join(fakeRoot, 'workshop'),
+    sourceLang: 'EN',
+    targetLang: 'DE'
+  })
+  assert.equal(res.status, 400)
+  assert.match(res.json.error, /Game folder/)
+})
+
+test('POST /api/config — nicht existierender workshopDir → 400', async () => {
+  const res = await api('POST', '/config', {
+    gameRoot: path.join(fakeRoot, 'gameRoot'),
+    workshopDir: path.join(fakeRoot, 'does-not-exist'),
+    sourceLang: 'EN',
+    targetLang: 'DE'
+  })
+  assert.equal(res.status, 400)
+  assert.match(res.json.error, /Workshop folder/)
+})
+
+test('POST /api/config — Datei statt Verzeichnis wird abgelehnt', async () => {
+  // Es genügt irgendeine existierende Datei (kein Verzeichnis); wir nutzen
+  // eine bekannte Fixture-Datei relativ zu fakeRoot.
+  const existingFile = path.join(fakeRoot, 'workshop', '3554514861', 'mods', 'Fuel Bowser', 'mod.info')
+  assert.ok(existsSync(existingFile), 'Fixture-Datei fehlt: ' + existingFile)
+  const res = await api('POST', '/config', {
+    gameRoot: existingFile,
+    workshopDir: path.join(fakeRoot, 'workshop'),
+    sourceLang: 'EN',
+    targetLang: 'DE'
+  })
+  assert.equal(res.status, 400)
+  assert.match(res.json.error, /Game folder/)
+})
+
+test('POST /api/config — Sprachcode zu kurz → 400', async () => {
+  const res = await api('POST', '/config', {
+    gameRoot: path.join(fakeRoot, 'gameRoot'),
+    workshopDir: path.join(fakeRoot, 'workshop'),
+    sourceLang: 'EN',
+    targetLang: 'D'
+  })
+  assert.equal(res.status, 400)
+  assert.match(res.json.error, /Target language/)
+})
+
+test('POST /api/config — Quell- und Zielsprache identisch → 400', async () => {
+  const res = await api('POST', '/config', {
+    gameRoot: path.join(fakeRoot, 'gameRoot'),
+    workshopDir: path.join(fakeRoot, 'workshop'),
+    sourceLang: 'DE',
+    targetLang: 'DE'
+  })
+  assert.equal(res.status, 400)
+  assert.match(res.json.error, /Source and target language must not be the same/)
+})

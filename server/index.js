@@ -203,6 +203,8 @@ app.get('/api/config', (req, res) => {
 
 app.post('/api/config', (req, res) => {
   const body = req.body || {}
+  const errors = config.validate(body)
+  if (errors.length) return fail(res, 400, errors.join(' '))
   const saved = config.save(body)
   res.json(saved)
 })

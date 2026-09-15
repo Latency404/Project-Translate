@@ -43,4 +43,62 @@ function toPosix(p) {
   return String(p).replace(/\\/g, '/')
 }
 
-module.exports = { load, save, toPosix, DEFAULTS, SOURCE_LANG, CONFIG_PATH }
+// Gleiche Auffassung von "gültig" wie targetLangOf() in server/index.js:
+// nur die Länge zählt (2-4 Zeichen), kein Alphabet-Check.
+function isValidLangCode(v) {
+  return typeof v === 'string' && v.length >= 2 && v.length <= 4
+}
+
+function isExistingDir(p) {
+  if (typeof p !== 'string' || !p) return false
+  try {
+    return fs.statSync(p).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+// Validiert einen an POST /api/config übergebenen Body, BEVOR save()
+// geschrieben wird. Fehlt ein Feld im Body, zieht die Prüfung den zuletzt
+// gespeicherten (bzw. Default-)Wert heran — genau wie save() es beim Mergen
+// tut, damit ein Teil-Update nicht an einem Feld scheitert, das gar nicht
+// geändert wurde. Gibt eine Liste lesbarer Fehlermeldungen zurück; ein
+// leeres Array heißt gültig.
+function validate(body) {
+  const merged = { ...load(), ...body }
+  const errors = []
+
+  if (!isExistingDir(merged.gameRoot)) {
+    errors.push(`Game folder does not exist or is not a directory: ${merged.gameRoot}`)
+  }
+  if (!isExistingDir(merged.workshopDir)) {
+    errors.push(`Workshop folder does not exist or is not a directory: ${merged.workshopDir}`)
+  }
+  if (!isValidLangCode(merged.targetLang)) {
+    errors.push('Target language must be 2 to 4 letters.')
+  }
+
+  // sourceLang ist (noch) kein echtes Config-Feld — die Quellsprache ist fix
+  // SOURCE_LANG (siehe oben, D3 in PLAN.md macht sie erst konfigurierbar).
+  // Die Settings-View schickt trotzdem schon einen sourceLang-Wert mit;
+  // wird er mitgeschickt, prüfen wir sein Format und gegen targetLang auf
+  // Gleichheit. Fehlt er, gilt für den Gleichheits-Check die feste
+  // SOURCE_LANG.
+  const sourceLangGiven = body.sourceLang != null
+  const sourceLang = sourceLangGiven ? body.sourceLang : SOURCE_LANG
+  if (sourceLangGiven && !isValidLangCode(sourceLang)) {
+    errors.push('Source language must be 2 to 4 letters.')
+  }
+
+  if (
+    isValidLangCode(sourceLang) &&
+    isValidLangCode(merged.targetLang) &&
+    String(sourceLang).toUpperCase() === String(merged.targetLang).toUpperCase()
+  ) {
+    errors.push('Source and target language must not be the same.')
+  }
+
+  return errors
+}
+
+module.exports = { load, save, validate, toPosix, DEFAULTS, SOURCE_LANG, CONFIG_PATH }

@@ -76,6 +76,18 @@ export default function Settings({ onOpenMods }) {
     return () => clearInterval(timer);
   }, [scanning]);
 
+  // saveErr ist eine oder mehrere Satz-für-Satz-Meldungen von POST /api/config
+  // (server/config.js validate()), z. B. "Game folder does not exist or is
+  // not a directory: ... . Source and target language must not be the same."
+  // Wir teilen sie am Feld auf, damit sie direkt bei der betroffenen Eingabe
+  // steht statt nur allgemein unter dem Save-Button.
+  const saveErrParts = saveErr ? saveErr.split(/(?<=\.)\s+/).filter(Boolean) : [];
+  const gameRootErrs = saveErrParts.filter((p) => p.startsWith("Game folder"));
+  const workshopErrs = saveErrParts.filter((p) => p.startsWith("Workshop folder"));
+  const langErrs = saveErrParts.filter((p) => p.toLowerCase().includes("language"));
+  const placedErrs = new Set([...gameRootErrs, ...workshopErrs, ...langErrs]);
+  const otherErrs = saveErrParts.filter((p) => !placedErrs.has(p));
+
   // Unsaved changes: any field differs from the last loaded/saved config.
   const configDirty =
     !!config &&
@@ -157,39 +169,54 @@ export default function Settings({ onOpenMods }) {
       {/* Edit configuration */}
       <Card title="Configuration" subtitle="Edit paths and languages.">
         <div className="space-y-4">
-          <Input label="Game folder" value={gameRoot} onChange={(e) => setGameRoot(e.target.value)} className="font-mono" />
-          <Input label="Workshop folder" value={workshopDir} onChange={(e) => setWorkshopDir(e.target.value)} className="font-mono" />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted">
-                Source language
-              </label>
-              <select
-                value={sourceLang}
-                onChange={(e) => setSourceLang(e.target.value)}
-                className="h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              >
-                <option value="EN">EN</option>
-                <option value="DE">DE</option>
-                <option value="FR">FR</option>
-                <option value="ES">ES</option>
-              </select>
+          <div>
+            <Input label="Game folder" value={gameRoot} onChange={(e) => setGameRoot(e.target.value)} className="font-mono" />
+            {gameRootErrs.length > 0 && (
+              <p className="mt-1 text-xs text-danger">{gameRootErrs.join(" ")}</p>
+            )}
+          </div>
+          <div>
+            <Input label="Workshop folder" value={workshopDir} onChange={(e) => setWorkshopDir(e.target.value)} className="font-mono" />
+            {workshopErrs.length > 0 && (
+              <p className="mt-1 text-xs text-danger">{workshopErrs.join(" ")}</p>
+            )}
+          </div>
+          <div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted">
+                  Source language
+                </label>
+                <select
+                  value={sourceLang}
+                  onChange={(e) => setSourceLang(e.target.value)}
+                  className="h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <option value="EN">EN</option>
+                  <option value="DE">DE</option>
+                  <option value="FR">FR</option>
+                  <option value="ES">ES</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted">
+                  Target language
+                </label>
+                <select
+                  value={targetLang}
+                  onChange={(e) => setTargetLang(e.target.value)}
+                  className="h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <option value="DE">DE</option>
+                  <option value="EN">EN</option>
+                  <option value="FR">FR</option>
+                  <option value="ES">ES</option>
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted">
-                Target language
-              </label>
-              <select
-                value={targetLang}
-                onChange={(e) => setTargetLang(e.target.value)}
-                className="h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              >
-                <option value="DE">DE</option>
-                <option value="EN">EN</option>
-                <option value="FR">FR</option>
-                <option value="ES">ES</option>
-              </select>
-            </div>
+            {langErrs.length > 0 && (
+              <p className="mt-1 text-xs text-danger">{langErrs.join(" ")}</p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -202,7 +229,7 @@ export default function Settings({ onOpenMods }) {
               {saving ? "Saving..." : "Save"}
             </Button>
           </div>
-          {saveErr && <p className="text-sm text-danger">{saveErr}</p>}
+          {otherErrs.length > 0 && <p className="text-sm text-danger">{otherErrs.join(" ")}</p>}
           {!saveErr && saveMsg && <p className="text-sm text-success">{saveMsg}</p>}
         </div>
       </Card>
