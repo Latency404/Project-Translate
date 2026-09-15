@@ -2,11 +2,11 @@
 // game_version = höchste Version, nur übersetzte Einträge, pro Version eigene Bäume.
 const { test, before, after } = require('node:test')
 const assert = require('node:assert/strict')
-const { mkdtempSync, rmSync, cpSync, readFileSync, existsSync } = require('node:fs')
+const { mkdtempSync, rmSync, cpSync, readFileSync, existsSync, mkdirSync, writeFileSync } = require('node:fs')
 const { tmpdir } = require('node:os')
 const path = require('node:path')
 const { scan } = require('./scanner')
-const { exportMod, highestVersion, layoutLocations } = require('./mod-export')
+const { exportMod, exportModsBundle, highestVersion, layoutLocations } = require('./mod-export')
 const { injectLayoutFixtures } = require('./fixtures-inject')
 
 let workdir
@@ -169,4 +169,107 @@ test('exportMod: dual-Layout (common + Version) exportiert beide Bäume', () => 
     'common/media/lua/shared/Translate/DE/UI.json',
     'mod.info'
   ].sort())
+})
+
+test('exportModsBundle: zwei Mods → EINE Mod, Key-Vereinigung pro Pfad', () => {
+  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
+  const targetDir = path.join(workdir, 'exportBundle')
+  const { targetPath, written } = exportModsBundle([coffee, belt], 'DE', targetDir)
+  // Ein einziger Ordner für beide Mods (nicht je einer).
+  const outRoot = path.join(targetDir, 'Coffee Machines Fix + Expanded Belt-DE')
+  assert.equal(targetPath, outRoot.replace(/\\/g, '/'))
+  assert.ok(existsSync(path.join(outRoot, 'mod.info')))
+  const info = readFileSync(path.join(outRoot, 'mod.info'), 'utf8')
+  assert.match(info, /^name=Coffee Machines Fix \+ Expanded Belt Translation \(DE\)$/m)
+  assert.match(info, /^author=Project Translate$/m)
+  // game_version = höchste über alle (beide 42.20).
+  assert.match(info, /^game_version=42\.20$/m)
+
+  // IG_UI.json: beide Mods haben 42.20/.../DE/IG_UI.json → EINE Datei, Key-Vereinigung.
+  const igUi = JSON.parse(readFileSync(
+    path.join(outRoot, '42.20', 'media', 'lua', 'shared', 'Translate', 'DE', 'IG_UI.json'), 'utf8'
+  ))
+  // Coffee (6) + Belt (2) = 8 eindeutige Keys.
+  assert.equal(igUi.IGUI_CraftingWindow_CoffeeMachine, 'X-presso')
+  assert.equal(igUi.IGUI_ExpandedBelt_Left, 'Linkes Erweiterungsfach')
+  assert.equal(Object.keys(igUi).length, 8)
+  // ContextMenu (Coffee, 5), ItemName (Belt, 1) und Recipes (Belt, 1) liegen nebenher.
+  const ctx = JSON.parse(readFileSync(
+    path.join(outRoot, '42.20', 'media', 'lua', 'shared', 'Translate', 'DE', 'ContextMenu.json'), 'utf8'
+  ))
+  assert.equal(ctx.ContextMenu_OPTION_COFFEE_MACHINE, 'Kaffeemaschine')
+  const recipes = JSON.parse(readFileSync(
+    path.join(outRoot, '42.20', 'media', 'lua', 'shared', 'Translate', 'DE', 'Recipes.json'), 'utf8'
+  ))
+  assert.equal(recipes.ExpandBelt, 'Gürtel erweitern')
+  const item = JSON.parse(readFileSync(
+    path.join(outRoot, '42.20', 'media', 'lua', 'shared', 'Translate', 'DE', 'ItemName.json'), 'utf8'
+  ))
+  assert.equal(item['ExpandedBelt.ExpandedBelt'], 'Erweiterter Gürtel')
+  // icon.png: erstes Poster (Coffee).
+  assert.ok(existsSync(path.join(outRoot, 'icon.png')))
+  // written: mod.info + icon.png + 4 Übersetzungsdateien.
+  assert.deepEqual(written, [
+    '42.20/media/lua/shared/Translate/DE/ContextMenu.json',
+    '42.20/media/lua/shared/Translate/DE/IG_UI.json',
+    '42.20/media/lua/shared/Translate/DE/ItemName.json',
+    '42.20/media/lua/shared/Translate/DE/Recipes.json',
+    'icon.png',
+    'mod.info'
+  ])
+})
+
+test('exportModsBundle: ein Mod → exakt wie exportMod', () => {
+  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const solo = path.join(workdir, 'exportBundleSolo')
+  const bundle = exportModsBundle([coffee], 'DE', solo)
+  const single = path.join(workdir, 'exportBundleSingle')
+  const ref = exportMod(coffee, 'DE', single)
+  // Gleicher Ordnername, gleiche geschriebenen Dateien (Reihenfolge egal).
+  assert.equal(path.basename(bundle.targetPath), path.basename(ref.targetPath))
+  assert.equal(path.basename(bundle.targetPath), 'Coffee Machines Fix-DE')
+  assert.deepEqual([...bundle.written].sort(), [...ref.written].sort())
+  // mod.info ohne " + ".
+  const info = readFileSync(
+    path.join(solo, 'Coffee Machines Fix-DE', 'mod.info'), 'utf8'
+  )
+  assert.match(info, /^name=Coffee Machines Fix Translation \(DE\)$/m)
+})
+
+test('exportModsBundle: Key-Kollision → späterer Mod gewinnt', () => {
+  // Zwei isolierte common-Layout-Mods mit demselben Zielpfad + Key bauen wir
+  // ad hoc: beide übersetzen common/.../DE/UI.json → UI_X, mit unterschiedlichen
+  // Werten. Das Bundle muss genau EINE Datei mit dem Wert des späteren Mods (B)
+  // enthalten. versions: [] → reines common-Layout, kein game_version.
+  const coll = path.join(workdir, 'collide')
+  for (const [dir, value] of [['a', 'Von Mod A'], ['b', 'Von Mod B']]) {
+    const root = path.join(coll, dir)
+    const enDir = path.join(root, 'common', 'media', 'lua', 'shared', 'Translate', 'EN')
+    const deDir = path.join(root, 'common', 'media', 'lua', 'shared', 'Translate', 'DE')
+    mkdirSync(enDir, { recursive: true })
+    mkdirSync(deDir, { recursive: true })
+    writeFileSync(path.join(enDir, 'UI.json'), JSON.stringify({ UI_X: 'Original X' }), 'utf8')
+    writeFileSync(path.join(deDir, 'UI.json'), JSON.stringify({ UI_X: value }), 'utf8')
+  }
+  const mk = (dir, name) => ({
+    id: dir, name, isBaseGame: false, versions: [],
+    rootPath: path.join(coll, dir), poster: null, entryCount: 1, translatedCount: 1
+  })
+  const targetDir = path.join(workdir, 'exportBundleCollide')
+  const { written } = exportModsBundle([mk('a', 'Mod A'), mk('b', 'Mod B')], 'DE', targetDir)
+  const outRoot = path.join(targetDir, 'Mod A + Mod B-DE')
+  // EINE UI.json; der spätere Mod (B) gewinnt die Kollision.
+  const ui = JSON.parse(readFileSync(
+    path.join(outRoot, 'common', 'media', 'lua', 'shared', 'Translate', 'DE', 'UI.json'), 'utf8'
+  ))
+  assert.deepEqual(ui, { UI_X: 'Von Mod B' })
+  // mod.info: reines common-Layout → kein game_version.
+  const info = readFileSync(path.join(outRoot, 'mod.info'), 'utf8')
+  assert.match(info, /^name=Mod A \+ Mod B Translation \(DE\)$/m)
+  assert.ok(!info.includes('game_version'))
+  assert.deepEqual(written, [
+    'common/media/lua/shared/Translate/DE/UI.json',
+    'mod.info'
+  ])
 })

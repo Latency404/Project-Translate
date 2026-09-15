@@ -16,7 +16,7 @@ const fake = require('./fake-api')
 const { scan } = require('./scanner')
 const { saveBatch, classifyFsError } = require('./entries')
 const llm = require('./llm-io')
-const { exportMod } = require('./mod-export')
+const { exportModsBundle } = require('./mod-export')
 
 const app = express()
 const PORT = process.env.PORT || 3100
@@ -27,7 +27,6 @@ const PROJECT_ROOT = path.join(__dirname, '..')
 // export/-Verzeichnis: export/ im Projektroot (git-ignoriert); PT_EXPORT_ROOT
 // erlaubt einen anderen Ort (Tests).
 const EXPORT_ROOT = process.env.PT_EXPORT_ROOT || path.join(PROJECT_ROOT, 'export')
-const LLM_ROOT = path.join(EXPORT_ROOT, 'llm')
 const BACKUP_ROOT = path.join(EXPORT_ROOT, 'backups')
 const MOD_EXPORT_DEFAULT = path.join(EXPORT_ROOT, 'mods')
 
@@ -186,14 +185,15 @@ app.put('/api/mods/:modId/entries', (req, res) => {
   } catch (err) {
     return fail(res, err.status || 500, classifyFsError(err, mod.rootPath).message)
   }
-  // rescan spiegelt die Disk in den Cache. War zu Beginn des PUTs ein
-  // rescan aktiv, ist sein Snapshot (start < PUT-Schreib) veraltet —
-  // danach erneut einspielen, damit der PUT im Cache landet.
-  void rescan().then(
-    () => { if (wasRescanning) void rescan() },
-    () => {},
-  )
-  res.json(result)
+  // rescan spiegelt die Disk in den Cache — wird GEMACHT, damit der Client
+  // den frischen Cache direkt nach dem Speichern liest (vorher: Rescan lief
+  // im Hintergrund und der Editor las für ~1 s alte Werte). War zu Beginn
+  // des PUTs ein rescan aktiv, ist sein Snapshot (start < PUT-Schreib)
+  // veraltet — danach erneut einspielen.
+  rescan()
+    .then(() => (wasRescanning ? rescan() : undefined))
+    .catch(() => {})
+    .finally(() => res.json(result))
 })
 
 // --- Config ---
@@ -208,6 +208,9 @@ app.post('/api/config', (req, res) => {
 })
 
 // --- LLM-Export / -Import ---
+// Export bündelt alle ausgewählten Mods in EINE Datei (JSON-String); die
+// Frontend lädt sie über den Browser-Save-Dialog herunter — es wird NICHTS auf
+// die Disk geschrieben.
 app.post('/api/export/llm', (req, res) => {
   const body = req.body || {}
   const modIds = Array.isArray(body.modIds) ? body.modIds : []
@@ -215,45 +218,52 @@ app.post('/api/export/llm', (req, res) => {
   const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
   if (!mods.length) return fail(res, 400, 'Keine gültigen Mod-Auswahl.')
   try {
-    const result = llm.exportLlm(mods, lang, LLM_ROOT)
-    res.json({ targetLang: lang, written: result.written })
+    const result = llm.exportLlmBundle(mods, lang)
+    res.json(result)
   } catch (err) {
     fail(res, 500, err.message || 'LLM-Export fehlgeschlagen')
   }
 })
 
-function importDirOf(req) {
-  const body = req.body || {}
-  if (body.dir && typeof body.dir === 'string') return body.dir
-  return path.join(LLM_ROOT, config.load().targetLang)
+// Import: die Frontend sendet den Text einer einzigen Datei (aus dem
+// Browser-Open-Dialog) im Body als { text }. Preview und Apply teilen sich die
+// Normalisierung (Bundle / Mod-Docs-Array / einzelne Mod-Datei).
+function importDocsOf(body) {
+  return llm.normalizeImportInput(body && body.text)
 }
 
-app.get('/api/import/llm/preview', (req, res) => {
-  const dir = (req.query.dir && String(req.query.dir)) || path.join(LLM_ROOT, config.load().targetLang)
+app.post('/api/import/llm/preview', (req, res) => {
+  const { docs, error } = importDocsOf(req.body)
+  if (error) return fail(res, 400, error)
   const mods = cache ? cache.mods : []
-  res.json(llm.importPreview(dir, mods, config.load().targetLang))
+  res.json(llm.importPreview(docs, mods, config.load().targetLang))
 })
 
 app.post('/api/import/llm/apply', (req, res) => {
-  const dir = importDirOf(req)
+  const { docs, error } = importDocsOf(req.body)
+  if (error) return fail(res, 400, error)
   const mods = cache ? cache.mods : []
   const wasRescanning = rescanning
   let result
   try {
-    result = llm.importApply(dir, mods, config.load().targetLang, BACKUP_ROOT)
+    result = llm.importApply(docs, mods, config.load().targetLang, BACKUP_ROOT)
   } catch (err) {
-    return fail(res, err.status || 500, classifyFsError(err, dir).message)
+    return fail(res, err.status || 500, classifyFsError(err, 'Import').message)
   }
-  // Wie beim PUT: laufender rescan hätte einen alten Snapshot —
-  // danach erneut einspielen.
-  void rescan().then(
-    () => { if (wasRescanning) void rescan() },
-    () => {},
-  )
-  res.json(result)
+  // Wie beim PUT: Rescan wird GEMACHT, damit der Client die importierten
+  // Werte sofort sieht; war beim Schreiben ein rescan aktiv, läuft danach
+  // ein zweiter (das erste Snapshot ist veraltet).
+  rescan()
+    .then(() => (wasRescanning ? rescan() : undefined))
+    .catch(() => {})
+    .finally(() => res.json(result))
 })
 
 // --- Mod-Export ---
+// Alle ausgewählten Mods werden in EINE installierbare Mod gebündelt
+// (ein Ordner, der alle Übersetzungen enthält — Key-Vereinigung pro Pfad).
+// Die Routenform bleibt: { modIds, targetDir, targetLang } → { targetLang,
+// targetDir, results } (results enthält genau das eine Bundle).
 app.post('/api/export/mod', (req, res) => {
   const body = req.body || {}
   const modIds = Array.isArray(body.modIds) ? body.modIds : []
@@ -262,8 +272,8 @@ app.post('/api/export/mod', (req, res) => {
   const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
   if (!mods.length) return fail(res, 400, 'Keine gültigen Mod-Auswahl.')
   try {
-    const results = mods.map((m) => exportMod(m, lang, targetDir))
-    res.json({ targetLang: lang, targetDir: config.toPosix(targetDir), results })
+    const result = exportModsBundle(mods, lang, targetDir)
+    res.json({ targetLang: lang, targetDir: config.toPosix(targetDir), results: [result] })
   } catch (err) {
     fail(res, 500, err.message || 'Mod-Export fehlgeschlagen')
   }

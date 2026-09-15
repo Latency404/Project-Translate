@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FileInput, FileOutput, Save } from "lucide-react";
 import * as api from "../api.js";
 import Button from "../components/Button.jsx";
@@ -8,14 +8,18 @@ import Modal from "../components/Modal.jsx";
 import ProgressBar from "../components/ProgressBar.jsx";
 import Tag from "../components/Tag.jsx";
 
-// The mod selection IS the Library selection — one shared sessionStorage key,
-// so the Editor shows exactly what was picked in the Library (and vice versa).
-const STORAGE_KEY = "pt_library_selected";
-const LOCK_KEY = "pt_library_locked";
+// The universe of mods the Editor can show IS the Library selection — the
+// Editor only ever READS this key (the Library writes it). Deselecting a mod in
+// the Editor sidebar never touches the Library selection.
+const UNIVERSE_KEY = "pt_library_selected";
+// Editor-only visibility — the Editor's OWN selection, separate from the
+// Library. Persisted in its own key so per-mod visibility survives view
+// switches without touching the Library selection at all.
+const VISIBLE_KEY = "pt_editor_visible";
 
-function loadStoredIds() {
+function loadUniverseIds() {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
+    const raw = sessionStorage.getItem(UNIVERSE_KEY);
     if (raw) {
       const ids = JSON.parse(raw);
       if (Array.isArray(ids)) return ids;
@@ -24,27 +28,54 @@ function loadStoredIds() {
   return [];
 }
 
+// Sortable column header (Key / Translation / Original). Shared `sort`
+// state across every mod block; click toggles asc → desc → server order.
+function SortHeader({ field, label, className, sort, onCycle }) {
+  const active = sort && sort.field === field;
+  const arrow = !active ? "↕" : sort.dir === "asc" ? "↑" : "↓";
+  return (
+    <button
+      type="button"
+      onClick={() => onCycle(field)}
+      title={`Sort by ${label} (click: ${!active ? "ascending" : sort.dir === "asc" ? "descending" : "reset"})`}
+      className={`flex items-center gap-1 text-left text-xs font-mono font-medium transition-colors hover:text-text ${
+        active ? "text-accent" : "text-muted"
+      } ${className || ""}`}
+    >
+      {label}
+      <span className={`font-mono ${active ? "text-accent" : "text-muted/50"}`}>
+        {arrow}
+      </span>
+    </button>
+  );
+}
+
 export default function Editor({ onReselect }) {
-  // --- Mod selection (shared with the Library, persisted via sessionStorage) ---
-  // Never written by the Editor: the Library is the only writer, so a lock set
-  // there keeps the shared selection (and the Export) frozen.
-  const [modIds, setModIds] = useState(() => loadStoredIds());
-  const [locked, setLocked] = useState(() => {
+  // --- Universe: the Library selection (read-only here) ---
+  // The Editor only shows the mods picked in the Library. This key is written
+  // by the Library; the Editor reads it on mount and never writes it back, so
+  // the sidebar selection stays fully separate from the Library selection.
+  const [universeIds] = useState(() => loadUniverseIds());
+  // --- Editor-only visibility — the Editor's OWN selection ---
+  // The sidebar checkboxes toggle this: it hides/shows mods in the Editor only,
+  // never touching the Library selection. Persisted so per-mod visibility
+  // survives view switches. null = everything in the universe is visible.
+  const [visibleIds, setVisibleIds] = useState(() => {
     try {
-      return sessionStorage.getItem(LOCK_KEY) === "1";
+      const raw = sessionStorage.getItem(VISIBLE_KEY);
+      if (raw) {
+        const ids = JSON.parse(raw);
+        if (Array.isArray(ids)) return ids;
+      }
     } catch { /* ignore */ }
-    return false;
+    return null; // null = everything visible
   });
-  // --- Editor-only visibility overlay (local overview, never persisted) ---
-  // While the shared selection is locked, the sidebar checkboxes toggle this
-  // overlay instead: it hides/shows mods in the Editor only — modIds, the
-  // Library and the Export keep the locked selection untouched.
-  const [visibleIds, setVisibleIds] = useState(null); // null = everything visible
 
   // --- State ---
   const [allMods, setAllMods] = useState([]);
   const [error, setError] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
 
   // --- LLM export / import ---
@@ -54,12 +85,21 @@ export default function Editor({ onReselect }) {
   const [importLoading, setImportLoading] = useState(false);
   const [applyLoading, setApplyLoading] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  // Text der für den Import gewählten Datei (aus dem Browser-Open-Dialog) —
+  // wird bei Apply unverändert nachgeschickt.
+  const [importText, setImportText] = useState(null);
+  const fileInputRef = useRef(null);
 
   const [entriesByMod, setEntriesByMod] = useState(new Map());
   const [search, setSearch] = useState("");
+  // Column sort for Key / Translation / Original (asc | desc); null = server order.
+  const [sort, setSort] = useState(null);
 
   const [dirty, setDirty] = useState(new Map());
   const [loading, setLoading] = useState(false);
+  // Bumped after save/import: the entries effect depends on this, so the
+  // list reloads after a save (the no-op setSearch() trick below is gone).
+  const [reloadKey, setReloadKey] = useState(0);
 
   // --- Load config + library ---
   useEffect(() => {
@@ -74,60 +114,62 @@ export default function Editor({ onReselect }) {
       });
   }, []);
 
-  // Sidebar: the FULL shared selection (locked or not — the Library is the source)
-  const sidebarMods = allMods.filter((m) => modIds.includes(m.id));
-  // What is actually VISIBLE in the editor. The overlay only applies while
-  // locked; unlocked, the editor shows the whole shared selection.
-  const visible = locked ? (visibleIds ?? modIds) : modIds;
-  const entryMods = locked
-    ? sidebarMods.filter((m) => visible.includes(m.id))
-    : sidebarMods;
+  // --- Persist the Editor's own visibility so it survives view switches ---
+  // (the universe key belongs to the Library — the Editor never writes it.)
+  // null (everything visible) clears the key; a concrete list is stored.
+  useEffect(() => {
+    try {
+      if (visibleIds === null) {
+        sessionStorage.removeItem(VISIBLE_KEY);
+      } else {
+        sessionStorage.setItem(VISIBLE_KEY, JSON.stringify(visibleIds));
+      }
+    } catch { /* ignore */ }
+  }, [visibleIds]);
 
-  // Entries are loaded for the full shared selection, so hiding a mod is
+  // Universe: the mods picked in the Library (read-only source for the Editor).
+  const universe = allMods.filter((m) => universeIds.includes(m.id));
+  // What is actually VISIBLE in the editor: the Editor's own selection on top
+  // of the universe (stale ids not in the universe are dropped). null =
+  // everything in the universe is visible.
+  const visible = (visibleIds ?? universeIds).filter((id) =>
+    universeIds.includes(id),
+  );
+  // Sidebar: the FULL Library selection — deselecting a mod keeps its entry
+  // in the sidebar (unchecked), it never disappears, and the Library selection
+  // stays untouched.
+  const sidebarMods = universe;
+  // Content: only the visible mods.
+  const entryMods = universe.filter((m) => visible.includes(m.id));
+  // Overall progress across all visible mods (header status bar: X/X).
+  const totalEntries = entryMods.reduce((s, m) => s + m.entryCount, 0);
+  const totalTranslated = entryMods.reduce((s, m) => s + m.translatedCount, 0);
+
+  // Entries are loaded for the full Library selection, so hiding a mod is
   // display-only: its entries stay loaded, tracked, and savable.
-  const loadModsKey = sidebarMods.map((m) => m.id).join("\u0000");
+  const loadModsKey = universe.map((m) => m.id).join("\u0000");
 
-  // --- Mod selection helpers ---
-  // Unlocked: checkboxes change the SHARED selection (Library + Export follow).
-  // Locked: checkboxes toggle the local visibility overlay only — modIds,
-  // the Library and the Export keep the locked selection untouched.
+  // --- Mod visibility helpers (Editor only — the Library selection is read-only) ---
   const toggleMod = (id) => {
-    if (locked) {
-      setVisibleIds((prev) => {
-        const current = prev || modIds;
-        const next = current.includes(id)
-          ? current.filter((x) => x !== id)
-          : [...current, id];
-        return next.length === modIds.length ? null : next;
-      });
-      return;
-    }
-    setModIds((prev) =>
-      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
-    );
+    setVisibleIds((prev) => {
+      const current = prev ?? universeIds;
+      const next = current.includes(id)
+        ? current.filter((x) => x !== id)
+        : [...current, id];
+      return next.length === universeIds.length ? null : next;
+    });
   };
 
-  const allSelected =
-    allMods.length > 0 && allMods.every((m) => modIds.includes(m.id));
   const allVisible =
-    modIds.length > 0 && modIds.every((id) => visible.includes(id));
+    universeIds.length > 0 && universeIds.every((id) => visible.includes(id));
 
   const toggleAllMods = () => {
-    if (locked) {
-      // Locked: "Hide all" / "Show all" on the local overlay
-      setVisibleIds(allVisible ? [] : [...modIds]);
-      return;
-    }
-    if (allSelected) {
-      setModIds([]);
-    } else {
-      setModIds(allMods.map((m) => m.id));
-    }
+    setVisibleIds(allVisible ? [] : [...universeIds]);
   };
 
-  // --- Load entries for every selected mod (recalled on selection/search) ---
+  // --- Load entries for the full Library selection (recalled on search) ---
   useEffect(() => {
-    const mods = allMods.filter((m) => modIds.includes(m.id));
+    const mods = universe;
     if (mods.length === 0) {
       setEntriesByMod(new Map());
       return;
@@ -159,7 +201,7 @@ export default function Editor({ onReselect }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadModsKey, search]);
+  }, [loadModsKey, search, reloadKey]);
 
   // --- Search handler ---
   const handleSearch = (val) => {
@@ -169,6 +211,7 @@ export default function Editor({ onReselect }) {
   // --- Dirty tracking: dirty only when the value differs from the loaded one ---
   const updateDirty = useCallback((id, translation, original) => {
     const value = translation === null ? "" : String(translation);
+    setNotice("");
     if (value === original) {
       setDirty((prev) => {
         if (!prev.has(id)) return prev;
@@ -199,8 +242,10 @@ export default function Editor({ onReselect }) {
   const handleSave = async () => {
     const withDirty = dirtyByMod.filter((g) => g.items.length > 0);
     if (withDirty.length === 0) return;
+    const dirtyCount = withDirty.reduce((s, g) => s + g.items.length, 0);
     setSaving(true);
     setSaveError("");
+    setNotice("");
     for (const { mod, items } of withDirty) {
       try {
         await api.saveEntries(
@@ -213,24 +258,37 @@ export default function Editor({ onReselect }) {
     }
     setDirty(new Map());
     setSaving(false);
-    // Reload entries + updated counts
-    setEntriesByMod(new Map());
-    setSearch((s) => s); // no-op, keep value
+    // Reload entries + updated counts. The save route awaits its rescan,
+    // so the cache is already fresh when this fires — reloadKey re-triggers
+    // the entries effect (the Library selection doesn't change on save).
+    setNotice(`Gespeichert: ${dirtyCount} Einträge in ${withDirty.length} Mod(s).`);
+    setReloadKey((k) => k + 1);
     api
       .getMods()
       .then((data) => setAllMods(data.mods || []))
       .catch(() => {});
   };
 
-  // --- LLM export: selected mods to the configured target language ---
+  // --- LLM export: alle sichtbaren Mods in EINE Datei (Browser-Save-Dialog) ---
   const handleLlmExport = async () => {
-    if (modIds.length === 0) return;
+    if (visible.length === 0) return;
     setExportLoading(true);
     setSaveError("");
+    setNotice("");
     try {
-      await api.exportLlm(modIds, targetLang);
-      const data = await api.getMods();
-      setAllMods(data.mods || []);
+      const result = await api.exportLlm(visible, targetLang);
+      const blob = new Blob([result.text], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = result.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setNotice(
+        `Exportiert ${result.modCount} Mod(s), ${result.entryCount} Einträge als „${result.filename}" — die Datei kann direkt in die KI zum Übersetzen gegeben werden, danach „Import".`,
+      );
     } catch (err) {
       setSaveError(err.message);
     } finally {
@@ -238,18 +296,28 @@ export default function Editor({ onReselect }) {
     }
   };
 
-  // --- LLM import: preview first, apply with confirmation ---
-  const handleImportPreview = async () => {
+  // --- LLM import: Datei wählen (Browser-Open-Dialog) → Vorschau, Apply mit Bestätigung ---
+  const handleImportClick = () => {
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  const handleImportFileChange = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
     setImportLoading(true);
     setSaveError("");
     try {
-      const result = await api.importPreview();
+      const text = await file.text();
+      const result = await api.importPreview(text);
+      setImportText(text);
       setImportPreview(result);
       setImportModalOpen(true);
     } catch (err) {
       setSaveError(err.message);
     } finally {
       setImportLoading(false);
+      // Wert zurücksetzen, damit dieselbe Datei erneut wählbar ist.
+      e.target.value = "";
     }
   };
 
@@ -257,14 +325,17 @@ export default function Editor({ onReselect }) {
     setApplyLoading(true);
     setSaveError("");
     try {
-      await api.importApply();
+      await api.importApply(importText);
       setImportModalOpen(false);
       setImportPreview(null);
+      setImportText(null);
       // Reload entries + counts so the editor shows the imported translations
+      // (apply awaits its rescan — the cache is fresh; reloadKey re-triggers
+      // the entries effect).
       const data = await api.getMods();
       setAllMods(data.mods || []);
-      setEntriesByMod(new Map());
-      setSearch((s) => s);
+      setNotice("Import übernommen — die importierten Übersetzungen sind gespeichert.");
+      setReloadKey((k) => k + 1);
     } catch (err) {
       setSaveError(err.message);
     } finally {
@@ -294,6 +365,33 @@ export default function Editor({ onReselect }) {
     [dirty],
   );
 
+  // --- Column sort: click a header to toggle asc → desc → (server order) ---
+  const cycleSort = (field) => {
+    setSort((prev) => {
+      if (prev && prev.field === field) {
+        return prev.dir === "asc" ? { field, dir: "desc" } : null;
+      }
+      return { field, dir: "asc" };
+    });
+  };
+
+  const sortEntries = (entries) => {
+    if (!sort || entries.length <= 1) return entries;
+    const { field, dir } = sort;
+    const factor = dir === "asc" ? 1 : -1;
+    const val = (e) => {
+      if (field === "key") return String(e.key ?? "");
+      if (field === "translation") {
+        const t = dirty.has(e.id) ? dirty.get(e.id) : e.translation;
+        return t === null || t === undefined ? "" : String(t);
+      }
+      return String(e.original ?? "");
+    };
+    return [...entries].sort((a, b) =>
+      val(a) < val(b) ? -factor : val(a) > val(b) ? factor : 0,
+    );
+  };
+
   // === Error state (e.g. no scan) ===
   if (error && allMods.length === 0) {
     return (
@@ -322,32 +420,35 @@ export default function Editor({ onReselect }) {
   // === Main editor --- sidebar = ALL mods, content = selected mods ===
   return (
     <div className="flex h-full">
-      {/* Sidebar: shared Library selection. Unlocked: checkboxes change it.
-          Locked: checkboxes toggle LOCAL visibility only (overview). */}
+      {/* Verstecktes Dateifeld: „Import" öffnet den Browser-Open-Dialog. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,application/json"
+        onChange={handleImportFileChange}
+        className="hidden"
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+      {/* Sidebar: the full Library selection. The checkboxes only control
+          what is VISIBLE in the editor — the Library selection is never
+          touched, so a mod never disappears from the sidebar. */}
       <aside className="w-64 shrink-0 self-stretch overflow-y-auto border-r border-line bg-surface p-3">
         <div className="mb-2 flex items-center justify-between">
           <p className="text-xs font-mono font-medium text-muted uppercase">
-            {locked ? "Selected · visible" : "Selected"}
+            Selected
             {sidebarMods.length > 0 && (
               <span className="ml-1 text-muted">
-                {locked
-                  ? `(${visible.length}/${sidebarMods.length})`
-                  : `(${sidebarMods.length})`}
+                {`(${visible.length}/${sidebarMods.length})`}
               </span>
             )}
           </p>
           <button
             onClick={toggleAllMods}
-            title={locked ? "Show/hide all selected mods (Editor overview only — the locked selection stays untouched)" : "Select/deselect all mods"}
+            title="Show/hide all mods in the editor (Library selection untouched)"
             className="rounded-md px-2 py-0.5 text-xs font-mono text-muted transition-colors hover:bg-raised hover:text-text"
           >
-            {locked
-              ? allVisible
-                ? "Hide all"
-                : "Show all"
-              : allSelected
-                ? "None"
-                : "All"}
+            {allVisible ? "Hide all" : "Show all"}
           </button>
         </div>
         <nav className="space-y-1">
@@ -361,7 +462,7 @@ export default function Editor({ onReselect }) {
                 checked={visible.includes(mod.id)}
                 onChange={() => toggleMod(mod.id)}
                 className="size-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
-                aria-label={locked ? `Show ${mod.name} in editor` : `Select ${mod.name}`}
+                aria-label={`Show ${mod.name} in editor`}
               />
               <div className="min-w-0 flex-1 text-left text-sm">
                 <span className="block truncate text-text">{mod.name}</span>
@@ -390,15 +491,17 @@ export default function Editor({ onReselect }) {
               <Tag tone="base">Base Game</Tag>
             )}
             <div className="flex-1" />
+            {entryMods.length > 0 && (
+              <ProgressBar
+                label={`All ${entryMods.length === 1 ? "mod" : "mods"}`}
+                value={totalTranslated}
+                max={totalEntries}
+                color="dust"
+                showValue
+                className="w-48"
+              />
+            )}
           </div>
-          {entryMods.length === 1 && (
-            <ProgressBar
-              value={entryMods[0].translatedCount}
-              max={entryMods[0].entryCount}
-              color="dust"
-              showValue
-            />
-          )}
         </header>
 
         {/* Search + Save + LLM Export/Import */}
@@ -414,17 +517,17 @@ export default function Editor({ onReselect }) {
             variant="secondary"
             icon={FileInput}
             onClick={handleLlmExport}
-            disabled={modIds.length === 0 || exportLoading}
-            title="Export selected mods as LLM JSON (EN originals)"
+            disabled={visible.length === 0 || exportLoading}
+            title="Export visible mods as LLM JSON (EN originals)"
           >
             {exportLoading ? "Exporting..." : "Export"}
           </Button>
           <Button
             variant="secondary"
             icon={FileOutput}
-            onClick={handleImportPreview}
+            onClick={handleImportClick}
             disabled={importLoading}
-            title="Preview LLM import from the import folder"
+            title="Choose a translated LLM file to import (browser file picker)"
           >
             {importLoading ? "Loading..." : "Import"}
           </Button>
@@ -438,9 +541,12 @@ export default function Editor({ onReselect }) {
           </Button>
         </div>
 
-        {/* Error display */}
+        {/* Error / success display */}
         {saveError && (
           <p className="px-4 pt-2 text-sm text-danger">{saveError}</p>
+        )}
+        {!saveError && notice && (
+          <p className="px-4 pt-2 text-sm text-success">{notice}</p>
         )}
 
         {/* Entry area — one block per selected mod */}
@@ -448,17 +554,16 @@ export default function Editor({ onReselect }) {
           {entryMods.length === 0 && (
             <div className="mx-auto max-w-md px-6 py-10">
               <Card title="Editor">
-                {locked && sidebarMods.length > 0 ? (
+                {universe.length > 0 ? (
                   <p className="text-sm text-muted">
                     All selected mods are hidden in the Editor. Show them via
-                    the sidebar or „Show all" — the locked selection itself is
-                    untouched.
+                    the sidebar or „Show all" — the Library selection itself
+                    is untouched.
                   </p>
                 ) : (
                   <>
                     <p className="text-sm text-muted">
-                      No mods selected. Pick them in the Library
-                      {locked ? " (unlock the selection there first)" : ""}.
+                      No mods selected. Pick them in the Library.
                     </p>
                     <div className="mt-4 flex gap-2">
                       <Button variant="secondary" onClick={onReselect}>
@@ -505,12 +610,12 @@ export default function Editor({ onReselect }) {
                     </div>
                   </div>
 
-                  {/* Column headers per mod block */}
+                  {/* Column headers per mod block — click to sort (asc/desc/reset) */}
                   <div className="border-b border-line bg-raised px-4 py-2 text-xs font-mono font-medium text-muted">
                     <div className="flex items-center">
-                      <span className="w-[30%] shrink-0">Key</span>
-                      <span className="w-[40%] shrink-0">Translation</span>
-                      <span className="w-[30%]">Original</span>
+                      <SortHeader field="key" label="Key" className="w-[30%] shrink-0" sort={sort} onCycle={cycleSort} />
+                      <SortHeader field="translation" label="Translation" className="w-[40%] shrink-0" sort={sort} onCycle={cycleSort} />
+                      <SortHeader field="original" label="Original" className="w-[30%]" sort={sort} onCycle={cycleSort} />
                     </div>
                   </div>
 
@@ -525,7 +630,7 @@ export default function Editor({ onReselect }) {
                       </p>
                     )
                   ) : (
-                    entries.map((entry) => {
+                    sortEntries(entries).map((entry) => {
                       const currentTranslation = getEntryTranslation(entry);
                       const entryDirty = isEntryDirty(entry);
 
@@ -571,7 +676,7 @@ export default function Editor({ onReselect }) {
         <div className="space-y-4">
           {totalMatched === 0 && totalUnmatched === 0 ? (
             <p className="text-sm text-muted">
-              No files found in the import folder.
+              No matching entries found in the chosen file.
             </p>
           ) : (
             <>

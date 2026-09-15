@@ -203,7 +203,7 @@ export default function Library({ onGoToSetup }) {
           All ({filtered.length})
         </Button>
         <Button
-          variant={locked ? "primary" : "secondary"}
+          variant={locked ? "secondary" : "primary"}
           size="md"
           icon={locked ? Lock : LockOpen}
           onClick={toggleLocked}

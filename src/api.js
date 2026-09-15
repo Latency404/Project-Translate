@@ -74,15 +74,16 @@ export function exportMod(modIds, targetDir, targetLang) {
   });
 }
 
-export function importPreview(dir) {
-  return request(
-    `/api/import/llm/preview${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`,
-  );
+export function importPreview(text) {
+  return request("/api/import/llm/preview", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
 }
 
-export function importApply(dir) {
+export function importApply(text) {
   return request("/api/import/llm/apply", {
     method: "POST",
-    body: JSON.stringify(dir ? { dir } : {}),
+    body: JSON.stringify({ text }),
   });
 }

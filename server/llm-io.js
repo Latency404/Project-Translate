@@ -1,14 +1,18 @@
 // LLM-Export/-Import.
 //
-// Export (eine Datei pro Mod): export/llm/<targetLang>/<ModName>.json
-//   { mod, modId, targetLang, files: { "<version>/<Kategorie>.json|txt": { key: original } } }
+// Export (EINE Datei für alle ausgewählten Mods, als JSON-String — die Frontend
+// lädt sie über den Browser-Save-Dialog herunter):
+//   { targetLang, mods: [ { mod, modId, files: { "<version>/<Kategorie>.json|txt": { key: original } } } ] }
 // Datei-Keys tragen das Versions-Segment (42.20 / common / root / base), damit
-// mehrere Versionen desselben Mods keine Kollisionen erzeugen. Der LLM
-// übersetzt die Werte; Struktur und Keys bleiben unverändert.
+// mehrere Versionen desselben Mods keine Kollisionen erzeugen. Der LLM bekommt
+// die Originaltexte und übersetzt die Werte; Struktur und Keys bleiben
+// unverändert.
 //
-// Import: liest export/llm/<targetLang>/ (oder einen gewählten Ordner).
-// Zuordnung über (modId oder mod-Name, Datei-Key, JSON-Key). Keys, die nicht
-// existieren, werden als unmatched gelistet und nicht übernommen.
+// Import: die Frontend sendet den Text einer einzigen Datei (Browser-Open-
+// Dialog). normalizeImportInput() akzeptiert Bundle (mods-Array), ein Array von
+// Mod-Docs oder eine einzelne Mod-Datei. Zuordnung über (modId oder mod-Name,
+// Datei-Key, JSON-Key). Keys, die nicht existieren, werden als unmatched
+// gelistet und nicht übernommen.
 //
 // Layout-Traversal entspricht scanner.scan(): Base Game "base" direkt am Root;
 // Mods common → root (nur wenn kein common) → neueste Version. JSON- und
@@ -17,12 +21,9 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const {
-  toPosix,
   translateDir,
-  versionDirOf,
   readFlatMap,
   readTxtMap,
-  targetFileName,
   SOURCE_LANG
 } = require('./scanner')
 const { saveBatch } = require('./entries')
@@ -98,39 +99,66 @@ function buildValidKeys(mods) {
   return valid
 }
 
-function exportLlm(mods, targetLang, llmRoot) {
-  const outDir = path.join(llmRoot, targetLang)
-  fs.mkdirSync(outDir, { recursive: true })
-  const written = []
-  for (const mod of mods) {
-    const files = {}
-    for (const { version, enDir } of enLocations(mod)) {
-      for (const [cat, obj] of Object.entries(readEnDir(enDir))) {
-        if (!files[`${version}/${cat}`]) files[`${version}/${cat}`] = {}
-        Object.assign(files[`${version}/${cat}`], obj)
-      }
+// Dateimap eines Mods: { "<version>/<cat>": { key: original } } — mehrere
+// EN-Stellen werden überlagert (common/root/Versionen).
+function modFiles(mod) {
+  const files = {}
+  for (const { version, enDir } of enLocations(mod)) {
+    for (const [cat, obj] of Object.entries(readEnDir(enDir))) {
+      if (!files[`${version}/${cat}`]) files[`${version}/${cat}`] = {}
+      Object.assign(files[`${version}/${cat}`], obj)
     }
-    const doc = { mod: mod.name, modId: mod.id, targetLang, files }
-    const file = path.join(outDir, `${mod.name}.json`)
-    fs.writeFileSync(file, JSON.stringify(doc, null, 4) + '\n', 'utf8')
-    written.push(toPosix(file))
   }
-  return { written }
+  return files
 }
 
-// LLM-Dateien lesen (tolerant: BOM / Trailing-Comma, falls der LLM kein
-// strenges JSON abliefert).
-function readLlmFiles(dir) {
-  if (!fs.existsSync(dir)) return []
-  return fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
-    .sort()
-    .map((f) => {
-      const obj = readFlatMap(path.join(dir, f))
-      return obj && typeof obj === 'object' ? { file: f, doc: obj } : null
-    })
-    .filter(Boolean)
+// Alle ausgewählten Mods in EINE Datei bündeln. Rückgabe:
+//   { text, filename, targetLang, modCount, entryCount }
+// Die Frontend lädt `text` als `filename` über den Save-Dialog herunter.
+function exportLlmBundle(mods, targetLang) {
+  const modDocs = mods.map((mod) => ({ mod: mod.name, modId: mod.id, files: modFiles(mod) }))
+  const doc = { targetLang, mods: modDocs }
+  let entryCount = 0
+  for (const d of modDocs) {
+    for (const keys of Object.values(d.files)) entryCount += Object.keys(keys).length
+  }
+  return {
+    text: JSON.stringify(doc, null, 2) + '\n',
+    filename: `llm-translation-${String(targetLang).toLowerCase()}.json`,
+    targetLang,
+    modCount: mods.length,
+    entryCount
+  }
+}
+
+// Dateitext in eine Liste von Mod-Docs normalisieren. Akzeptiert:
+//   - String: JSON-Text (tolerant gegenüber BOM); Fehler → { docs: [], error }
+//   - Array von Mod-Docs
+//   - Bundle-Objekt { targetLang, mods: [...] }
+//   - Einzelnes Mod-Doc { mod, modId, files }
+function normalizeImportInput(input) {
+  if (typeof input === 'string') {
+    let text = input
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1) // BOM
+    text = text.trim()
+    if (!text) return { docs: [], error: 'Die Datei ist leer.' }
+    try {
+      input = JSON.parse(text)
+    } catch (e) {
+      return { docs: [], error: `JSON konnte nicht gelesen werden: ${e.message}` }
+    }
+  }
+  let docs
+  if (Array.isArray(input)) {
+    docs = input
+  } else if (input && typeof input === 'object' && Array.isArray(input.mods)) {
+    docs = input.mods
+  } else if (input && typeof input === 'object') {
+    docs = [input]
+  } else {
+    return { docs: [], error: 'Unerwartetes Dateiformat — keine gültigen Mod-Daten.' }
+  }
+  return { docs, error: null }
 }
 
 // Datei-Key "<version>/<cat>" in Version + Kategorienamen zerlegen.
@@ -140,19 +168,24 @@ function fileKeyParts(fileKey) {
   return { version: fileKey.slice(0, slash), cat: fileKey.slice(slash + 1) }
 }
 
+// Mod-Doc einem Mod zuordnen (modId bevorzugt, sonst Name); null = unbekannt.
+function resolveMod(doc, byId, byName) {
+  if (!doc || typeof doc !== 'object' || typeof doc.files !== 'object' || doc.files === null) return null
+  return (doc.modId && byId.get(doc.modId)) || byName.get(doc.mod) || null
+}
+
 // Import-Vorschau: { matched, unmatched, perMod: { <modId>: { mod, matched, unmatched } } }.
 // matched/unmatched zählen JSON-Keys (nicht Dateien).
-function importPreview(dir, mods, targetLang) {
+function importPreview(docs, mods, targetLang) {
   const byId = new Map(mods.map((m) => [m.id, m]))
   const byName = new Map(mods.map((m) => [m.name, m]))
   const valid = buildValidKeys(mods)
   const perMod = {}
   let matched = 0
   let unmatched = 0
-
-  for (const { doc } of readLlmFiles(dir)) {
-    const mod = (doc.modId && byId.get(doc.modId)) || byName.get(doc.mod) || null
-    if (!mod || typeof doc.files !== 'object' || doc.files === null) continue
+  for (const doc of docs) {
+    const mod = resolveMod(doc, byId, byName)
+    if (!mod) continue
     if (!perMod[mod.id]) perMod[mod.id] = { mod: mod.name, matched: 0, unmatched: 0 }
     for (const [fileKey, keys] of Object.entries(doc.files)) {
       const parts = fileKeyParts(fileKey)
@@ -176,14 +209,14 @@ function importPreview(dir, mods, targetLang) {
 // Aus dem Short-Form-Datei-Key wird die entryId rekonstruiert:
 // "<version>/<EN_REL><cat>::<key>" — saveBatch leitet Zielpfad und
 // targetLang-Dateinamen (JSON: identisch, TXT: _EN → _<TGT>) davon ab.
-function importApply(dir, mods, targetLang, backupRoot) {
+function importApply(docs, mods, targetLang, backupRoot) {
   const byId = new Map(mods.map((m) => [m.id, m]))
   const byName = new Map(mods.map((m) => [m.name, m]))
   const valid = buildValidKeys(mods)
   let saved = 0
-  for (const { doc } of readLlmFiles(dir)) {
-    const mod = (doc.modId && byId.get(doc.modId)) || byName.get(doc.mod) || null
-    if (!mod || typeof doc.files !== 'object' || doc.files === null) continue
+  for (const doc of docs) {
+    const mod = resolveMod(doc, byId, byName)
+    if (!mod) continue
     const byFile = new Map()
     for (const [fileKey, keys] of Object.entries(doc.files)) {
       const parts = fileKeyParts(fileKey)
@@ -191,8 +224,6 @@ function importApply(dir, mods, targetLang, backupRoot) {
       for (const [key, value] of Object.entries(keys || {})) {
         if (valid.has(`${mod.id}::${fileKey}::${key}`) && typeof value === 'string') {
           if (!byFile.has(fileKey)) byFile.set(fileKey, [])
-          // entryId braucht den vollen EN-Pfad relativ zum Version-Ordner —
-          // den Short-Form-Key "<version>/<cat>" um EN_REL ergänzen.
           byFile.get(fileKey).push({ entryId: `${parts.version}/${EN_REL}${parts.cat}::${key}`, translation: value })
         }
       }
@@ -204,4 +235,11 @@ function importApply(dir, mods, targetLang, backupRoot) {
   return { saved }
 }
 
-module.exports = { exportLlm, importPreview, importApply, enLocations, buildValidKeys }
+module.exports = {
+  exportLlmBundle,
+  normalizeImportInput,
+  importPreview,
+  importApply,
+  enLocations,
+  buildValidKeys
+}

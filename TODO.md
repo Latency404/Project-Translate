@@ -75,6 +75,34 @@ Nächstes: Phase 4 (4.1 Duplikate zusammenführen).
       fertig wenn: `npm start` — Express dient gebautes Frontend + API auf :3100,
       `npm run build` grün, kein Dev-Server nötig
 
+## Phase 3.5 – Mod-Export finalisieren (B42.20.4-Stable-Mod) [offen]
+- [ ] 3.5.1 mod.info in den Versioning-/common-Ordner · braucht 3.2
+      fertig wenn: `mod.info` liegt im Layout-Ordner neben `media/` (z. B.
+      `42.20/mod.info` bzw. `common/mod.info`), nicht mehr am Root (Ausnahme:
+      echtes root-Layout → dann am Root). Bundle analog. Hinweis: 3.2 sah
+      „mod.info pro Version“ vor — die Implementierung ist davongelassen.
+      Quellen: PZ-API-Docs 42.19 (modinfo), pzwiki Mod.info / Mod structure.
+- [ ] 3.5.2 id-Feld + gültige Version-Keys · braucht 3.5.1
+      fertig wenn: jedes `mod.info` hat `id` (Pflichtfeld), `name`, `author`,
+      `description`, `versionMin`/`versionMax` (Format `42.20`, aus den
+      Layout-Versionen abgeleitet) und ggf. `modversion`; `game_version`
+      (ungültiger Key) ist weg. id deterministisch: gleiche Mod + Sprache →
+      gleiche id (Ableitung z. B. `<slug(workshopId|name)>_<lang>`, snake-safe).
+      Gültige Keys laut Docs: author, category, description, icon, id,
+      incompatible, loadModAfter, loadModBefore, modversion, name, pack,
+      poster, require, tiledef, url, versionMax, versionMin.
+- [ ] 3.5.3 poster/icon verdrahten · braucht 3.5.2
+      fertig wenn: wenn icon.png/poster.png kopiert wurde, steht `poster=`
+      (bzw. `icon=`) im selben `mod.info` mit Dateinamen relativ zum
+      mod.info-Ordner; keine kopierten, ungenutzten Bilddateien.
+- [ ] 3.5.4 Tests + Abnahme · braucht 3.5.3
+      fertig wenn: `mod-export.test.js` deckt neue Pfade, Felder,
+      id-Determinismus und Bundle ab; `npm test` + `npm run build` grün;
+      Export lässt sich als Mod-Ordner direkt in `<game>/mods/` legen.
+
+Nicht im Scope: Übersetzungs-Inhalte/Formate (bereits valide), Routenform
+in `server/index.js`, Komponenten/Theme.
+
 ## Phase 4 – Review [geplant]
 - [ ] 4.1 Duplikate zusammenführen · selbst · braucht 3.3
       fertig wenn: gleiche Logik existiert nur noch an einer Stelle (z. B.

@@ -195,10 +195,27 @@ test('PUT /api/mods/:modId/entries — speichern + Backup + Ziel-Datei', async (
   assert.ok(found, 'Backup der alten DE-Datei fehlt')
 })
 
-test('GET /api/import/llm/preview leerer Ordner → 0/0', async () => {
-  const { status, json } = await api('GET', '/import/llm/preview')
-  assert.equal(status, 200)
-  assert.equal(json.matched, 0)
-  assert.equal(json.unmatched, 0)
-  assert.deepEqual(json.perMod, {})
+test('POST /api/export/llm + POST /api/import/llm/preview → Roundtrip über die Routen', async () => {
+  // Export: alle ausgewählten Mods in EINE Datei (JSON-String), keine Disk-Datei.
+  const exp = await api('POST', '/export/llm', {
+    modIds: ['2688538916/Coffee Machines Fix'],
+    targetLang: 'DE'
+  })
+  assert.equal(exp.status, 200)
+  assert.ok(typeof exp.json.text === 'string' && exp.json.text.length > 0)
+  assert.equal(exp.json.modCount, 1)
+  assert.equal(exp.json.filename, 'llm-translation-de.json')
+  assert.ok(exp.json.entryCount > 0)
+
+  // Import-Vorschau: dieselben Inhalte als Text → alles matched, nichts unmatched.
+  const pv = await api('POST', '/import/llm/preview', { text: exp.json.text })
+  assert.equal(pv.status, 200)
+  assert.equal(pv.json.matched, exp.json.entryCount)
+  assert.equal(pv.json.unmatched, 0)
+  assert.ok(Object.keys(pv.json.perMod).includes('2688538916/Coffee Machines Fix'))
+
+  // Leere Datei → 400 mit Fehlermeldung.
+  const empty = await api('POST', '/import/llm/preview', { text: '' })
+  assert.equal(empty.status, 400)
+  assert.ok(typeof empty.json.error === 'string')
 })
