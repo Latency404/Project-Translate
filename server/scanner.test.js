@@ -4,10 +4,77 @@
 // vorhanden sind. Damit bleibt `npm test` überall grün, prüft hier aber die echte Logik.
 const { test, before } = require('node:test')
 const assert = require('node:assert/strict')
-const { existsSync, readdirSync } = require('node:fs')
-const { scan } = require('./scanner')
+const { existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } = require('node:fs')
+const { scan, readFlatMap } = require('./scanner')
+const { tmpdir } = require('node:os')
+const { join } = require('node:path')
 const { DEFAULTS } = require('./config')
 const fs = require('node:fs')
+
+// Toleranter JSON-Reader (readFlatMap): striktes JSON bleibt unverändert,
+// handgeschriebene Mod-Dateien (Trailing Comma, Lua-Style-Keys) werden gerettet.
+test('readFlatMap: striktes JSON unverändert', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-scan-'))
+  try {
+    const p = join(dir, 'a.json')
+    writeFileSync(p, '{"K1": "v1", "K2": "v2"}\n')
+    assert.deepEqual(readFlatMap(p), { K1: 'v1', K2: 'v2' })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('readFlatMap: Trailing Comma (PZ-B42-JSON-Vorgabe-Bruch)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-scan-'))
+  try {
+    const p = join(dir, 'b.json')
+    // So schreiben viele Mod-Autoren die B42-JSON-Dateien (CRLF + , vor })
+    writeFileSync(p, '{\r\n\t"Base.item": "Item",\r\n\t"Base.item2": "Item 2",\r\n}\r\n')
+    assert.deepEqual(readFlatMap(p), { 'Base.item': 'Item', 'Base.item2': 'Item 2' })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('readFlatMap: unquoted Lua-Style-Keys', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-scan-'))
+  try {
+    const p = join(dir, 'c.json')
+    writeFileSync(p, '{\n\tUI_optionscreen_binding_OPTION_X: "Inspect Weapon",\n\tUI_other: "Other",\n}\n')
+    assert.deepEqual(readFlatMap(p), {
+      UI_optionscreen_binding_OPTION_X: 'Inspect Weapon',
+      UI_other: 'Other'
+    })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('readFlatMap: BOM + Mischformen', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-scan-'))
+  try {
+    const p = join(dir, 'd.json')
+    writeFileSync(p, '\uFEFF{\nA: "a",\n"B": "b",\n}')
+    assert.deepEqual(readFlatMap(p), { A: 'a', B: 'b' })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('readFlatMap: fehlende Datei / ungültiger Inhalt → null', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pt-scan-'))
+  try {
+    assert.equal(readFlatMap(join(dir, 'fehlt.json')), null)
+    const p = join(dir, 'bad.json')
+    writeFileSync(p, 'kein json {{')
+    assert.equal(readFlatMap(p), null)
+    const q = join(dir, 'arr.json')
+    writeFileSync(q, '[1, 2, 3]')
+    assert.equal(readFlatMap(q), null) // Arrays sind keine Maps
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
 
 // true, wenn a >= b (segmentweise numerisch, wie cmpVersionDesc im Scanner).
 function versionGe(a, b) {

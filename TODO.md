@@ -56,16 +56,16 @@ echte Daten abnehmen.
       fertig wenn: `npm start` — Setup zeigt echten Status, Scan findet die echten
       362+ Mods, Mod-Liste zeigt echte Eintragszahlen, Editor zeigt echte
       Originaltexte inkl. Pre-Fill vorhandener DE-Werte (grün)
-- [ ] 2.2 Echtes Speichern mit Backup · delegieren · braucht 2.1
+- [ ] 2.2 Echtes Speichern mit Backup · selbst · braucht 2.1
       fertig wenn: Eintrag im echten Mod speichern überlebt Neustart, alte Datei liegt
       in export/backups/, Rechtefehler (nicht Admin) wird sauber im UI gemeldet
 
 ## Phase 3 – Funktionen [geplant]
-- [ ] 3.1 LLM-Export/-Import echt · delegieren · braucht 2.1
+- [ ] 3.1 LLM-Export/-Import echt · selbst · braucht 2.1
       fertig wenn: Export erzeugt eine Datei pro Mod im richtigen Format
       (Versionen im Datei-Key), Import-Vorschau zuordnet korrekt, Apply schreibt
       targetLang-Dateien mit Backup, unmatched-Keys werden verworfen
-- [ ] 3.2 Mod-Export · delegieren · braucht 2.1
+- [ ] 3.2 Mod-Export · selbst · braucht 2.1
       fertig wenn: `POST /api/export/mod` erzeugt kompletten installierbaren
       Übersetzungs-Mod (mod.info pro Version, Translate/`<LANG>`/-Bäume, icon.png),
       Zielordner wählbar, View zeigt Export-Dialog mit Ordnerauswahl

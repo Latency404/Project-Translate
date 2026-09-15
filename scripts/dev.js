@@ -37,7 +37,7 @@ function killAll() {
 
 const vite = spawn(process.execPath, [path.join(root, 'node_modules', 'vite', 'bin', 'vite.js')], {
   cwd: root,
-  env: { ...process.env, PT_FAKE: '1' },
+  env: { ...process.env, PT_FAKE: process.env.PT_FAKE || '1' },
   stdio: 'inherit',
   detached: true
 })
@@ -54,7 +54,7 @@ let debounce = null
 function startApi() {
   api = spawn(process.execPath, [path.join(root, 'server', 'index.js')], {
     cwd: root,
-    env: { ...process.env, PT_FAKE: '1', PT_FAKE_SERVE: '1' },
+    env: { ...process.env, PT_FAKE: process.env.PT_FAKE || '1', PT_FAKE_SERVE: '1' },
     stdio: 'inherit'
   })
   children.push(api)

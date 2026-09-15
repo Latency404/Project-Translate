@@ -6,23 +6,25 @@ import ProgressBar from "../components/ProgressBar.jsx";
 import Tag from "../components/Tag.jsx";
 import * as api from "../api.js";
 
-const STORAGE_KEY = "pt_editor_selection";
+// The export selection IS the Library selection — one shared sessionStorage
+// key, so whatever is ticked in the Library is exactly what can be exported.
+const STORAGE_KEY = "pt_library_selected";
 
 function loadStoredIds() {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (raw) {
       const ids = JSON.parse(raw);
-      if (Array.isArray(ids) && ids.length > 0) return ids;
+      if (Array.isArray(ids)) return ids;
     }
   } catch { /* ignore */ }
-  return null;
+  return [];
 }
 
-export default function Exchange() {
+export default function Exchange({ onReselect }) {
   const [mods, setMods] = useState([]);
   const [targetLang, setTargetLang] = useState("DE");
-  const [selectedIds, setSelectedIds] = useState(() => loadStoredIds() || []);
+  const [selectedIds, setSelectedIds] = useState(() => loadStoredIds());
   const [targetDir, setTargetDir] = useState("");
   const [exportLoading, setExportLoading] = useState(false);
   const [exportOk, setExportOk] = useState(null);
@@ -42,26 +44,20 @@ export default function Exchange() {
       .catch(() => {});
   }, []);
 
-  // Deselect all / select all
-  const toggleAll = () => {
-    if (selectedIds.length === 0) {
-      setSelectedIds(mods.map((m) => m.id));
-    } else {
-      setSelectedIds([]);
-    }
-  };
-
   const selectedMods = mods.filter((m) => selectedIds.includes(m.id));
 
-  // Status calculation
+  // Status — numbers only, no per-mod lists on this page.
   const totalEntries = selectedMods.reduce((s, m) => s + m.entryCount, 0);
   const totalTranslated = selectedMods.reduce((s, m) => s + m.translatedCount, 0);
-  const allReady = selectedMods.length > 0 && selectedMods.every((m) => m.entryCount > 0 && m.entryCount === m.translatedCount);
-  const hasAnyEntry = selectedMods.some((m) => m.entryCount > 0);
-
-  const readyMods = selectedMods.filter((m) => m.entryCount > 0 && m.entryCount === m.translatedCount);
-  const pendingMods = selectedMods.filter((m) => m.entryCount > 0 && m.translatedCount < m.entryCount);
+  const readyMods = selectedMods.filter(
+    (m) => m.entryCount > 0 && m.entryCount === m.translatedCount,
+  );
+  const pendingMods = selectedMods.filter(
+    (m) => m.entryCount > 0 && m.translatedCount < m.entryCount,
+  );
   const emptyMods = selectedMods.filter((m) => m.entryCount === 0);
+  const allReady =
+    selectedMods.length > 0 && pendingMods.length === 0 && totalEntries > 0;
 
   // Export
   const handleExport = async () => {
@@ -87,27 +83,29 @@ export default function Exchange() {
       <header className="space-y-1">
         <h1 className="font-mono text-2xl font-bold text-accent">Export</h1>
         <p className="text-sm text-muted">
-          Export installable translation mods.
+          Export installable translation mods — your Library selection.
         </p>
       </header>
 
-      {/* Status section */}
-      <Card title="Export Status" subtitle={`Selected: ${selectedMods.length} of ${mods.length} mods`}>
+      {/* Status section — compact, no mod lists */}
+      <Card
+        title="Export Status"
+        subtitle={`Selected in Library: ${selectedMods.length} ${selectedMods.length === 1 ? "mod" : "mods"}`}
+      >
         <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={toggleAll}>
-              {selectedIds.length === 0 ? "Select all" : "Clear selection"}
-            </Button>
-          </div>
-
           {selectedMods.length === 0 ? (
-            <p className="text-sm text-muted">
-              No mods selected. Use the Library to select mods for export, or click "Select all".
-            </p>
+            <div className="space-y-3">
+              <p className="text-sm text-muted">
+                No mods selected in the Library.
+              </p>
+              <Button variant="secondary" onClick={onReselect}>
+                Go to Library
+              </Button>
+            </div>
           ) : (
             <>
               {/* Overall progress */}
-              {hasAnyEntry && (
+              {totalEntries > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-text">Overall progress</span>
@@ -124,36 +122,44 @@ export default function Exchange() {
                 </div>
               )}
 
-              {/* Status cards */}
-              {allReady && (
-                <p className="text-sm text-success">✓ All selected mods are fully translated and ready for export.</p>
-              )}
-
-              {pendingMods.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm text-warning">
-                    {pendingMods.length} mod{pendingMods.length !== 1 ? "s" : ""} not yet complete:
-                  </p>
-                  <div className="max-h-60 space-y-1 overflow-y-auto">
-                    {pendingMods.map((mod) => (
-                      <div
-                        key={mod.id}
-                        className="flex items-center gap-2 rounded px-2 py-1 hover:bg-raised"
-                      >
-                        <span className="flex-1 text-sm text-text">{mod.name}</span>
-                        {mod.isBaseGame && <Tag tone="base">Base Game</Tag>}
-                        <span className="font-mono text-xs text-muted">
-                          {mod.translatedCount}/{mod.entryCount}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+              {/* Ready / not ready — one status line each, no lists */}
+              {totalEntries === 0 ? (
+                <p className="text-sm text-muted">
+                  The selected mods have no translatable entries — nothing to export yet.
+                </p>
+              ) : allReady ? (
+                <div className="flex items-center gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2">
+                  <Tag tone="success">Ready</Tag>
+                  <span className="text-sm text-success">
+                    All {selectedMods.length} {selectedMods.length === 1 ? "mod is" : "mods are"} fully translated — ready for export.
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
+                  <Tag tone="warning">Open</Tag>
+                  <span className="text-sm text-warning">
+                    {pendingMods.length} of {selectedMods.length}{" "}
+                    {pendingMods.length === 1 ? "mod is" : "mods are"} not yet complete
+                    {totalEntries - totalTranslated > 0 && (
+                      <span className="font-mono">
+                        {" "}
+                        ({totalEntries - totalTranslated} entries open)
+                      </span>
+                    )}
+                    .
+                  </span>
                 </div>
               )}
 
+              {allReady === false && readyMods.length > 0 && (
+                <p className="text-xs text-muted">
+                  {readyMods.length} {readyMods.length === 1 ? "mod is" : "mods are"} already fully translated.
+                </p>
+              )}
+
               {emptyMods.length > 0 && (
-                <p className="text-sm text-muted">
-                  {emptyMods.length} mod{emptyMods.length !== 1 ? "s" : ""} have no translatable entries.
+                <p className="text-xs text-muted">
+                  {emptyMods.length} {emptyMods.length === 1 ? "mod has" : "mods have"} no translatable entries (ignored on export).
                 </p>
               )}
             </>

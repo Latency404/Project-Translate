@@ -11,7 +11,7 @@
 // Ein Ordner pro Speicher-Batch, Backups werden nie automatisch gelöscht.
 const fs = require('node:fs')
 const path = require('node:path')
-const { versionDirOf, toPosix } = require('./scanner')
+const { versionDirOf, toPosix, readFlatMap } = require('./scanner')
 
 // <modId>__<version>__<file> — Slashes und Sonderzeichen im Namen abtragen.
 function backupName(modId, version, file) {
@@ -23,14 +23,6 @@ function timestampDir() {
   const d = new Date()
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}`
-}
-
-function readJson(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'))
-  } catch {
-    return null
-  }
 }
 
 function writeJson(filePath, obj) {
@@ -77,7 +69,9 @@ function saveBatch(mod, entries, targetLang, backupRoot) {
       fs.mkdirSync(bdir, { recursive: true })
       fs.copyFileSync(tgtPath, path.join(bdir, path.basename(file)))
     }
-    const obj = readJson(tgtPath) || {}
+    // readFlatMap parse tolerant (Trailing Comma / Lua-Keys) — eine
+    // handgeschriebene DE-Datei wird beim Speichern nicht plattgemacht.
+    const obj = readFlatMap(tgtPath) || {}
     for (const { key, translation } of items) {
       if (translation === '') delete obj[key]
       else obj[key] = translation

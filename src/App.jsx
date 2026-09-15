@@ -34,9 +34,9 @@ export default function App() {
   const [initialModIds, setInitialModIds] = useState([]);
 
   return (
-    <div className="min-h-screen bg-ink">
-      {/* NavBar */}
-      <nav className="sticky top-0 z-10 border-b border-line bg-surface px-4 py-2">
+    <div className="flex h-dvh flex-col overflow-hidden bg-ink">
+      {/* NavBar — fix oben; jeder View-Scroll-Container beginnt darunter */}
+      <nav className="z-10 shrink-0 border-b border-line bg-surface px-4 py-2">
         <div className="mx-auto flex max-w-4xl items-center justify-between">
           <span className="font-mono text-lg font-bold text-accent">Project Translate</span>
           <div className="flex items-center gap-1">
@@ -60,8 +60,8 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Content */}
-      <main>
+      {/* Content — der Seiten-Scrollbar lebt hier, also unterhalb des Nav */}
+      <main className="min-h-0 flex-1 overflow-y-auto">
         {view === "mods" && (
           <Library
             key={libraryKey}
@@ -78,7 +78,14 @@ export default function App() {
           />
         )}
         {view === "showcase" && <Showcase />}
-        {view === "export" && <Exchange />}
+        {view === "export" && (
+          <Exchange
+            onReselect={() => {
+              setLibraryKey((k) => k + 1);
+              setView("mods");
+            }}
+          />
+        )}
         {view === "editor" && (
           <Editor
             initialModIds={initialModIds}

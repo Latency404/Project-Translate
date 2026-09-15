@@ -18,7 +18,8 @@ function StatusCard({ title, path, found }) {
       }
     >
       <p className="text-xs text-muted">
-        Path: <span className="font-mono text-text">{path}</span>
+        Path:{" "}
+        <span className="break-all font-mono leading-relaxed text-text">{path}</span>
       </p>
     </Card>
   );

@@ -4,8 +4,8 @@
 //
 // Mod-Layout (Workshop):
 //   <workshopDir>/<PublishedFileID>/mods/<ModName>/
-//       mod.info
-//       poster.png oder generic.png
+//       mod.info            (deklariert das Poster: poster=<file>, meist preview.png)
+//       <poster-Datei> (meist preview.png) oder poster.png / generic.png
 //       <version>/  (z. B. 42, 42.13, 42.20 — Versionsordner heißen immer \d+(\.\d+)*;
 //                    es wird immer nur die NEUESTE Version gescannt/übersetzt —
 //                    ältere Version-Ordner bleiben auf der Platte, aber ungenutzt)
@@ -20,7 +20,9 @@
 //   id = BASE, name = "Project Zomboid (Base Game)", versions = ["base"],
 //   rootPath = gameRoot (es gibt keinen Version-Ordner).
 //
-// JSON-Dateien sind flache key → string-Maps.
+// JSON-Dateien sind flache key → string-Maps; handgeschriebene Mods dürfen
+// Trailing Commas und unquoted (Lua-Style) Keys enthalten — readFlatMap()
+// parse beide Varianten tolerant.
 // TXT-Dateien sind Lua-Translate (Sandbox_EN.txt etc.) mit Key=Value-Paaren.
 // Einträge in JSON-/TXT-Datei-Reihenfolge (Insertion Order), Dateien alphabetisch.
 // Pfade immer POSIX-Style.
@@ -67,8 +69,38 @@ function versionDirOf(mod, version) {
   return path.join(mod.rootPath, version)
 }
 
+// Name des Posters aus mod.info (Zeile `poster=<file>`). PZ-Mods deklarieren
+// dort fast immer `poster=preview.png`. Werte können quoted sein; fehlt das
+// Feld oder die Datei, liefert sie null.
+function posterNameFromInfo(modDir) {
+  const infoPath = path.join(modDir, 'mod.info')
+  if (!fs.existsSync(infoPath)) return null
+  let raw
+  try {
+    raw = fs.readFileSync(infoPath, 'utf8')
+  } catch {
+    return null
+  }
+  for (const line of raw.split(/\r?\n/)) {
+    const m = /^poster\s*=\s*(.+)$/i.exec(line.trim())
+    if (!m) continue
+    let v = m[1].trim()
+    if (v.length >= 2 && ((v[0] === "'" && v[v.length - 1] === "'") || (v[0] === '"' && v[v.length - 1] === '"'))) {
+      v = v.slice(1, -1).trim()
+    }
+    if (v) return v
+  }
+  return null
+}
+
 function posterFor(modDir) {
-  for (const name of ['poster.png', 'generic.png']) {
+  const candidates = [posterNameFromInfo(modDir), 'poster.png', 'generic.png']
+  for (const name of candidates) {
+    if (!name) continue
+    // Nur einfache PNG-Dateinamen: mod.info ist Mod-Inhalt (keine Pfade, kein
+    // ..), und die /mod-poster-Route dient ausschließlich *.png.
+    if (name.includes('/') || name.includes('\\') || name.includes('..')) continue
+    if (!name.toLowerCase().endsWith('.png')) continue
     const p = path.join(modDir, name)
     if (fs.existsSync(p)) return toPosix(p)
   }
@@ -178,16 +210,41 @@ function parseLuaTranslate(raw) {
   return map
 }
 
-function readFlatMap(filePath) {
-  // Liest eine flache key → string-Map; gibt null zurück, wenn die Datei fehlt
-  // oder kein gültiges flaches JSON ist (geskipped, kein Abbruch).
+// Flaches key → string-Objekt parsen. Striktes JSON.parse schlägt bei
+// Mod-Authoren-Dateien oft fehl (Trailing Comma, Lua-Style-Keys) — die
+// Toleranz-Variante parseFlatLenient() nimmt diese Formen zusätzlich.
+function parseFlat(raw) {
   try {
-    const obj = JSON.parse(fs.readFileSync(filePath, 'utf8'))
-    if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return null
-    return obj
+    const obj = JSON.parse(raw)
+    return obj !== null && typeof obj === 'object' && !Array.isArray(obj) ? obj : null
   } catch {
     return null
   }
+}
+
+// Tolerante Variante für handgeschriebene Translate-JSONs:
+//   - BOM am Dateianfang
+//   - Trailing Commas (", }" / ", ]")
+//   - unquoted Keys mit Doppelpunkt (Lua-Style: { Key: "Value" })
+// Gibt null zurück, wenn nichts Parsebares dabei herauskommt.
+function parseFlatLenient(raw) {
+  if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1)
+  let s = raw.replace(/,(\s*[}\]])/g, '$1') // Trailing Commata
+  // Keys direkt nach { bzw , (Whitespace dazwischen): anquote + Colon bleibt.
+  s = s.replace(/([{,]\s*)([A-Za-z0-9_$.]+)\s*:/g, '$1"$2":')
+  return parseFlat(s)
+}
+
+function readFlatMap(filePath) {
+  // Liest eine flache key → string-Map; gibt null zurück, wenn die Datei fehlt
+  // oder kein gültiges flaches JSON ist (geskipped, kein Abbruch).
+  let raw
+  try {
+    raw = fs.readFileSync(filePath, 'utf8')
+  } catch {
+    return null
+  }
+  return parseFlat(raw) ?? parseFlatLenient(raw)
 }
 
 // TXT-Datei als Lua-Translate lesen.
@@ -444,4 +501,4 @@ async function scan(gameRoot, workshopDir, targetLang, { onProgress } = {}) {
   return { mods, entriesByModId }
 }
 
-module.exports = { scan, versionDirOf, translateDir, toPosix, SOURCE_LANG, BASE_ID, BASE_NAME }
+module.exports = { scan, readFlatMap, versionDirOf, translateDir, toPosix, SOURCE_LANG, BASE_ID, BASE_NAME }

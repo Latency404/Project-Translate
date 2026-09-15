@@ -299,7 +299,7 @@ export default function Editor({ initialModIds, onReselect }) {
 
   // === Main editor --- sidebar = ALL mods, content = selected mods ===
   return (
-    <div className="flex h-[calc(100vh-49px)]">
+    <div className="flex h-full">
       {/* Sidebar: ALL mods with checkbox status, scrollable independently */}
       <aside className="w-64 shrink-0 self-stretch overflow-y-auto border-r border-line bg-surface p-3">
         <div className="mb-2 flex items-center justify-between">
@@ -436,11 +436,10 @@ export default function Editor({ initialModIds, onReselect }) {
               const entries = info?.entries || [];
               return (
                 <div key={mod.id}>
-                  {/* Mod block header: visual separation between mods */}
+                  {/* Mod block header: visual separation between mods —
+                      gleiche obere Trennlinie bei jedem Block (auch dem ersten) */}
                   <div
-                    className={`sticky top-0 z-10 border-b-2 border-accent bg-surface px-4 py-2 ${
-                      i > 0 ? "border-t-4 border-t-line" : ""
-                    }`}
+                    className="sticky top-0 z-10 border-t-4 border-t-line border-b-2 border-accent bg-surface px-4 py-2"
                   >
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm font-bold text-text">
