@@ -4,18 +4,25 @@ Grundsatz: Der Funktionsumfang ist gewollt und funktioniert im Kern. Dieser Plan
 ihn von „läuft" auf „rund". Keine neuen Features, keine Umbauten an Architektur, Routen
 oder Theme — außer ein Punkt hier verlangt es ausdrücklich.
 
-## Ist-Zustand (geprüft am 2026-09-16)
+## Ist-Zustand (Stand 2026-09-16, abends)
 
-- `npm test`: 43 Tests grün. `npm run build`: grün (265 kB JS, 24 kB CSS).
-- Scanner läuft gegen die echte Steam-Installation und findet dort 100+ Mods
+- `npm test`: 54 Tests grün. `npm run build`: grün (267 kB JS, 24 kB CSS).
+- Scanner läuft gegen die echte Steam-Installation und findet dort 450+ Mods
   inklusive Basisspiel.
 - Vollständig da und benutzbar: Scan mit Fortschritt, Library mit Auswahl und Lock,
   Editor mit Suche/Sortierung/Speichern inkl. Backup, LLM-Export als eine Datei über
   den Browser-Save-Dialog, LLM-Import mit Vorschau und Bestätigung, Mod-Export als
   gebündelter Übersetzungs-Mod.
-- Testabdeckung: Backend solide (Scanner-Parser, Layouts, Export, Import, Fehler-
-  klassifikation, Routen-Roundtrip). Nicht abgedeckt: die Routen
-  `POST /api/export/mod` und `POST /api/import/llm/apply`, und das Frontend komplett.
+
+Erledigt an diesem Tag: **A1–A3** (Datenverlust), **B2** (Library-Poster),
+**C1–C4** (B42-konforme mod.info), **D1** (doppelte Export-Logik), **E2**
+(Config-Validierung), **E8** (Vite-Warnung).
+
+Noch offen: **B1** (Editor lädt beim Scrollen nach), **C5** (Abnahme im Spiel — nur
+der Nutzer kann das), **D2/D3** (Reste, Quellsprache), **E1**, **E3–E7**.
+
+Testabdeckung: Backend solide. Nicht abgedeckt: die Routen `POST /api/export/mod`
+und `POST /api/import/llm/apply`, und das Frontend komplett.
 
 Die Reihenfolge der Phasen ist nach Schadenshöhe sortiert: A verhindert Datenverlust,
 B macht die App bei echter Mod-Zahl benutzbar, C liefert ein im Spiel funktionierendes
@@ -78,8 +85,10 @@ die API filtert und sortiert serverseitig bzw. wird beim Suchen neu angefragt.
 gespeichert und speicherbar. Vorher den Ist-Zustand messen, damit „flüssig" belegt ist
 und nicht behauptet.
 
-### B2 Library rendert alle Mods samt Postern gleichzeitig
-`src/views/Library.jsx:217` legt für jeden gefundenen Mod eine Karte an, jedes Poster
+### B2 Library rendert alle Mods samt Postern gleichzeitig [erledigt 2026-09-16]
+Gelöst mit `loading="lazy"`: beim Öffnen werden nur noch die sichtbaren Poster
+angefordert (an 453 echten Mods gemessen: 15 statt 453 Anfragen).
+Ursprüngliches Problem: `src/views/Library.jsx:217` legt für jeden gefundenen Mod eine Karte an, jedes Poster
 ist eine eigene Anfrage an `/mod-poster` (`server/index.js:135`). Bei 450 Mods sind das
 450 Karten und hunderte parallele Bildanfragen beim Öffnen.
 
@@ -87,9 +96,14 @@ Fertig wenn: Die Library öffnet sich bei der echten Mod-Zahl ohne merkliche Hä
 Mindestens `loading="lazy"` an den Postern; falls das nicht reicht, die Kartenliste
 begrenzen oder virtualisieren. Suche, Auswahl und Lock bleiben unverändert.
 
-## Phase C – Mod-Export, der in B42 wirklich lädt
+## Phase C – Mod-Export, der in B42 wirklich lädt [C1–C4 erledigt 2026-09-16]
 
-Das ist die bisherige Phase 3.5, weiterhin offen und weiterhin richtig. Quellen:
+C1–C4 sind umgesetzt (Commit `b72701b`). Das Format wurde gegen die 909 echten
+mod.info-Dateien der Workshop-Installation verifiziert, nicht gegen die Doku — dabei
+korrigiert: `versionMax` wird bewusst NICHT geschrieben (siehe C2). **C5 (Abnahme im
+Spiel) ist weiterhin offen und kann nur der Nutzer erledigen.**
+
+Ursprünglicher Auftrag (war die alte Phase 3.5). Quellen:
 PZ-API-Doku 42.19 (modinfo), pzwiki „Mod.info" und „Mod structure".
 
 ### C1 mod.info an den richtigen Ort
@@ -105,7 +119,9 @@ und `mod-export.test.js` prüft das.
 `game_version` ist kein gültiger Schlüssel, und das Pflichtfeld `id` fehlt.
 
 Fertig wenn: Jede `mod.info` hat `id`, `name`, `author`, `description` und
-`versionMin`/`versionMax` (Format `42.20`, aus den Layout-Versionen abgeleitet);
+`versionMin` (Format `42.20`, aus den Layout-Versionen abgeleitet — `versionMax`
+bewusst nicht, es steht in echten Mods nur in 7 % der Dateien und dient dort als
+Deckel für aufgegebene Mods);
 `game_version` ist weg. Die `id` ist deterministisch — derselbe Mod und dieselbe
 Sprache ergeben dieselbe id (z. B. `<slug(workshopId|name)>_<lang>`), damit ein
 erneuter Export den vorigen im Spiel ersetzt statt zu duplizieren. Gültige Schlüssel
@@ -141,7 +157,7 @@ kein automatischer Test.
 
 ## Phase D – Aufräumen
 
-### D1 Zwei Export-Implementierungen zusammenführen
+### D1 Zwei Export-Implementierungen zusammenführen [erledigt 2026-09-16]
 `server/mod-export.js:81` (`exportMod`) hat außerhalb der Tests keinen Aufrufer — die
 Route nutzt `exportModsBundle` (`server/index.js:275`). Beide Funktionen enthalten
 denselben Traversal- und Filter-Block (`mod-export.js:110-149` und `:195-231`).
@@ -203,7 +219,7 @@ Mod ohne Translate-Ordner, Export ohne Auswahl, Import einer Datei, die zu keine
 passt, und fehlende Schreibrechte — jeweils mit einer verständlichen Meldung statt
 einer leeren Fläche.
 
-### E2 Config-Validierung
+### E2 Config-Validierung [erledigt 2026-09-16]
 `server/config.js:35` schreibt jeden übergebenen Body ungeprüft in `config.json` —
 beliebige Pfade, beliebige Sprachcodes.
 
@@ -230,7 +246,20 @@ Fertig wenn: `POST /api/export/mod` und `POST /api/import/llm/apply` haben je ei
 Routen-Test (Fake-Modus, tmp-Kopie wie die bestehenden Tests in `index.test.js`),
 `npm test` grün.
 
-### E5 Zwei Nachwehen aus Phase A
+### E5 Fehlermeldungen werden am Wortlaut erkannt
+`src/views/Settings.jsx` verteilt die Fehlermeldungen von `POST /api/config` auf die
+betroffenen Felder, indem es den Text zerlegt und auf Präfixe prüft
+(`startsWith("Game folder")`). Das funktioniert und fällt bei unbekannten Meldungen
+sauber auf die allgemeine Anzeige zurück, koppelt die View aber an den genauen
+Wortlaut des Servers: Ändert jemand dort eine Formulierung, rutscht die Meldung
+stillschweigend zurück unter den Button.
+
+Sauberer wäre eine strukturierte Antwort, die das Feld benennt. Das berührt allerdings
+die in CLAUDE.md festgehaltene Fehlerform `{ error: "<lesbarer Text>" }` — also erst
+entscheiden, ob diese um ein optionales Feld erweitert werden soll, dann umsetzen.
+Nicht dringend, solange keine Meldung verloren geht.
+
+### E6 Zwei Nachwehen aus Phase A
 Beim Umsetzen von A1–A3 aufgefallen, beide klein und beide nicht dringend:
 - Wird ein Mod in der Library abgewählt, während er im Editor ungespeicherte
   Änderungen hat, verwirft der Editor diese beim nächsten Mount stillschweigend (die
@@ -244,12 +273,12 @@ Beim Umsetzen von A1–A3 aufgefallen, beide klein und beide nicht dringend:
 Fertig wenn: Beide Fälle enden mit einer sichtbaren Meldung statt mit stiller
 Überraschung.
 
-### E6 README
+### E7 README
 Fertig wenn: Eine README erklärt Installation, Start inklusive Administrator-Hinweis
 und den Weg Scan → Auswahl → Editor → LLM-Export → Import → Mod-Export, sodass jemand
 Fremdes das Projekt danach bedienen kann.
 
-### E7 Vite-Konfiguration entwarnen [erledigt 2026-09-16]
+### E8 Vite-Konfiguration entwarnen [erledigt 2026-09-16]
 Gelöst durch Umbenennen auf `vite.config.mjs`. `"type": "module"` schied aus, weil
 `server/` und `scripts/dev.js` CommonJS sind. Build, Tests, `npm start` und der
 Dev-Proxy auf `:3100` sind nachgeprüft.
