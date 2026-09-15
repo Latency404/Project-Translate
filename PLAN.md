@@ -61,11 +61,16 @@ und rendert jede Zeile ins DOM. Die API kann bereits paginieren und suchen
 (`server/index.js:158-176`, Default 50, Maximum 500). Bei einer großen Auswahl —
 insbesondere mit dem Basisspiel — bedeutet das zehntausende Zeilen in einem Rutsch.
 
+Entschieden (Nutzer, 2026-09-16): **Nachladen beim Scrollen** — eine durchgehende
+Liste, die nachlädt, wenn man unten ankommt. Keine Seitenblätter.
+
 Fertig wenn: Der Editor bleibt bei einer Auswahl aus Basisspiel + mindestens 20 Mods
-flüssig bedienbar (Tippen ohne spürbare Verzögerung). Ob über Paginierung, Nachladen
-beim Scrollen oder Virtualisierung, ist eine Umsetzungsfrage — Suche, Sortierung und
-das Speichern versteckter/ungeladener Änderungen müssen weiter funktionieren. Vorher
-den Ist-Zustand messen, damit „flüssig" belegt ist und nicht behauptet.
+flüssig bedienbar (Tippen ohne spürbare Verzögerung). Suche und Sortierung wirken
+weiterhin über den **ganzen** Bestand eines Mods, nicht nur über das bereits Geladene —
+die API filtert und sortiert serverseitig bzw. wird beim Suchen neu angefragt.
+Änderungen an Einträgen, die zwischenzeitlich aus dem Blick gescrollt sind, bleiben
+gespeichert und speicherbar. Vorher den Ist-Zustand messen, damit „flüssig" belegt ist
+und nicht behauptet.
 
 ### B2 Library rendert alle Mods samt Postern gleichzeitig
 `src/views/Library.jsx:217` legt für jeden gefundenen Mod eine Karte an, jedes Poster
@@ -154,14 +159,30 @@ Einzeln klein, zusammen ein Nachmittag:
 
 Fertig wenn: Alles oben erledigt, `npm test` und `npm run build` grün.
 
-### D3 Quellsprache: entscheiden statt anbieten
+### D3 Quellsprache wirklich implementieren
 `src/views/Settings.jsx:148` bietet eine Auswahl für die Quellsprache an; der Scanner
 benutzt die Konstante `SOURCE_LANG = 'EN'` (`server/scanner.js:32`) und ignoriert den
-Wert vollständig. Die Auswahl verspricht etwas, das nicht passiert.
+Wert vollständig. Entschieden (Nutzer, 2026-09-16): Die Auswahl soll echt werden.
 
-Fertig wenn: Entweder ist das Feld raus, oder die Quellsprache wirkt wirklich durch
-Scanner, Export und Import. Die Entscheidung trifft der Nutzer (siehe „Offene
-Entscheidungen").
+Das ist der einzige Punkt in diesem Plan, der einen Vertrag anfasst — entsprechend
+sorgfältig angehen. Betroffen sind mindestens `scanner.js:32` (Konstante), die
+`enLocations()`/`readEnDir()`-Kette in `llm-io.js:38-83`, `layoutLocations()` und beide
+Traversal-Blöcke in `mod-export.js`, sowie `config.js` (Feld wird zum Pflichtfeld mit
+Validierung).
+
+Zwei Fallen, die vorher bedacht gehören:
+- **Die entryId enthält den Quellsprachen-Pfad** (`.../Translate/EN/UI.json::Key`).
+  Ändert sich die Quellsprache, ändern sich damit alle entryIds. Der Scan-Cache im
+  Server und die `dirty`-Map im Editor müssen beim Wechsel verworfen werden, sonst
+  schreibt ein Speichern gegen Pfade, die es nicht mehr gibt.
+- **Quellsprache gleich Zielsprache** ist sinnlos und muss abgelehnt werden (400 mit
+  lesbarer Meldung, siehe E2).
+
+Fertig wenn: Ein Wechsel der Quellsprache in Settings führt nach einem Scan zu
+Einträgen aus dem entsprechenden Sprachordner, LLM-Export und Mod-Export folgen
+daraus, ein Test deckt eine Nicht-EN-Quelle ab (Fixtures haben DE-Bäume), und
+`npm test` ist grün. Nach D1 machen — dann gibt es nur noch eine Traversal-Stelle
+statt zweier.
 
 ## Phase E – Robustheit und Release
 
@@ -184,13 +205,19 @@ Fertig wenn: `POST /api/config` lehnt nicht existierende Pfade und ungültige
 Sprachcodes mit `{ error }` und 400 ab, die Settings-View zeigt die Meldung an einem
 Feld. Braucht A1, sonst ist die Validierung nicht erreichbar.
 
-### E3 Eine Sprache in der Oberfläche
+### E3 Oberfläche durchgehend auf Englisch
 Die UI mischt Deutsch und Englisch: „Search… (all mods)" neben „Gespeichert: 3 Einträge
 in 2 Mod(s)." (`Editor.jsx:511` und `:264`), englische Leerzustände in Library und
 Export neben deutschen Fehlermeldungen aus dem Server (`entries.js:81`).
 
-Fertig wenn: Die Oberfläche spricht durchgehend eine Sprache, Servermeldungen
-inbegriffen. Welche, entscheidet der Nutzer (siehe unten).
+Entschieden (Nutzer, 2026-09-16): **durchgehend Englisch**, Servermeldungen inbegriffen.
+
+Fertig wenn: Keine deutschen Zeichenketten mehr in der Oberfläche und in den
+`{ error }`-Texten der API — betrifft vor allem `entries.js:80-89` (die
+fs-Fehlerklassifikation) und die Meldungen in `index.js` (`:92`, `:114`, `:219`,
+`:273`). Die Tests in `entries.test.js`, die auf den deutschen Wortlaut prüfen, werden
+mitgezogen. Code-Kommentare dürfen deutsch bleiben — das betrifft nur, was der Nutzer
+sieht.
 
 ### E4 Testlücken schließen
 Fertig wenn: `POST /api/export/mod` und `POST /api/import/llm/apply` haben je einen
@@ -210,12 +237,16 @@ Fertig wenn: Die Warnung ist weg (Umbenennen auf `.mjs` oder `"type": "module"`
 setzen — Letzteres betrifft die CommonJS-Dateien im Server, also vorher prüfen),
 `npm run build` und `npm start` laufen.
 
-## Offene Entscheidungen für den Nutzer
+## Getroffene Entscheidungen
 
-1. **Oberflächensprache** (E3): durchgehend Deutsch oder durchgehend Englisch?
-2. **Quellsprache** (D3): Auswahlfeld entfernen oder wirklich implementieren?
-3. **Editor bei großer Auswahl** (B1): Paginierung mit Seitenblättern oder Nachladen
-   beim Scrollen?
+- **2026-09-16, Oberflächensprache:** durchgehend Englisch, Servermeldungen
+  inbegriffen (E3).
+- **2026-09-16, Quellsprache:** wird echt implementiert statt entfernt (D3).
+- **2026-09-16, Editor bei großer Auswahl:** Nachladen beim Scrollen, keine
+  Seitenblätter (B1).
+- **2026-09-16, Doku:** `AGENTS.md`, `ARCHITECTURE.md`, `IDEA.md` und `TODO.md`
+  ersetzt durch `CLAUDE.md` (Verträge und Regeln) und diese Datei. Der Volltext der
+  alten Dokumente bleibt über `git log` erreichbar.
 
 ## Nicht im Scope
 

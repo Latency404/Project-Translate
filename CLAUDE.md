@@ -60,9 +60,11 @@ Navigation: Settings | Library | Editor | Export | Design.
 Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet — eine
 Änderung an einer Stelle bricht die anderen.
 
-- **entryId**: `<version>/<EN-Pfad relativ zum Version-Ordner>::<key>`, z. B.
+- **entryId**: `<version>/<Quellsprachen-Pfad relativ zum Version-Ordner>::<key>`, z. B.
   `42.20/media/lua/shared/Translate/EN/ContextMenu.json::Key`. Das `version`-Segment ist
-  entweder eine Versionsnummer, `common`, `root` oder `base`.
+  entweder eine Versionsnummer, `common`, `root` oder `base`. Die Quellsprache ist
+  derzeit fest `EN` (`scanner.js:32`); sobald sie konfigurierbar wird, ändern sich mit
+  ihr alle entryIds — Scan-Cache und Editor-Änderungen müssen dann verworfen werden.
 - **LLM-Datei-Keys** sind die Kurzform `<version>/<Dateiname>` (z. B. `42.20/UI.json`);
   `llm-io.js` rekonstruiert daraus die entryId.
 - **API-Routenform** (`server/index.js`): `GET /api/status`, `POST /api/scan`,
@@ -91,6 +93,8 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
 - Styles nur über die Tokens aus `src/styles/theme.css` und `src/components/` — keine
   eigenen Farben oder Abstände in Views.
 - Keine neuen Pakete ohne Rückfrage.
+- Die Oberfläche spricht Englisch — sichtbare Texte und die `{ error }`-Meldungen der
+  API. Code-Kommentare dürfen deutsch bleiben.
 - Bestehende Muster schlagen eigene Vorlieben — sieh in eine Nachbardatei.
 - Keine Funktionen bauen, die im Auftrag nicht stehen. Fällt etwas auf, das fehlt:
   im Abschlussbericht erwähnen, nicht einbauen.
