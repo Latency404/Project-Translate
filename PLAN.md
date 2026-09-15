@@ -21,7 +21,13 @@ Die Reihenfolge der Phasen ist nach Schadenshöhe sortiert: A verhindert Datenve
 B macht die App bei echter Mod-Zahl benutzbar, C liefert ein im Spiel funktionierendes
 Ergebnis, D und E sind Aufräumen und Release.
 
-## Phase A – Datenverlust und blockierte Bedienung
+## Phase A – Datenverlust und blockierte Bedienung [erledigt 2026-09-16]
+
+Alle drei Punkte umgesetzt (Commit `a0d896c`). Einschränkung: A2 und A3 sind durch
+Code-Review abgesichert, aber nicht im laufenden Betrieb ausgelöst worden — ein echter
+403-Fall (Schreiben ohne Administratorrechte) wurde nicht provoziert. Wer das nachholt,
+prüft am besten beides zusammen: Zieldatei schreibgeschützt setzen, im Editor etwas
+ändern, speichern, und danach die Seite wechseln und zurückkommen.
 
 ### A1 Settings: Konfiguration lässt sich nicht speichern
 `src/views/Settings.jsx:76` definiert `handleSave`, aber kein Button ruft es auf (die
@@ -224,18 +230,29 @@ Fertig wenn: `POST /api/export/mod` und `POST /api/import/llm/apply` haben je ei
 Routen-Test (Fake-Modus, tmp-Kopie wie die bestehenden Tests in `index.test.js`),
 `npm test` grün.
 
-### E5 README
+### E5 Zwei Nachwehen aus Phase A
+Beim Umsetzen von A1–A3 aufgefallen, beide klein und beide nicht dringend:
+- Wird ein Mod in der Library abgewählt, während er im Editor ungespeicherte
+  Änderungen hat, verwirft der Editor diese beim nächsten Mount stillschweigend (die
+  Bereinigung veralteter entryIds in `Editor.jsx` kann den Fall nicht von einem
+  Rescan unterscheiden). Selten, aber es ist wieder stiller Verlust.
+- Eine geänderte Zielsprache in Settings löst keinen Rescan aus. Der Cache hält
+  weiter die Einträge der alten Sprache, bis von Hand gescannt wird. Sinnvoll wäre,
+  nach einer Config-Änderung sichtbar auf den nötigen Scan hinzuweisen oder ihn
+  anzustoßen.
+
+Fertig wenn: Beide Fälle enden mit einer sichtbaren Meldung statt mit stiller
+Überraschung.
+
+### E6 README
 Fertig wenn: Eine README erklärt Installation, Start inklusive Administrator-Hinweis
 und den Weg Scan → Auswahl → Editor → LLM-Export → Import → Mod-Export, sodass jemand
 Fremdes das Projekt danach bedienen kann.
 
-### E6 Vite-Konfiguration entwarnen
-`npm run build` warnt, dass die ESM-Syntax in `vite.config.js` mit dem künftigen
-Default `configLoader: 'native'` nicht zusammenpasst.
-
-Fertig wenn: Die Warnung ist weg (Umbenennen auf `.mjs` oder `"type": "module"`
-setzen — Letzteres betrifft die CommonJS-Dateien im Server, also vorher prüfen),
-`npm run build` und `npm start` laufen.
+### E7 Vite-Konfiguration entwarnen [erledigt 2026-09-16]
+Gelöst durch Umbenennen auf `vite.config.mjs`. `"type": "module"` schied aus, weil
+`server/` und `scripts/dev.js` CommonJS sind. Build, Tests, `npm start` und der
+Dev-Proxy auf `:3100` sind nachgeprüft.
 
 ## Getroffene Entscheidungen
 
