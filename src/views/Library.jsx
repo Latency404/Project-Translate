@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, LayoutGrid, Lock, LockOpen, Search } from "lucide-react";
+import { Check, Lock, LockOpen } from "lucide-react";
 import * as api from "../api.js";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
@@ -247,6 +247,8 @@ export default function Library({ onGoToSetup }) {
                   <img
                     src={mod.poster}
                     alt={mod.name}
+                    loading="lazy"
+                    decoding="async"
                     className="h-full w-full object-cover"
                   />
                 ) : (
