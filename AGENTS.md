@@ -39,7 +39,6 @@ server/              Express-API (CommonJS)
   entries.js         Einträge speichern + Backup, fs-Fehler klassifizieren
   llm-io.js          LLM-Export-Bundle, Import-Vorschau (inkl. matches)
   mod-export.js      Installierbaren Übersetzungs-Mod erzeugen
-  zip.js             Minimaler ZIP-Writer (kein externes Paket) für den Export-Mod-Download
   fake-api.js        Nur Wurzel-Tausch auf server/fixtures/ (PT_FAKE=1)
   fixtures/          Beispieldaten im echten PZ-Layout
   fixtures-inject.js Synthetische Layout-Fixtures für tmp-Kopien in Tests
@@ -77,23 +76,11 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   `llm-io.js` rekonstruiert daraus die entryId.
 - **API-Routenform** (`server/index.js`): `GET /api/status`, `POST /api/scan`,
   `GET|POST /api/config`, `GET /api/mods`, `GET|PUT /api/mods/:modId/entries`,
-  `POST /api/export/llm`, `POST /api/import/llm/preview`, `POST /api/export/mod`,
-  `POST /api/export/mod/zip`. Fehler immer als `{ error: "<lesbarer Text>" }` +
-  4xx/5xx. Es gibt bewusst **keine** `/api/import/llm/apply`-Route: Import
-  schreibt nichts auf die Platte (s. Import-Review-Status unten) —
-  `POST /api/import/llm/preview` liefert neben den Zähl-Feldern auch
-  `matches: [{ modId, entryId, translation }]`.
-- **`POST /api/export/mod/zip`**: für den globalen "Export Mod"-Button — baut
-  die Mod wie `/api/export/mod` (in einen frischen, danach gelöschten
-  Temp-Ordner), packt sie serverseitig in eine ZIP (`server/zip.js`, kein
-  externes Paket — `zlib.deflateRawSync`/`zlib.crc32`) und liefert sie als
-  Binär-Antwort (`application/zip` + `Content-Disposition: attachment`). Der
-  Browser übernimmt danach den normalen "Speichern unter"-Dialog — derselbe
-  Blob-Mechanismus wie beim LLM-Export. Grund für den Umweg über eine Datei
-  statt direktem Schreiben an einen vom Nutzer gewählten Ordner: eine
-  Web-Seite bekommt aus einem Datei-Dialog nie einen echten OS-Pfad (File
-  System Access API liefert nur ein sandboxed Handle) — der Nutzer entpackt
-  die ZIP danach selbst in seinen PZ-Mods-Ordner.
+  `POST /api/export/llm`, `POST /api/import/llm/preview`, `POST /api/export/mod`.
+  Fehler immer als `{ error: "<lesbarer Text>" }` + 4xx/5xx. Es gibt bewusst
+  **keine** `/api/import/llm/apply`-Route: Import schreibt nichts auf die Platte
+  (s. Import-Review-Status unten) — `POST /api/import/llm/preview` liefert neben
+  den Zähl-Feldern auch `matches: [{ modId, entryId, translation }]`.
 - **Layout-Regeln** (identisch in `scanner.js`, `llm-io.js`, `mod-export.js`):
   `common` schließt `root` aus; zusätzlich immer nur die **neueste** Versionsnummer.
   Basisspiel hat einen Ort mit Version `base`.

@@ -15,7 +15,7 @@ const Input = forwardRef(function Input(
       )}
       <input
         ref={ref}
-        className="h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text placeholder:text-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        className="h-8 w-full rounded-lg border border-line bg-raised px-3 text-ui font-medium text-text placeholder:text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         {...rest}
       />
       {hint && <span className="mt-1 block text-xs text-muted/80">{hint}</span>}

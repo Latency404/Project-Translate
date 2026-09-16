@@ -10,16 +10,21 @@ import Modal from "../components/Modal.jsx";
 /* Standard tokens from src/styles/theme.css — the panel overrides them
    at runtime via CSS variables on :root. */
 const DEFAULTS = {
-  ink: "#0a0a0a",
+  ink: "#121212",
   surface: "#121517",
   raised: "#21272b",
+  slate: "#596973",
+  track: "#2e2e2e",
   line: "#33383d",
+  "file-bg": "#242729",
+  "file-border": "#646566",
   text: "#f5f5f5",
+  "text-inverse": "#141414",
   muted: "#ababab",
   dust: "#c4c4c4",
-  accent: "#3b82f6",
-  "accent-light": "#60a5fa",
-  "accent-deep": "#1d4ed8",
+  accent: "#4dabf7",
+  "accent-light": "#74c0fc",
+  "accent-deep": "#2f8ce0",
   warning: "#e2901d",
   success: "#1de252",
   danger: "#e21d1d",
@@ -301,6 +306,7 @@ export default function Showcase() {
           <div className="flex flex-wrap gap-2">
             <Tag tone="neutral">Neutral</Tag>
             <Tag tone="base">Base Game</Tag>
+            <Tag tone="file">3 Files</Tag>
             <Tag tone="warning">Open</Tag>
             <Tag tone="success">Translated</Tag>
             <Tag tone="accent">Needs Review</Tag>

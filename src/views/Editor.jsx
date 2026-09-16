@@ -5,19 +5,14 @@ import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
 import Tag from "../components/Tag.jsx";
-import { loadDirty, saveDirty, reviewModIds, statusOf } from "../reviewStore.js";
+import ModCard from "../components/ModCard.jsx";
+import { loadDirty, saveDirty, reviewModIds, statusOf, FILTER_TONE_CLASS } from "../reviewStore.js";
 
 // Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
 // als Backend-Wert unverändert (Export-Ordnernamen etc. hängen daran).
 function displayModName(mod) {
   return mod.name.replace(/\s*\(Base Game\)\s*$/, "");
 }
-
-const STATUS_TAG = {
-  open: { tone: "warning", label: "Open" },
-  translated: { tone: "success", label: "Translated" },
-  review: { tone: "accent", label: "Needs Review" },
-};
 
 // The universe of mods the Editor can show IS the Library selection — the
 // Editor only ever READS this key (the Library writes it). Switching the
@@ -105,12 +100,14 @@ function SortHeader({ field, label, className, sort, onCycle }) {
       type="button"
       onClick={() => onCycle(field)}
       title={`Sort by ${label} (click: ${!active ? "ascending" : sort.dir === "asc" ? "descending" : "reset"})`}
-      className={`flex items-center gap-1 text-left text-xs font-mono font-medium transition-colors hover:text-text ${
+      className={`flex cursor-pointer items-center gap-0.5 text-left text-ui leading-none font-semibold transition-colors hover:text-text ${
         active ? "text-accent" : "text-muted"
       } ${className || ""}`}
     >
-      {label}
-      <Icon size={12} className={active ? "text-accent" : "text-muted/50"} aria-hidden />
+      {/* Box auf Versalhöhe/Grundlinie trimmen, damit items-center die
+          sichtbaren Buchstaben zentriert statt der Font-Zeilenbox. */}
+      <span className="[text-box:trim-both_cap_alphabetic]">{label}</span>
+      <Icon size={16} className={`shrink-0 ${active ? "text-accent" : "text-muted/40"}`} aria-hidden />
     </button>
   );
 }
@@ -156,9 +153,9 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
         const currentTranslation = currentTranslationOf(entry, dirty);
         const entryDirty = isDirtyEntry(entry, dirty);
 
-        let statusClass = "outline-success";
-        if (entryDirty) statusClass = "outline-accent";
-        else if (!entry.translation) statusClass = "outline-warning";
+        let borderClass = "border-success";
+        if (entryDirty) borderClass = "border-accent";
+        else if (!entry.translation) borderClass = "border-warning";
 
         const sourceFile = sourceFileOf(entry);
         const showFileDivider = showFileDividers && sourceFile !== prevSourceFile;
@@ -167,31 +164,33 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
         return (
           <div key={entry.id}>
             {showFileDivider && (
-              <div className="border-t border-line/60 bg-raised/40 px-4 py-1.5 text-xs font-mono text-muted">
-                {sourceFile}
+              <div className="flex items-stretch border-t border-line bg-surface px-4 text-ui font-semibold text-muted">
+                <span className="w-1/3 shrink-0 truncate py-1.5 pr-4">{sourceFile}</span>
+                <span className="w-1/3 shrink-0 border-l border-muted/15" />
+                <span className="w-1/3 border-l border-muted/15" />
               </div>
             )}
-            <div className="flex items-center border-b border-line last:border-b-0 hover:bg-raised/30">
-              <span className="w-[30%] shrink-0 truncate px-4 py-2 text-xs font-mono text-text">
-                {entry.key}
+            <div className="flex items-stretch border-b border-line px-4 last:border-b-0 hover:bg-raised/30">
+              <span className="flex w-1/3 shrink-0 items-center py-2 pr-4">
+                <span className="truncate text-ui leading-none font-semibold text-text">{entry.key}</span>
               </span>
-              <span className="w-[40%] shrink-0 px-2 py-2">
+              <span className="flex w-1/3 shrink-0 items-center border-l border-muted/15 px-4 py-2">
                 <input
                   value={currentTranslation}
                   onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation)}
                   placeholder="Translation..."
-                  className={`h-9 w-full min-w-[20ch] rounded-md border border-line bg-raised px-3 text-sm text-text placeholder:text-muted/60 outline-2 outline-offset-1 focus-visible:outline-2 ${statusClass}`}
+                  className={`h-10 w-full min-w-[20ch] rounded-lg border-2 bg-raised px-3 text-ui font-semibold text-text placeholder:text-muted placeholder:font-semibold focus-visible:outline-none focus-visible:border-accent ${borderClass}`}
                 />
               </span>
-              <span className="w-[30%] truncate px-4 py-2 text-sm font-mono text-text">
-                {entry.original}
+              <span className="flex w-1/3 min-w-0 items-center border-l border-muted/15 py-2 pl-4">
+                <span className="truncate text-ui leading-none font-semibold text-text">{entry.original}</span>
               </span>
             </div>
           </div>
         );
       })}
       {hasMore && (
-        <div ref={sentinelRef} className="px-4 py-3 text-xs font-mono text-muted">
+        <div ref={sentinelRef} className="px-4 py-3 text-ui font-semibold text-muted">
           {fetching ? "Loading more..." : "Loading more..."}
         </div>
       )}
@@ -199,7 +198,7 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
   );
 }
 
-export default function Editor({ onReselect }) {
+export default function Editor({ onReselect, onGoToSettings }) {
   // --- Universe: the Library selection (read-only here) ---
   const [universeIds] = useState(() => loadUniverseIds());
   // --- Active mod: exactly one at a time ("Mod für Mod durcharbeiten") ---
@@ -254,16 +253,22 @@ export default function Editor({ onReselect }) {
     searchRef.current = search;
   }, [search]);
 
-  // --- Load Library selection's mods ---
+  // --- Load Library selection's mods. If the API hasn't scanned mods yet,
+  // there's nothing useful to show here — go straight to Settings instead
+  // of a dead-end hint (mirrors Mods.jsx). ---
   useEffect(() => {
     api
       .getMods()
       .then((data) => setAllMods(data.mods || []))
       .catch((err) => {
-        setError(err.message);
-        setAllMods([]);
+        if (err.message && err.message.toLowerCase().includes('scan')) {
+          onGoToSettings();
+        } else {
+          setError(err.message);
+          setAllMods([]);
+        }
       });
-  }, []);
+  }, [onGoToSettings]);
 
   // --- Persist dirty edits so they survive a view switch ---
   useEffect(() => {
@@ -432,8 +437,9 @@ export default function Editor({ onReselect }) {
   // edits an imported value further; brand-new edits are "manual". ---
   const updateDirty = useCallback((id, translation, original) => {
     const value = translation === null ? "" : String(translation);
+    const originalValue = original === null || original === undefined ? "" : String(original);
     setNotice("");
-    if (value === original) {
+    if (value === originalValue) {
       setDirty((prev) => {
         if (!prev.has(id)) return prev;
         const next = new Map(prev);
@@ -541,95 +547,69 @@ export default function Editor({ onReselect }) {
     { key: "review", label: "Needs Review" },
   ];
 
+  // Zwei Ebenen (Außen-Padding, dann zentriert) — dieselbe Struktur wie die
+  // Navbar, damit die Sidebar links exakt mit dem PT-Logo fluchtet (s. Mods.jsx).
   return (
-    <div className="flex h-full">
+    <div className="h-full px-6">
+    <div className="mx-auto flex h-full w-full max-w-[90rem]">
       {/* Sidebar: the full Library selection, single-select — click a mod to
           open it. The Library selection itself is never touched here. */}
-      <aside className="w-64 shrink-0 self-stretch overflow-y-auto border-r border-line bg-surface p-3">
+      <aside className="flex w-[19.0625rem] shrink-0 flex-col gap-3 self-stretch overflow-y-auto border-r border-line bg-surface p-4">
         <Input
           placeholder="Search Mods..."
           value={modSearch}
           onChange={(e) => setModSearch(e.target.value)}
-          className="mb-2"
         />
-        <div className="mb-3 flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1">
           {FILTERS.map((f) => (
             <button
               key={f.key}
               onClick={() => setModFilter(f.key)}
-              className={`rounded-full border px-2 py-0.5 text-xs font-medium transition-colors ${
+              className={`flex h-6 cursor-pointer items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold transition-colors ${
                 modFilter === f.key
-                  ? "border-accent/40 bg-accent/15 text-accent"
-                  : "border-line bg-raised text-muted hover:text-text"
+                  ? FILTER_TONE_CLASS[f.key]
+                  : "bg-raised text-muted hover:text-text"
               }`}
             >
               {f.label} ({filterCounts[f.key]})
             </button>
           ))}
         </div>
-        <nav className="space-y-1">
-          {sidebarMods.map((mod) => {
-            const status = statusOf(mod, reviewIds);
-            const isActive = mod.id === activeModId;
-            return (
-              <button
-                key={mod.id}
-                onClick={() => setActiveModId(mod.id)}
-                className={`block w-full rounded-md border px-2 py-2 text-left transition-colors ${
-                  isActive
-                    ? "border-accent bg-accent/10"
-                    : "border-transparent bg-raised/30 hover:bg-raised/50"
-                }`}
-              >
-                <span className="block truncate text-sm text-text">{displayModName(mod)}</span>
-                <span className="mt-0.5 flex items-center gap-2">
-                  <span className="text-xs font-mono text-muted">
-                    {mod.translatedCount} / {mod.entryCount}
-                  </span>
-                  <Tag tone={STATUS_TAG[status].tone} className="ml-auto">
-                    {STATUS_TAG[status].label}
-                  </Tag>
-                </span>
-              </button>
-            );
-          })}
+        <nav className="flex flex-col gap-3">
+          {sidebarMods.map((mod) => (
+            <ModCard
+              key={mod.id}
+              id={mod.id}
+              mod={mod}
+              name={displayModName(mod)}
+              status={statusOf(mod, reviewIds)}
+              active={mod.id === activeModId}
+              onToggle={setActiveModId}
+            />
+          ))}
           {sidebarMods.length === 0 && (
-            <p className="px-2 py-3 text-xs text-muted">No mods match.</p>
+            <p className="px-2 py-3 text-sm text-muted">No mods match.</p>
           )}
         </nav>
       </aside>
 
       {/* Main content */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Header */}
-        <header className="border-b border-line px-4 py-3">
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-lg font-bold text-accent">
-              {activeMod ? displayModName(activeMod) : "Editor"}
-            </span>
-            {activeMod && (
-              <Tag tone={STATUS_TAG[statusOf(activeMod, reviewIds)].tone}>
-                {STATUS_TAG[statusOf(activeMod, reviewIds)].label}
-              </Tag>
-            )}
-          </div>
-        </header>
-
         {/* File tabs + Search + Save */}
-        <div className="flex items-center gap-3 border-b border-line px-4 py-3">
+        <div className="flex items-center gap-3 p-4">
           <Input
             placeholder="Search Entries..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-64 shrink-0"
+            className="w-[12.5rem] shrink-0"
           />
           <div className="flex flex-1 flex-wrap gap-1 overflow-x-auto">
             <button
               onClick={() => setActiveFile(null)}
-              className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+              className={`flex h-6 shrink-0 cursor-pointer items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold transition-colors ${
                 activeFile === null
-                  ? "border-accent/40 bg-accent/15 text-accent"
-                  : "border-line bg-raised text-muted hover:text-text"
+                  ? "bg-slate text-text"
+                  : "bg-raised text-muted hover:text-text"
               }`}
             >
               All Files
@@ -638,10 +618,10 @@ export default function Editor({ onReselect }) {
               <button
                 key={f}
                 onClick={() => setActiveFile(f)}
-                className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                className={`flex h-6 shrink-0 cursor-pointer items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold transition-colors ${
                   activeFile === f
-                    ? "border-accent/40 bg-accent/15 text-accent"
-                    : "border-line bg-raised text-muted hover:text-text"
+                    ? "bg-slate text-text"
+                    : "bg-raised text-muted hover:text-text"
                 }`}
               >
                 {f}
@@ -649,7 +629,7 @@ export default function Editor({ onReselect }) {
             ))}
           </div>
           <Button
-            variant="primary"
+            variant="secondary"
             icon={Save}
             onClick={handleSave}
             disabled={dirtySize === 0 || saving || !activeModId}
@@ -660,13 +640,13 @@ export default function Editor({ onReselect }) {
 
         {/* Error / success display */}
         {saveError && (
-          <p className="px-4 pt-2 text-sm text-danger">{saveError}</p>
+          <p className="px-4 pb-2 text-sm text-danger">{saveError}</p>
         )}
         {!saveError && notice && (
-          <p className="px-4 pt-2 text-sm text-success">{notice}</p>
+          <p className="px-4 pb-2 text-sm text-success">{notice}</p>
         )}
         {orphanedDirtyModIds.length > 0 && (
-          <p className="px-4 pt-2 text-sm text-warning">
+          <p className="px-4 pb-2 text-sm text-warning">
             You have unsaved changes in {orphanedDirtyModIds.length} mod(s) no
             longer selected on the Mods page — reselect{" "}
             {orphanedDirtyModIds.length === 1 ? "it" : "them"} there to save or
@@ -703,12 +683,24 @@ export default function Editor({ onReselect }) {
 
           {activeMod && (entries.length > 0 || !entriesLoading) && (
             <>
-              <div className="sticky top-0 z-10 border-b border-line bg-raised px-4 py-2 text-xs font-mono font-medium text-muted">
-                <div className="flex items-center">
-                  <SortHeader field="key" label="Key" className="w-[30%] shrink-0" sort={sort} onCycle={cycleSort} />
-                  <SortHeader field="translation" label="Translation" className="w-[40%] shrink-0" sort={sort} onCycle={cycleSort} />
-                  <SortHeader field="original" label="Original" className="w-[30%]" sort={sort} onCycle={cycleSort} />
-                </div>
+              <div className="flex items-center gap-2 border-t border-b border-line bg-surface px-4 py-3">
+                <span className="text-lg font-semibold text-text">
+                  {displayModName(activeMod)}
+                </span>
+                <Tag tone="base">
+                  {entriesTotal === Infinity ? entries.length : entriesTotal}{" "}
+                  {(entriesTotal === Infinity ? entries.length : entriesTotal) === 1
+                    ? "Entry"
+                    : "Entries"}
+                </Tag>
+              </div>
+              {/* Blaue 2px-Linie als ::after innerhalb der Leiste — pb ist
+                  deshalb 2px größer als pt, damit der Text mittig zwischen
+                  Oberkante und Linie steht. */}
+              <div className="sticky top-0 z-10 flex items-stretch bg-raised px-4 after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-accent after:content-['']">
+                <SortHeader field="key" label="Key" className="w-1/3 shrink-0 pt-[0.5rem] pb-[0.6rem] pr-4" sort={sort} onCycle={cycleSort} />
+                <SortHeader field="translation" label="Translation" className="w-1/3 shrink-0 border-l border-muted/15 px-4 pt-[0.5rem] pb-[0.6rem]" sort={sort} onCycle={cycleSort} />
+                <SortHeader field="original" label="Original" className="w-1/3 min-w-0 border-l border-muted/15 pl-4 pt-[0.5rem] pb-[0.6rem]" sort={sort} onCycle={cycleSort} />
               </div>
               <EntryRows
                 entries={visibleEntries}
@@ -727,6 +719,7 @@ export default function Editor({ onReselect }) {
           )}
         </div>
       </main>
+    </div>
     </div>
   );
 }

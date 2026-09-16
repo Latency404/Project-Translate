@@ -9,6 +9,7 @@
 // Die Frontend (src/api.js) kodiert das; hier wird es von Express dekodiert.
 const express = require('express')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 
 const config = require('./config')
@@ -17,6 +18,7 @@ const { scan } = require('./scanner')
 const { saveBatch, restoreBaseline, classifyFsError } = require('./entries')
 const llm = require('./llm-io')
 const { exportModsBundle } = require('./mod-export')
+const { buildZip, collectFiles } = require('./zip')
 
 const app = express()
 const PORT = process.env.PORT || 3100
@@ -327,6 +329,36 @@ app.post('/api/export/mod', (req, res) => {
     res.json({ targetLang: lang, targetDir: config.toPosix(targetDir), results: [result] })
   } catch (err) {
     fail(res, 500, err.message || 'Mod-Export fehlgeschlagen')
+  }
+})
+
+// Export Mod als ZIP-Download (App.jsx, globaler "Export Mod"-Button): baut
+// die Mod wie /api/export/mod in einen frischen Temp-Ordner, packt ihn in
+// eine ZIP (server/zip.js, kein externes Paket) und liefert sie als
+// Binär-Antwort — der Browser übernimmt danach ganz normal "Speichern
+// unter" (derselbe Mechanismus wie beim LLM-Export). Der Temp-Ordner ist
+// nur ein Zwischenschritt und wird danach wieder gelöscht.
+app.post('/api/export/mod/zip', (req, res) => {
+  const body = req.body || {}
+  const modIds = Array.isArray(body.modIds) ? body.modIds : []
+  const cfg = config.load()
+  const lang = targetLangOf(body, cfg.targetLang)
+  const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
+  if (!mods.length) return fail(res, 400, 'No valid mod selection.')
+
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-export-'))
+  try {
+    const { targetPath } = exportModsBundle(mods, lang, tmpRoot, cfg.sourceLang)
+    const files = collectFiles(targetPath, tmpRoot)
+    const zipBuffer = buildZip(files)
+    const zipName = path.basename(targetPath) + '.zip'
+    res.setHeader('Content-Type', 'application/zip')
+    res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`)
+    res.send(zipBuffer)
+  } catch (err) {
+    fail(res, 500, err.message || 'Mod-Export fehlgeschlagen')
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true })
   }
 })
 

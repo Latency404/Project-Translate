@@ -58,3 +58,15 @@ export function statusOf(mod, reviewIds) {
   if (mod.entryCount > 0 && mod.translatedCount === mod.entryCount) return "translated";
   return "open";
 }
+
+// Farbton je Status-Filter-Pille (Mods-Seite + Editor-Sidebar) — passend zum
+// jeweiligen Status-Tag auf der Mod-Kachel: Open=warning, Translated=success,
+// Needs Review=accent (USER-Wahl, übernimmt den Ton, den zuvor "All Mods"
+// hatte). "All Mods" selbst ist jetzt Slate (#596973, USER-Wahl) wie die
+// aktiven File-Filter-Pillen im Editor ("All Files" / <Datei>.json).
+export const FILTER_TONE_CLASS = {
+  all: "bg-slate text-text",
+  open: "bg-warning/15 text-warning",
+  translated: "bg-success/15 text-success",
+  review: "bg-accent/15 text-accent",
+};

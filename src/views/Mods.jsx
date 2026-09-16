@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Download, Lock, LockOpen, Upload } from "lucide-react";
+import { CopyCheck, Download, Lock, LockOpen, Upload } from "lucide-react";
 import * as api from "../api.js";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
 import Modal from "../components/Modal.jsx";
-import ProgressBar from "../components/ProgressBar.jsx";
-import Tag from "../components/Tag.jsx";
-import { loadDirty, saveDirty, reviewModIds, statusOf } from "../reviewStore.js";
+import ModCard from "../components/ModCard.jsx";
+import { loadDirty, saveDirty, reviewModIds, statusOf, FILTER_TONE_CLASS } from "../reviewStore.js";
 
 // Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
 // als Backend-Wert unverändert (Export-Ordnernamen etc. hängen daran).
@@ -15,14 +14,8 @@ function displayModName(mod) {
   return mod.name.replace(/\s*\(Base Game\)\s*$/, "");
 }
 
-const STATUS_TAG = {
-  open: { tone: "warning", label: "Open" },
-  translated: { tone: "success", label: "Translated" },
-  review: { tone: "accent", label: "Needs Review" },
-};
-
 const FILTERS = [
-  { key: "all", label: "All" },
+  { key: "all", label: "All Mods" },
   { key: "open", label: "Open" },
   { key: "translated", label: "Translated" },
   { key: "review", label: "Needs Review" },
@@ -61,6 +54,15 @@ export default function Mods({ onGoToSetup }) {
       return !prev;
     });
   };
+  // Hover-Zustand des Lock-Buttons: im "Locked"-Zustand hell und "Unlock"
+  // beim Hover, statt nur den Klick abzuwarten — reine :hover-CSS würde
+  // keinen Text-Wechsel ("Locked" → "Unlock") erlauben.
+  const [lockHover, setLockHover] = useState(false);
+  // Für toggleOne (useCallback ohne `locked`-Dependency, s. dort).
+  const lockedRef = useRef(locked);
+  useEffect(() => {
+    lockedRef.current = locked;
+  }, [locked]);
 
   // Persist the selection — Editor and the global Export-Mod popover read it.
   useEffect(() => {
@@ -73,49 +75,21 @@ export default function Mods({ onGoToSetup }) {
   const [dirty, setDirty] = useState(() => loadDirty());
   const reviewIds = useMemo(() => reviewModIds(dirty), [dirty]);
 
-  // Load data. If the API hasn't been scanned yet (e.g. after a server
-  // restart during dev), automatically trigger a scan and retry once it
-  // finishes.
-  const [autoScanning, setAutoScanning] = useState(false);
-
-  const doScanAndLoad = useCallback(async () => {
-    setAutoScanning(true);
-    try {
-      await api.startScan();
-      // Poll until the scan completes
-      const timer = setInterval(async () => {
-        try {
-          const st = await api.getStatus();
-          if (!st.scanRunning) {
-            clearInterval(timer);
-            const data = await api.getMods();
-            setMods(data.mods || []);
-          }
-        } catch {
-          clearInterval(timer);
-        } finally {
-          setAutoScanning(false);
-        }
-      }, 1000);
-    } catch (err) {
-      setError(err.message);
-      setAutoScanning(false);
-    }
-  }, []);
-
+  // Load data. If the API hasn't scanned mods yet, there's nothing useful to
+  // show here — go straight to Settings (where scanning happens) instead of
+  // a dead-end hint.
   useEffect(() => {
     api
       .getMods()
       .then((data) => setMods(data.mods || []))
       .catch((err) => {
-        // 404 means no scan yet — try to auto-scan
-        if (err.message && err.message.includes('Scan')) {
-          doScanAndLoad();
+        if (err.message && err.message.toLowerCase().includes('scan')) {
+          onGoToSetup();
         } else {
           setError(err.message);
         }
       });
-  }, [doScanAndLoad]);
+  }, [onGoToSetup]);
 
   useEffect(() => {
     api.getConfig()
@@ -142,16 +116,18 @@ export default function Mods({ onGoToSetup }) {
   const allVisibleSelected =
     filtered.length > 0 && filtered.every((m) => selected.has(m.id));
 
-  // Toggle selection for a single card (no-op while locked)
-  const toggleOne = (id) => {
-    if (locked) return;
+  // Toggle selection for a single card (no-op while locked). useCallback hält
+  // die Referenz über Renders hinweg stabil, damit React.memo auf ModCard bei
+  // 400+ Mods nur die tatsächlich betroffene Karte neu rendert.
+  const toggleOne = useCallback((id) => {
     setSelected((prev) => {
+      if (lockedRef.current) return prev;
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
 
   // Toggle all on/off (only visible ones; no-op while locked)
   const toggleAll = () => {
@@ -192,9 +168,6 @@ export default function Mods({ onGoToSetup }) {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      setNotice(
-        `Exported ${result.modCount} mod(s), ${result.entryCount} entries as "${result.filename}" — hand the file to the LLM for translation, then use "Import".`,
-      );
     } catch (err) {
       setActionError(err.message);
     } finally {
@@ -252,10 +225,7 @@ export default function Mods({ onGoToSetup }) {
   const totalMatched = importPreview ? importPreview.matched : 0;
   const totalUnmatched = importPreview ? importPreview.unmatched : 0;
 
-  // Total count
-  const total = mods.length;
-
-  // === Error state (real errors only — the no-scan-yet case auto-scans instead) ===
+  // === Error state (real errors only — "no scan yet" redirects to Settings instead) ===
   if (error) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
@@ -271,25 +241,22 @@ export default function Mods({ onGoToSetup }) {
     );
   }
 
-  // === Loading state (includes auto-scan) ===
+  // === Loading state (also covers the moment before the "no scan yet" redirect) ===
   if (mods.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
-        {autoScanning ? (
-          <div className="text-center space-y-2">
-            <p className="text-muted">Scanning mods…</p>
-            <ProgressBar value={0} max={1} color="dust" className="w-40 mx-auto" />
-          </div>
-        ) : (
-          <p className="text-center text-muted">Loading…</p>
-        )}
+        <p className="text-center text-muted">Loading…</p>
       </div>
     );
   }
 
   // === Main view ===
+  // Zwei Ebenen (Außen-Padding, dann zentriert) statt Padding innerhalb des
+  // zentrierten Blocks — nur so fluchtet der Inhalt auf breiten Monitoren
+  // exakt mit PT-Logo/Export-Mod-Button der Navbar (dieselbe Struktur dort).
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
+    <div className="px-6 py-4">
+    <div className="mx-auto max-w-[90rem]">
       {/* Verstecktes Dateifeld: „Import" öffnet den Browser-Open-Dialog. */}
       <input
         ref={fileInputRef}
@@ -301,38 +268,30 @@ export default function Mods({ onGoToSetup }) {
         aria-hidden="true"
       />
 
-      {/* Header */}
-      <header className="mb-6 flex items-center justify-between">
-        <h1 className="font-mono text-xl font-bold text-accent">
-          Mods{" "}
-          <span className="text-sm font-normal text-muted">
-            ({total} {total === 1 ? "Mod" : "Mods"})
-          </span>
-        </h1>
-      </header>
-
       {/* Search + status filters + Export/Import/Select all/Lock */}
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Input
-          placeholder="Search Mods..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="min-w-52 flex-1"
-        />
-        <div className="flex flex-wrap gap-1">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setStatusFilter(f.key)}
-              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                statusFilter === f.key
-                  ? "border-accent/40 bg-accent/15 text-accent"
-                  : "border-line bg-raised text-muted hover:text-text"
-              }`}
-            >
-              {f.label} ({filterCounts[f.key]})
-            </button>
-          ))}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Input
+            placeholder="Search Mods..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-[12.5rem] shrink-0"
+          />
+          <div className="flex flex-wrap gap-1">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setStatusFilter(f.key)}
+                className={`flex h-6 cursor-pointer items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold transition-colors ${
+                  statusFilter === f.key
+                    ? FILTER_TONE_CLASS[f.key]
+                    : "bg-raised text-muted hover:text-text"
+                }`}
+              >
+                {f.label} ({filterCounts[f.key]})
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -354,20 +313,22 @@ export default function Mods({ onGoToSetup }) {
             {importLoading ? "Loading..." : "Import"}
           </Button>
           <Button
-            variant={allVisibleSelected ? "primary" : "secondary"}
-            icon={Check}
+            variant="secondary"
+            icon={CopyCheck}
             onClick={toggleAll}
             disabled={locked}
           >
-            Select all ({filtered.length})
+            Select all
           </Button>
           <Button
-            variant={locked ? "secondary" : "primary"}
-            icon={locked ? Lock : LockOpen}
+            variant={locked && !lockHover ? "dustActive" : "dust"}
+            icon={locked && !lockHover ? Lock : LockOpen}
             onClick={toggleLocked}
+            onMouseEnter={() => setLockHover(true)}
+            onMouseLeave={() => setLockHover(false)}
             title={locked ? "Unlock selection" : "Lock selection (cards and \"Select all\" won't change it)"}
           >
-            {locked ? "Locked" : "Lock"}
+            {locked ? (lockHover ? "Unlock" : "Locked") : "Lock"}
           </Button>
         </div>
       </div>
@@ -376,74 +337,28 @@ export default function Mods({ onGoToSetup }) {
       {!actionError && notice && <p className="mb-4 text-sm text-success">{notice}</p>}
 
       {/* Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {filtered.map((mod) => {
-          const isSelected = selected.has(mod.id);
-          const status = statusOf(mod, reviewIds);
-          return (
-            <div
-              key={mod.id}
-              className={`relative rounded-lg border border-line bg-surface p-4 transition-colors duration-150 hover:border-line ${
-                locked ? "cursor-default" : "cursor-pointer"
-              } ${isSelected ? "border-accent" : ""}`}
-              onClick={() => toggleOne(mod.id)}
-            >
-              {/* Checkmark top right */}
-              {isSelected && (
-                <span className="absolute right-3 top-3 text-accent">
-                  <Check size={16} />
-                </span>
-              )}
-
-              {/* Name */}
-              <div className="mb-1 flex items-center gap-2">
-                <span className="font-semibold text-text">{displayModName(mod)}</span>
-              </div>
-
-              {/* ID */}
-              <p className="mb-3 font-mono text-xs text-muted">
-                {mod.isBaseGame ? "Base Game" : mod.id}
-              </p>
-
-              {/* Poster */}
-              <div className="mb-3 flex h-24 items-center justify-center overflow-hidden rounded-md bg-raised">
-                {mod.poster ? (
-                  <img
-                    src={mod.poster}
-                    alt={mod.name}
-                    loading="lazy"
-                    decoding="async"
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span className="text-xs text-muted">No poster</span>
-                )}
-              </div>
-
-              {/* Progress */}
-              <ProgressBar
-                value={mod.translatedCount}
-                max={mod.entryCount}
-                color="dust"
-                showValue
-                className="mb-3"
-              />
-
-              {/* Status + files */}
-              <div className="flex items-center gap-2">
-                <Tag tone={STATUS_TAG[status].tone}>{STATUS_TAG[status].label}</Tag>
-                <Tag tone="neutral">{mod.filesCount} {mod.filesCount === 1 ? "File" : "Files"}</Tag>
-              </div>
-            </div>
-          );
-        })}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-3">
+        {filtered.map((mod) => (
+          <ModCard
+            key={mod.id}
+            id={mod.id}
+            mod={mod}
+            name={displayModName(mod)}
+            status={statusOf(mod, reviewIds)}
+            active={selected.has(mod.id)}
+            locked={locked}
+            onToggle={toggleOne}
+          />
+        ))}
       </div>
 
-      <footer className="mt-6 border-t border-line pt-4">
-        <p className="text-sm text-muted">
-          {selected.size} mod{selected.size === 1 ? "" : "s"} selected
-        </p>
-      </footer>
+      {filtered.length > 0 && (
+        <footer className="mt-4">
+          <p className="text-sm text-muted">
+            {selected.size} mod{selected.size === 1 ? "" : "s"} selected
+          </p>
+        </footer>
+      )}
 
       {/* Import confirmation modal */}
       <Modal
@@ -488,6 +403,7 @@ export default function Mods({ onGoToSetup }) {
           </div>
         </div>
       </Modal>
+    </div>
     </div>
   );
 }

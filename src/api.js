@@ -84,3 +84,29 @@ export function importPreview(text) {
 export function resetTranslations() {
   return request("/api/reset-translations", { method: "POST" });
 }
+
+// Liefert die installierbare Mod als ZIP-Blob (+ Dateiname aus dem
+// Content-Disposition-Header) statt JSON — der Aufrufer stößt darüber den
+// normalen Browser-"Speichern unter"-Download an (wie beim LLM-Export).
+export async function exportModZip(modIds, targetLang) {
+  const res = await fetch("/api/export/mod/zip", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ modIds, targetLang }),
+  });
+  if (!res.ok) {
+    let msg;
+    try {
+      const body = await res.json();
+      msg = body?.error || `HTTP ${res.status}`;
+    } catch {
+      msg = `HTTP ${res.status}`;
+    }
+    throw new Error(msg);
+  }
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match ? match[1] : "mod.zip";
+  const blob = await res.blob();
+  return { blob, filename };
+}
