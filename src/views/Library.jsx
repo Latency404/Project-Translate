@@ -138,14 +138,12 @@ export default function Library({ onGoToSetup }) {
   // Total count
   const total = mods.length;
 
-  // === Empty state (no scan performed) ===
+  // === Error state (real errors only — the no-scan-yet case auto-scans instead) ===
   if (error) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
         <Card title="Mods">
-          <p className="text-sm text-muted">
-            No scan has been performed yet. Go to Settings and start a scan.
-          </p>
+          <p className="text-sm text-danger">{error}</p>
           <div className="mt-4">
             <Button variant="secondary" onClick={onGoToSetup}>
               Go to Settings
