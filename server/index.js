@@ -62,8 +62,9 @@ let scanError = null
 // echtem Modus gleich.
 function rescan() {
   const r = roots()
+  const cfg = config.load()
   rescanning = true
-  return scan(r.gameRoot, r.workshopDir, config.load().targetLang)
+  return scan(r.gameRoot, r.workshopDir, cfg.targetLang, cfg.sourceLang)
     .then((result) => {
       cache = result
     })
@@ -91,11 +92,12 @@ app.get('/api/status', (req, res) => {
 app.post('/api/scan', (req, res) => {
   if (scanRunning) return fail(res, 409, 'A scan is already running.')
   const r = roots()
+  const cfg = config.load()
   scanRunning = true
   scanError = null
   scanProgress = { done: 0, total: 0, current: '' }
   res.status(202).json({ scanRunning: true })
-  scan(r.gameRoot, r.workshopDir, config.load().targetLang, {
+  scan(r.gameRoot, r.workshopDir, cfg.targetLang, cfg.sourceLang, {
     onProgress: (p) => {
       scanProgress = p
     }
@@ -205,7 +207,18 @@ app.post('/api/config', (req, res) => {
   const body = req.body || {}
   const errors = config.validate(body)
   if (errors.length) return fail(res, 400, errors.join(' '))
+  const before = config.load()
   const saved = config.save(body)
+  // sourceLang steckt im entryId (der Quell-Pfad) — ein alter Cache würde
+  // sonst Einträge unter entryIds zeigen, die es so nicht mehr gibt, sobald
+  // erneut gespeichert wird. Verwerfen statt stillschweigend veraltet lassen:
+  // GET /api/mods liefert danach 404 ("kein Scan"), worauf die Library
+  // automatisch neu scannt. gameRoot/workshopDir ändern das entryId-Format
+  // nicht (nur WO gesucht wird, im Fake-Modus ohnehin von der echten
+  // Konfiguration entkoppelt) — dafür genügt der Hinweis in Settings (E6).
+  if (saved.sourceLang !== before.sourceLang) {
+    cache = null
+  }
   res.json(saved)
 })
 
@@ -216,11 +229,12 @@ app.post('/api/config', (req, res) => {
 app.post('/api/export/llm', (req, res) => {
   const body = req.body || {}
   const modIds = Array.isArray(body.modIds) ? body.modIds : []
-  const lang = targetLangOf(body, config.load().targetLang)
+  const cfg = config.load()
+  const lang = targetLangOf(body, cfg.targetLang)
   const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
   if (!mods.length) return fail(res, 400, 'No valid mod selection.')
   try {
-    const result = llm.exportLlmBundle(mods, lang)
+    const result = llm.exportLlmBundle(mods, lang, cfg.sourceLang)
     res.json(result)
   } catch (err) {
     fail(res, 500, err.message || 'LLM-Export fehlgeschlagen')
@@ -238,17 +252,19 @@ app.post('/api/import/llm/preview', (req, res) => {
   const { docs, error } = importDocsOf(req.body)
   if (error) return fail(res, 400, error)
   const mods = cache ? cache.mods : []
-  res.json(llm.importPreview(docs, mods, config.load().targetLang))
+  const cfg = config.load()
+  res.json(llm.importPreview(docs, mods, cfg.targetLang, cfg.sourceLang))
 })
 
 app.post('/api/import/llm/apply', (req, res) => {
   const { docs, error } = importDocsOf(req.body)
   if (error) return fail(res, 400, error)
   const mods = cache ? cache.mods : []
+  const cfg = config.load()
   const wasRescanning = rescanning
   let result
   try {
-    result = llm.importApply(docs, mods, config.load().targetLang, BACKUP_ROOT)
+    result = llm.importApply(docs, mods, cfg.targetLang, BACKUP_ROOT, cfg.sourceLang)
   } catch (err) {
     return fail(res, err.status || 500, classifyFsError(err, 'Import').message)
   }
@@ -270,11 +286,12 @@ app.post('/api/export/mod', (req, res) => {
   const body = req.body || {}
   const modIds = Array.isArray(body.modIds) ? body.modIds : []
   const targetDir = body.targetDir && typeof body.targetDir === 'string' ? body.targetDir : MOD_EXPORT_DEFAULT
-  const lang = targetLangOf(body, config.load().targetLang)
+  const cfg = config.load()
+  const lang = targetLangOf(body, cfg.targetLang)
   const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
   if (!mods.length) return fail(res, 400, 'No valid mod selection.')
   try {
-    const result = exportModsBundle(mods, lang, targetDir)
+    const result = exportModsBundle(mods, lang, targetDir, cfg.sourceLang)
     res.json({ targetLang: lang, targetDir: config.toPosix(targetDir), results: [result] })
   } catch (err) {
     fail(res, 500, err.message || 'Mod-Export fehlgeschlagen')

@@ -375,9 +375,12 @@ function summarize(mod, entries) {
 }
 
 // Scan: Wurzel-Dir → { mods, entriesByModId }.
-// gameRoot / workshopDir: native Pfade. Async, damit der Event Loop während des
+// gameRoot / workshopDir: native Pfade. sourceLang: Sprachordner, aus dem die
+// Originaltexte gelesen werden (Default 'EN' — Konfiguration in Settings,
+// D3 in PLAN.md); die entryId trägt den entsprechenden Pfad, ein Wechsel
+// macht bestehende entryIds ungültig. Async, damit der Event Loop während des
 // Scans Fortschritt (POST /api/scan → GET /api/status) weiter bedienen kann.
-async function scan(gameRoot, workshopDir, targetLang, { onProgress } = {}) {
+async function scan(gameRoot, workshopDir, targetLang, sourceLang = SOURCE_LANG, { onProgress } = {}) {
   const mods = []
   const entriesByModId = {}
   const report = (done, total, current) => {
@@ -385,7 +388,7 @@ async function scan(gameRoot, workshopDir, targetLang, { onProgress } = {}) {
   }
 
   // --- Base Game ---
-  const baseEnDir = translateDir(gameRoot, SOURCE_LANG)
+  const baseEnDir = translateDir(gameRoot, sourceLang)
   const total = 1 + (fs.existsSync(workshopDir) ? fs.readdirSync(workshopDir, { withFileTypes: true }).filter((d) => d.isDirectory()).length : 0)
   const baseMod = {
     id: BASE_ID,
@@ -463,7 +466,7 @@ async function scan(gameRoot, workshopDir, targetLang, { onProgress } = {}) {
       // common → root → neuester Version-Ordner
 
       // common-Layout prüfen
-      const commonEnDir = path.join(modDir, 'common', 'media', 'lua', 'shared', 'Translate', SOURCE_LANG)
+      const commonEnDir = path.join(modDir, 'common', 'media', 'lua', 'shared', 'Translate', sourceLang)
       if (fs.existsSync(commonEnDir)) {
         const commonEntries = scanEntriesForDir(mod, 'common', commonEnDir, targetLang, path.join(modDir, 'common'))
         entries.push(...commonEntries)
@@ -471,7 +474,7 @@ async function scan(gameRoot, workshopDir, targetLang, { onProgress } = {}) {
 
       // root-Layout prüfen (nur wenn kein common-Layout)
       if (!fs.existsSync(commonEnDir)) {
-        const rootEnDir = path.join(modDir, 'media', 'lua', 'shared', 'Translate', SOURCE_LANG)
+        const rootEnDir = path.join(modDir, 'media', 'lua', 'shared', 'Translate', sourceLang)
         if (fs.existsSync(rootEnDir)) {
           const rootEntries = scanEntriesForDir(mod, 'root', rootEnDir, targetLang, modDir)
           entries.push(...rootEntries)
@@ -480,7 +483,7 @@ async function scan(gameRoot, workshopDir, targetLang, { onProgress } = {}) {
 
       // Version-Ordner scannen
       for (const version of versionNames.slice(0, 1)) {
-        const enDir = translateDir(path.join(modDir, version), SOURCE_LANG)
+        const enDir = translateDir(path.join(modDir, version), sourceLang)
         entries.push(...scanEntriesForDir(mod, version, enDir, targetLang, path.join(modDir, version)))
       }
 

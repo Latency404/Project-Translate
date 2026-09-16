@@ -356,3 +356,44 @@ test('POST /api/import/llm/apply — leerer Text → 400', async () => {
   assert.equal(res.status, 400)
   assert.ok(typeof res.json.error === 'string')
 })
+
+test('POST /api/config — geaenderte sourceLang verwirft den Scan-Cache (PLAN D3)', async () => {
+  const before = await api('GET', '/mods')
+  assert.equal(before.status, 200)
+
+  const gameRoot = path.join(fakeRoot, 'gameRoot')
+  const workshopDir = path.join(fakeRoot, 'workshop')
+  const changed = await api('POST', '/config', {
+    gameRoot,
+    workshopDir,
+    sourceLang: 'FR',
+    targetLang: 'DE'
+  })
+  assert.equal(changed.status, 200)
+
+  // Der alte Cache (gescannt mit sourceLang EN) ist jetzt ungueltig — 404 statt
+  // veralteter Eintraege unter entryIds, die es unter FR gar nicht gibt.
+  const afterChange = await api('GET', '/mods')
+  assert.equal(afterChange.status, 404)
+
+  // Zurueck auf EN, damit nachfolgende Tests (falls welche) von einem
+  // bekannten Zustand ausgehen koennen, und neu scannen.
+  const reset = await api('POST', '/config', {
+    gameRoot,
+    workshopDir,
+    sourceLang: 'EN',
+    targetLang: 'DE'
+  })
+  assert.equal(reset.status, 200)
+  const scan = await api('POST', '/scan')
+  assert.equal(scan.status, 202)
+  const deadline = Date.now() + 10000
+  for (;;) {
+    const st = await api('GET', '/status')
+    if (!st.json.scanRunning) break
+    if (Date.now() > deadline) throw new Error('Scan beendet nicht')
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  const afterReset = await api('GET', '/mods')
+  assert.equal(afterReset.status, 200)
+})

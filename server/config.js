@@ -11,10 +11,13 @@ const CONFIG_PATH =
 const DEFAULTS = {
   gameRoot: 'C:/Program Files (x86)/Steam/steamapps/common/ProjectZomboid',
   workshopDir: 'C:/Program Files (x86)/Steam/steamapps/workshop/content/108600',
+  sourceLang: 'EN',
   targetLang: 'DE'
 }
 
-// sourceLang ist fix EN: Konstante, kein Feld in der UI und kein Feld in der Config.
+// Fallback, wenn ein aufrufendes Modul kein sourceLang übergibt (siehe
+// scanner.scan() / llm-io.js / mod-export.js Default-Parameter) — deckt sich
+// mit DEFAULTS.sourceLang oben.
 const SOURCE_LANG = 'EN'
 
 function load() {
@@ -77,23 +80,14 @@ function validate(body) {
   if (!isValidLangCode(merged.targetLang)) {
     errors.push('Target language must be 2 to 4 letters.')
   }
-
-  // sourceLang ist (noch) kein echtes Config-Feld — die Quellsprache ist fix
-  // SOURCE_LANG (siehe oben, D3 in PLAN.md macht sie erst konfigurierbar).
-  // Die Settings-View schickt trotzdem schon einen sourceLang-Wert mit;
-  // wird er mitgeschickt, prüfen wir sein Format und gegen targetLang auf
-  // Gleichheit. Fehlt er, gilt für den Gleichheits-Check die feste
-  // SOURCE_LANG.
-  const sourceLangGiven = body.sourceLang != null
-  const sourceLang = sourceLangGiven ? body.sourceLang : SOURCE_LANG
-  if (sourceLangGiven && !isValidLangCode(sourceLang)) {
+  if (!isValidLangCode(merged.sourceLang)) {
     errors.push('Source language must be 2 to 4 letters.')
   }
 
   if (
-    isValidLangCode(sourceLang) &&
+    isValidLangCode(merged.sourceLang) &&
     isValidLangCode(merged.targetLang) &&
-    String(sourceLang).toUpperCase() === String(merged.targetLang).toUpperCase()
+    String(merged.sourceLang).toUpperCase() === String(merged.targetLang).toUpperCase()
   ) {
     errors.push('Source and target language must not be the same.')
   }

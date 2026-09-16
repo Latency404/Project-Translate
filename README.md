@@ -43,10 +43,12 @@ PT_FAKE=1 npm run dev
 ## Workflow
 
 1. **Settings** — set the game folder and Workshop folder (defaults are prefilled for
-   the usual Steam paths) and the target language you're translating into, then
-   **Save**. Run **Scan** to read the installation; this can take a while the first
-   time with many mods installed. (Settings also has a source-language field, but the
-   scanner currently always reads from `EN` regardless of it — see PLAN.md, D3.)
+   the usual Steam paths), the source language texts are originally written in
+   (defaults to `EN`) and the target language you're translating into, then **Save**.
+   Run **Scan** to read the installation; this can take a while the first time with
+   many mods installed. Changing the game/Workshop folder or the source language
+   invalidates the current scan — the app rescans automatically the next time you
+   open the Library.
 2. **Library** — pick the mods you want to translate (the base game is listed too).
    Selection carries over to the Editor and Export.
 3. **Editor** — browse every text entry of the selected mods, search and sort them,

@@ -63,8 +63,10 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
 - **entryId**: `<version>/<Quellsprachen-Pfad relativ zum Version-Ordner>::<key>`, z. B.
   `42.20/media/lua/shared/Translate/EN/ContextMenu.json::Key`. Das `version`-Segment ist
   entweder eine Versionsnummer, `common`, `root` oder `base`. Die Quellsprache ist
-  derzeit fest `EN` (`scanner.js:32`); sobald sie konfigurierbar wird, ändern sich mit
-  ihr alle entryIds — Scan-Cache und Editor-Änderungen müssen dann verworfen werden.
+  konfigurierbar (`config.sourceLang`, Default `EN`, `scanner.js` Parameter `sourceLang`)
+  und steckt im Pfad-Segment — ein Wechsel ändert alle entryIds. `POST /api/config`
+  verwirft deshalb den Scan-Cache, wenn sich `sourceLang`, `gameRoot` oder
+  `workshopDir` ändert (`index.js`); die Library scannt danach automatisch neu.
 - **LLM-Datei-Keys** sind die Kurzform `<version>/<Dateiname>` (z. B. `42.20/UI.json`);
   `llm-io.js` rekonstruiert daraus die entryId.
 - **API-Routenform** (`server/index.js`): `GET /api/status`, `POST /api/scan`,

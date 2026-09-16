@@ -28,30 +28,26 @@ const {
 } = require('./scanner')
 const { saveBatch } = require('./entries')
 
-// EN-Pfad relativ zum Version-Ordner — POSIX, identisch zum file-Segment
-// der entryIds (media/lua/shared/Translate/EN/...).
-const EN_REL = 'media/lua/shared/Translate/EN/'
-
 // EN-Stellen eines Mods: [{ version, enDir }] — dieselben Regeln wie
 // scanner.scan(): common (exklusiv mit root), root nur ohne common, die
 // neueste Version zusätzlich. Base Game: ein Ort mit version "base".
-function enLocations(mod) {
+function enLocations(mod, sourceLang = SOURCE_LANG) {
   if (mod.isBaseGame) {
-    return [{ version: 'base', enDir: translateDir(mod.rootPath, SOURCE_LANG) }]
+    return [{ version: 'base', enDir: translateDir(mod.rootPath, sourceLang) }]
   }
   const locs = []
-  const commonEnDir = translateDir(path.join(mod.rootPath, 'common'), SOURCE_LANG)
+  const commonEnDir = translateDir(path.join(mod.rootPath, 'common'), sourceLang)
   if (fs.existsSync(commonEnDir)) {
     locs.push({ version: 'common', enDir: commonEnDir })
   } else {
-    const rootEnDir = translateDir(mod.rootPath, SOURCE_LANG)
+    const rootEnDir = translateDir(mod.rootPath, sourceLang)
     if (fs.existsSync(rootEnDir)) {
       locs.push({ version: 'root', enDir: rootEnDir })
     }
   }
   const newest = mod.versions[0]
   if (newest) {
-    locs.push({ version: newest, enDir: translateDir(path.join(mod.rootPath, newest), SOURCE_LANG) })
+    locs.push({ version: newest, enDir: translateDir(path.join(mod.rootPath, newest), sourceLang) })
   }
   return locs
 }
@@ -85,10 +81,10 @@ function readEnDir(enDir) {
 // Alle gültigen Einträge eines Sets Mods: Set "<modId>::<version>/<cat>::<key>".
 // cat ist der Datei-Name (Kategorie.json / Kategorie.txt) — dieselbe Short-
 // Form wie die Datei-Keys des Exports.
-function buildValidKeys(mods) {
+function buildValidKeys(mods, sourceLang = SOURCE_LANG) {
   const valid = new Set()
   for (const mod of mods) {
-    for (const { version, enDir } of enLocations(mod)) {
+    for (const { version, enDir } of enLocations(mod, sourceLang)) {
       for (const [cat, obj] of Object.entries(readEnDir(enDir))) {
         for (const key of Object.keys(obj)) {
           valid.add(`${mod.id}::${version}/${cat}::${key}`)
@@ -101,9 +97,9 @@ function buildValidKeys(mods) {
 
 // Dateimap eines Mods: { "<version>/<cat>": { key: original } } — mehrere
 // EN-Stellen werden überlagert (common/root/Versionen).
-function modFiles(mod) {
+function modFiles(mod, sourceLang = SOURCE_LANG) {
   const files = {}
-  for (const { version, enDir } of enLocations(mod)) {
+  for (const { version, enDir } of enLocations(mod, sourceLang)) {
     for (const [cat, obj] of Object.entries(readEnDir(enDir))) {
       if (!files[`${version}/${cat}`]) files[`${version}/${cat}`] = {}
       Object.assign(files[`${version}/${cat}`], obj)
@@ -115,8 +111,8 @@ function modFiles(mod) {
 // Alle ausgewählten Mods in EINE Datei bündeln. Rückgabe:
 //   { text, filename, targetLang, modCount, entryCount }
 // Die Frontend lädt `text` als `filename` über den Save-Dialog herunter.
-function exportLlmBundle(mods, targetLang) {
-  const modDocs = mods.map((mod) => ({ mod: mod.name, modId: mod.id, files: modFiles(mod) }))
+function exportLlmBundle(mods, targetLang, sourceLang = SOURCE_LANG) {
+  const modDocs = mods.map((mod) => ({ mod: mod.name, modId: mod.id, files: modFiles(mod, sourceLang) }))
   const doc = { targetLang, mods: modDocs }
   let entryCount = 0
   for (const d of modDocs) {
@@ -176,10 +172,10 @@ function resolveMod(doc, byId, byName) {
 
 // Import-Vorschau: { matched, unmatched, perMod: { <modId>: { mod, matched, unmatched } } }.
 // matched/unmatched zählen JSON-Keys (nicht Dateien).
-function importPreview(docs, mods, targetLang) {
+function importPreview(docs, mods, targetLang, sourceLang = SOURCE_LANG) {
   const byId = new Map(mods.map((m) => [m.id, m]))
   const byName = new Map(mods.map((m) => [m.name, m]))
-  const valid = buildValidKeys(mods)
+  const valid = buildValidKeys(mods, sourceLang)
   const perMod = {}
   let matched = 0
   let unmatched = 0
@@ -209,10 +205,11 @@ function importPreview(docs, mods, targetLang) {
 // Aus dem Short-Form-Datei-Key wird die entryId rekonstruiert:
 // "<version>/<EN_REL><cat>::<key>" — saveBatch leitet Zielpfad und
 // targetLang-Dateinamen (JSON: identisch, TXT: _EN → _<TGT>) davon ab.
-function importApply(docs, mods, targetLang, backupRoot) {
+function importApply(docs, mods, targetLang, backupRoot, sourceLang = SOURCE_LANG) {
   const byId = new Map(mods.map((m) => [m.id, m]))
   const byName = new Map(mods.map((m) => [m.name, m]))
-  const valid = buildValidKeys(mods)
+  const valid = buildValidKeys(mods, sourceLang)
+  const enRel = `media/lua/shared/Translate/${sourceLang}/`
   let saved = 0
   for (const doc of docs) {
     const mod = resolveMod(doc, byId, byName)
@@ -224,7 +221,7 @@ function importApply(docs, mods, targetLang, backupRoot) {
       for (const [key, value] of Object.entries(keys || {})) {
         if (valid.has(`${mod.id}::${fileKey}::${key}`) && typeof value === 'string') {
           if (!byFile.has(fileKey)) byFile.set(fileKey, [])
-          byFile.get(fileKey).push({ entryId: `${parts.version}/${EN_REL}${parts.cat}::${key}`, translation: value })
+          byFile.get(fileKey).push({ entryId: `${parts.version}/${enRel}${parts.cat}::${key}`, translation: value })
         }
       }
     }

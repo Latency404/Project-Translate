@@ -125,15 +125,15 @@ function bundleDisplayName(mods, targetLang) {
 // exportierten Mod ('' für root/Base, 'common', Versionsnummer), vdir der
 // Quell-Translate-Root. Gleiche Reihenfolge wie scanner.scan():
 // common (exklusiv mit root), root nur ohne common, dann die Versionen.
-function layoutLocations(mod) {
+function layoutLocations(mod, sourceLang = SOURCE_LANG) {
   if (mod.isBaseGame) {
     return [{ rel: '', vdir: mod.rootPath }]
   }
   const locs = []
   const commonDir = path.join(mod.rootPath, 'common')
-  if (fs.existsSync(translateDir(commonDir, SOURCE_LANG))) {
+  if (fs.existsSync(translateDir(commonDir, sourceLang))) {
     locs.push({ rel: 'common', vdir: commonDir })
-  } else if (fs.existsSync(translateDir(mod.rootPath, SOURCE_LANG))) {
+  } else if (fs.existsSync(translateDir(mod.rootPath, sourceLang))) {
     locs.push({ rel: '', vdir: mod.rootPath })
   }
   for (const v of mod.versions) {
@@ -198,9 +198,9 @@ function writeModInfoFiles(outRoot, locations, { id, name, author, description, 
 // Übersetzte Dateien einer einzelnen Layout-Stelle einlesen: [{ relPath, isTxt,
 // tgtFileName, out }] — out ist die gefilterte Key→Value-Map (nur übersetzte,
 // in EN vorhandene Keys). Leere Ergebnisse werden ausgelassen.
-function readTranslatedFiles(rel, vdir, targetLang) {
+function readTranslatedFiles(rel, vdir, targetLang, sourceLang = SOURCE_LANG) {
   const results = []
-  const enDir = translateDir(vdir, SOURCE_LANG)
+  const enDir = translateDir(vdir, sourceLang)
   const tgtDir = translateDir(vdir, targetLang)
   let names
   try {
@@ -242,7 +242,7 @@ function readTranslatedFiles(rel, vdir, targetLang) {
 // bundleFolderBaseName/bundleDisplayName. `written` ist ein Set in
 // Einfüge-Reihenfolge (mod.info/icon je Layout-Ort zuerst, dann die Dateien) —
 // ob/wie sortiert wird, entscheidet der Aufrufer.
-function buildExport(mods, targetLang, targetDir) {
+function buildExport(mods, targetLang, targetDir, sourceLang = SOURCE_LANG) {
   const outRoot = path.join(targetDir, `${bundleFolderBaseName(mods)}-${targetLang}`)
   fs.mkdirSync(outRoot, { recursive: true })
 
@@ -251,7 +251,7 @@ function buildExport(mods, targetLang, targetDir) {
   // Für einen einzelnen Mod ist das exakt layoutLocations(mod).
   const locByRel = new Map()
   for (const mod of mods) {
-    for (const loc of layoutLocations(mod)) {
+    for (const loc of layoutLocations(mod, sourceLang)) {
       if (!locByRel.has(loc.rel)) locByRel.set(loc.rel, loc)
     }
   }
@@ -279,8 +279,8 @@ function buildExport(mods, targetLang, targetDir) {
   // Mergen ist dann ein No-Op).
   const fileAcc = new Map() // relPath -> { isTxt, fileName, merged }
   for (const mod of mods) {
-    for (const { rel, vdir } of layoutLocations(mod)) {
-      for (const { relPath, isTxt, tgtFileName, out } of readTranslatedFiles(rel, vdir, targetLang)) {
+    for (const { rel, vdir } of layoutLocations(mod, sourceLang)) {
+      for (const { relPath, isTxt, tgtFileName, out } of readTranslatedFiles(rel, vdir, targetLang, sourceLang)) {
         if (!fileAcc.has(relPath)) fileAcc.set(relPath, { isTxt, fileName: tgtFileName, merged: {} })
         // Gleicher Pfad: Keys vereinigen, späterer Mod gewinnt bei Kollision.
         Object.assign(fileAcc.get(relPath).merged, out)
@@ -310,8 +310,8 @@ function buildExport(mods, targetLang, targetDir) {
 // buildExport mit einem einelementigen Array — `written` bleibt bewusst in
 // Einfüge-Reihenfolge (unsortiert), das ist das historische, getestete Verhalten
 // dieser Funktion und unterscheidet sich damit von exportModsBundle, das sortiert.
-function exportMod(mod, targetLang, targetDir) {
-  const { modId, targetPath, written } = buildExport([mod], targetLang, targetDir)
+function exportMod(mod, targetLang, targetDir, sourceLang = SOURCE_LANG) {
+  const { modId, targetPath, written } = buildExport([mod], targetLang, targetDir, sourceLang)
   return { modId, targetPath, written: [...written] }
 }
 
@@ -329,8 +329,8 @@ function exportMod(mod, targetLang, targetDir) {
 //   - icon.png: das erste vorhandene Poster der Auswahl, an jedem Layout-Ort.
 // Ein einzelner Mod erzeugt exakt dasselbe Ergebnis wie exportMod(), bis auf die
 // Reihenfolge von `written` (hier alphabetisch sortiert, s. buildExport).
-function exportModsBundle(mods, targetLang, targetDir) {
-  const { modId, targetPath, written } = buildExport(mods, targetLang, targetDir)
+function exportModsBundle(mods, targetLang, targetDir, sourceLang = SOURCE_LANG) {
+  const { modId, targetPath, written } = buildExport(mods, targetLang, targetDir, sourceLang)
   return { modId, targetPath, written: [...written].sort() }
 }
 

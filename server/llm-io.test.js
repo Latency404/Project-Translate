@@ -280,3 +280,30 @@ test('importApply: TXT → DE-Lua-Datei, bestehende Keys bleiben, Backup', () =>
   // Backup der alten DE-Datei
   assert.ok(existsSync(backupRoot))
 })
+
+test('D3: sourceLang="DE" — Export liest Originale aus dem DE-Baum, Roundtrip matched', async () => {
+  // Radio Mod (root-Layout, JSON): DE hat nur EINEN Key (Tooltip_RadioMod) —
+  // mit sourceLang='DE' ist das die vollstaendige Quelle, EN (das bereits
+  // vollstaendig ist) liefert die "Uebersetzung" zurueck.
+  const r = await scan(
+    path.join(fakeRoot, 'gameRoot'),
+    path.join(fakeRoot, 'workshop'),
+    'EN',
+    'DE'
+  )
+  const radio = r.mods.find((m) => m.id === '9999000002/Radio Mod')
+  assert.ok(radio, 'Radio Mod nicht gefunden')
+
+  const { text, entryCount } = exportLlmBundle([radio], 'EN', 'DE')
+  assert.equal(entryCount, 1)
+  const doc = JSON.parse(text)
+  const radioDoc = doc.mods.find((d) => d.modId === radio.id)
+  // Original stammt aus der DE-Datei, nicht aus EN.
+  assert.equal(radioDoc.files['root/Tooltip.json'].Tooltip_RadioMod, 'Mobilfunkradio')
+
+  const { docs, error } = normalizeImportInput(text)
+  assert.equal(error, null)
+  const preview = importPreview(docs, r.mods, 'EN', 'DE')
+  assert.equal(preview.matched, 1)
+  assert.equal(preview.unmatched, 0)
+})

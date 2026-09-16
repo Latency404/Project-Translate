@@ -416,3 +416,36 @@ test('Nachbesserung 1: name= wächst nicht mit der Mod-Anzahl (kurze zählende F
   const soloInfo = readFileSync(path.join(solo.targetPath, '42.20', 'mod.info'), 'utf8')
   assert.match(soloInfo, /^name=Coffee Machines Fix Translation \(DE\)$/m)
 })
+
+test('D3: sourceLang != EN — Scan und Export lesen die DE-Baeume als Quelle', async () => {
+  // DualLayout hat common + 42.20, beide mit vollstaendigen EN- UND DE-Baeumen
+  // (siehe fixtures-inject.js) — mit sourceLang='DE' wird DE zur Quelle und EN
+  // (das ohnehin schon vollstaendig ist) liefert die "Uebersetzung".
+  const r = await scan(
+    path.join(fakeRoot, 'gameRoot'),
+    path.join(fakeRoot, 'workshop'),
+    'EN',
+    'DE'
+  )
+  const dual = r.mods.find((m) => m.id === '9999000004/DualLayout')
+  assert.ok(dual, 'DualLayout nicht gefunden')
+  const entries = r.entriesByModId[dual.id]
+  const commonEntry = entries.find((e) => e.key === 'UI_Dual_Common')
+  assert.ok(commonEntry)
+  // Original kommt aus dem DE-Baum, nicht aus EN.
+  assert.equal(commonEntry.original, 'Gemeinsames Label')
+  // Die entryId traegt das DE-Pfadsegment (nicht /EN/).
+  assert.match(commonEntry.id, /\/Translate\/DE\//)
+  // EN ist bereits vollstaendig vorhanden → Pre-Fill/"Uebersetzung" gesetzt.
+  assert.equal(commonEntry.translation, 'Common shared label')
+  assert.equal(commonEntry.preFilled, true)
+
+  const targetDir = path.join(workdir, 'exportSourceDe')
+  const { targetPath, written } = exportMod(dual, 'EN', targetDir, 'DE')
+  assert.ok(written.includes('common/mod.info'))
+  assert.ok(written.includes('42.20/mod.info'))
+  const commonJson = JSON.parse(
+    readFileSync(path.join(targetPath, 'common', 'media', 'lua', 'shared', 'Translate', 'EN', 'UI.json'), 'utf8')
+  )
+  assert.equal(commonJson.UI_Dual_Common, 'Common shared label')
+})

@@ -4,25 +4,29 @@ Grundsatz: Der Funktionsumfang ist gewollt und funktioniert im Kern. Dieser Plan
 ihn von „läuft" auf „rund". Keine neuen Features, keine Umbauten an Architektur, Routen
 oder Theme — außer ein Punkt hier verlangt es ausdrücklich.
 
-## Ist-Zustand (Stand 2026-09-16, abends)
+## Ist-Zustand (Stand 2026-09-16, Nacht)
 
-- `npm test`: 54 Tests grün. `npm run build`: grün (267 kB JS, 24 kB CSS).
+- `npm test`: 61 Tests grün. `npm run build`: grün.
 - Scanner läuft gegen die echte Steam-Installation und findet dort 450+ Mods
   inklusive Basisspiel.
 - Vollständig da und benutzbar: Scan mit Fortschritt, Library mit Auswahl und Lock,
   Editor mit Suche/Sortierung/Speichern inkl. Backup, LLM-Export als eine Datei über
   den Browser-Save-Dialog, LLM-Import mit Vorschau und Bestätigung, Mod-Export als
-  gebündelter Übersetzungs-Mod.
+  gebündelter Übersetzungs-Mod. Quellsprache ist echt konfigurierbar (D3).
 
-Erledigt an diesem Tag: **A1–A3** (Datenverlust), **B1** (Editor-Nachladen), **B2** (Library-Poster),
-**C1–C4** (B42-konforme mod.info), **D1** (doppelte Export-Logik), **E2**
-(Config-Validierung), **E8** (Vite-Warnung).
+Erledigt an diesem Tag: **A1–A3** (Datenverlust), **B1** (Editor-Nachladen), **B2**
+(Library-Poster), **C1–C4** (B42-konforme mod.info), **D1** (doppelte Export-Logik),
+**D2** (Codereste), **D3** (Quellsprache), **E1** (ehrliche Fehlerzustände), **E2**
+(Config-Validierung), **E3** (Oberfläche Englisch), **E4** (Testlücken), **E6**
+(zwei Nachwehen aus Phase A), **E7** (README), **E8** (Vite-Warnung).
 
-Noch offen: **C5** (Abnahme im Spiel — nur
-der Nutzer kann das), **D2/D3** (Reste, Quellsprache), **E1**, **E3–E7**.
+Noch offen: **C5** (Abnahme im Spiel — nur der Nutzer kann das), **E5** (Wortlaut-
+Kopplung in Settings.jsx, niedrige Priorität, nicht dringend).
 
-Testabdeckung: Backend solide. Nicht abgedeckt: die Routen `POST /api/export/mod`
-und `POST /api/import/llm/apply`, und das Frontend komplett.
+Testabdeckung: Backend solide (`POST /api/export/mod`, `POST /api/import/llm/apply`
+und ein Nicht-EN-Quellsprache-Roundtrip jetzt mit abgedeckt). Frontend weiterhin
+ungetestet (kein Test-Setup für React-Komponenten vorhanden — außerhalb des
+bisherigen Scopes).
 
 Die Reihenfolge der Phasen ist nach Schadenshöhe sortiert: A verhindert Datenverlust,
 B macht die App bei echter Mod-Zahl benutzbar, C liefert ein im Spiel funktionierendes
@@ -171,7 +175,7 @@ Fertig wenn: Die gemeinsame Logik existiert einmal; `npm test` läuft unverände
 (die Tests für beide Wege bleiben bestehen und beschreiben weiterhin dasselbe
 Verhalten). Nach Phase C machen, sonst wird die Zusammenführung zweimal gemacht.
 
-### D2 Reste und Stolpersteine
+### D2 Reste und Stolpersteine [erledigt 2026-09-16]
 Einzeln klein, zusammen ein Nachmittag:
 - `server/scanner.js:356-370`: Der Deduplizierungs-Block hat einen leeren `if`-Zweig
   mit fünf sich widersprechenden Kommentarzeilen. Das Verhalten (JSON gewinnt gegen
@@ -186,7 +190,7 @@ Einzeln klein, zusammen ein Nachmittag:
 
 Fertig wenn: Alles oben erledigt, `npm test` und `npm run build` grün.
 
-### D3 Quellsprache wirklich implementieren
+### D3 Quellsprache wirklich implementieren [erledigt 2026-09-16]
 `src/views/Settings.jsx:148` bietet eine Auswahl für die Quellsprache an; der Scanner
 benutzt die Konstante `SOURCE_LANG = 'EN'` (`server/scanner.js:32`) und ignoriert den
 Wert vollständig. Entschieden (Nutzer, 2026-09-16): Die Auswahl soll echt werden.
@@ -213,7 +217,7 @@ statt zweier.
 
 ## Phase E – Robustheit und Release
 
-### E1 Ehrliche Fehler- und Leerzustände
+### E1 Ehrliche Fehler- und Leerzustände [erledigt 2026-09-16]
 `src/views/Library.jsx:142` zeigt bei **jedem** Fehler „No scan has been performed yet"
 — auch bei einem Serverfehler oder abgebrochener Verbindung. Der Editor verhält sich
 ähnlich (`Editor.jsx:396`).
@@ -232,7 +236,7 @@ Fertig wenn: `POST /api/config` lehnt nicht existierende Pfade und ungültige
 Sprachcodes mit `{ error }` und 400 ab, die Settings-View zeigt die Meldung an einem
 Feld. Braucht A1, sonst ist die Validierung nicht erreichbar.
 
-### E3 Oberfläche durchgehend auf Englisch
+### E3 Oberfläche durchgehend auf Englisch [erledigt 2026-09-16]
 Die UI mischt Deutsch und Englisch: „Search… (all mods)" neben „Gespeichert: 3 Einträge
 in 2 Mod(s)." (`Editor.jsx:511` und `:264`), englische Leerzustände in Library und
 Export neben deutschen Fehlermeldungen aus dem Server (`entries.js:81`).
@@ -246,7 +250,7 @@ fs-Fehlerklassifikation) und die Meldungen in `index.js` (`:92`, `:114`, `:219`,
 mitgezogen. Code-Kommentare dürfen deutsch bleiben — das betrifft nur, was der Nutzer
 sieht.
 
-### E4 Testlücken schließen
+### E4 Testlücken schließen [erledigt 2026-09-16]
 Fertig wenn: `POST /api/export/mod` und `POST /api/import/llm/apply` haben je einen
 Routen-Test (Fake-Modus, tmp-Kopie wie die bestehenden Tests in `index.test.js`),
 `npm test` grün.
@@ -264,7 +268,7 @@ die in CLAUDE.md festgehaltene Fehlerform `{ error: "<lesbarer Text>" }` — als
 entscheiden, ob diese um ein optionales Feld erweitert werden soll, dann umsetzen.
 Nicht dringend, solange keine Meldung verloren geht.
 
-### E6 Zwei Nachwehen aus Phase A
+### E6 Zwei Nachwehen aus Phase A [erledigt 2026-09-16]
 Beim Umsetzen von A1–A3 aufgefallen, beide klein und beide nicht dringend:
 - Wird ein Mod in der Library abgewählt, während er im Editor ungespeicherte
   Änderungen hat, verwirft der Editor diese beim nächsten Mount stillschweigend (die
@@ -278,7 +282,7 @@ Beim Umsetzen von A1–A3 aufgefallen, beide klein und beide nicht dringend:
 Fertig wenn: Beide Fälle enden mit einer sichtbaren Meldung statt mit stiller
 Überraschung.
 
-### E7 README
+### E7 README [erledigt 2026-09-16]
 Fertig wenn: Eine README erklärt Installation, Start inklusive Administrator-Hinweis
 und den Weg Scan → Auswahl → Editor → LLM-Export → Import → Mod-Export, sodass jemand
 Fremdes das Projekt danach bedienen kann.
