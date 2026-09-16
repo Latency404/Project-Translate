@@ -89,7 +89,7 @@ app.get('/api/status', (req, res) => {
 })
 
 app.post('/api/scan', (req, res) => {
-  if (scanRunning) return fail(res, 409, 'Ein Scan läuft bereits.')
+  if (scanRunning) return fail(res, 409, 'A scan is already running.')
   const r = roots()
   scanRunning = true
   scanError = null
@@ -111,7 +111,7 @@ app.post('/api/scan', (req, res) => {
 })
 
 app.get('/api/mods', (req, res) => {
-  if (!cache) return fail(res, 404, 'Noch kein Scan durchgeführt — POST /api/scan.')
+  if (!cache) return fail(res, 404, 'No scan has been performed yet — POST /api/scan.')
   const mods = cache.mods.map((m) => ({ ...m, poster: posterUrl(m) }))
   res.json({ mods })
 })
@@ -143,7 +143,7 @@ app.get('/mod-poster', (req, res) => {
 
 function getMod(res, modId) {
   if (!cache) {
-    fail(res, 404, 'Noch kein Scan durchgeführt — POST /api/scan.')
+    fail(res, 404, 'No scan has been performed yet — POST /api/scan.')
     return null
   }
   const mod = cache.mods.find((m) => m.id === modId)
@@ -218,7 +218,7 @@ app.post('/api/export/llm', (req, res) => {
   const modIds = Array.isArray(body.modIds) ? body.modIds : []
   const lang = targetLangOf(body, config.load().targetLang)
   const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
-  if (!mods.length) return fail(res, 400, 'Keine gültigen Mod-Auswahl.')
+  if (!mods.length) return fail(res, 400, 'No valid mod selection.')
   try {
     const result = llm.exportLlmBundle(mods, lang)
     res.json(result)
@@ -272,7 +272,7 @@ app.post('/api/export/mod', (req, res) => {
   const targetDir = body.targetDir && typeof body.targetDir === 'string' ? body.targetDir : MOD_EXPORT_DEFAULT
   const lang = targetLangOf(body, config.load().targetLang)
   const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
-  if (!mods.length) return fail(res, 400, 'Keine gültigen Mod-Auswahl.')
+  if (!mods.length) return fail(res, 400, 'No valid mod selection.')
   try {
     const result = exportModsBundle(mods, lang, targetDir)
     res.json({ targetLang: lang, targetDir: config.toPosix(targetDir), results: [result] })

@@ -672,7 +672,7 @@ export default function Editor({ onReselect }) {
       a.remove();
       URL.revokeObjectURL(url);
       setNotice(
-        `Exportiert ${result.modCount} Mod(s), ${result.entryCount} Einträge als „${result.filename}" — die Datei kann direkt in die KI zum Übersetzen gegeben werden, danach „Import".`,
+        `Exported ${result.modCount} mod(s), ${result.entryCount} entries as "${result.filename}" — hand the file to the LLM for translation, then use "Import".`,
       );
     } catch (err) {
       setSaveError(err.message);
@@ -719,7 +719,7 @@ export default function Editor({ onReselect }) {
       // the entries effect).
       const data = await api.getMods();
       setAllMods(data.mods || []);
-      setNotice("Import übernommen — die importierten Übersetzungen sind gespeichert.");
+      setNotice("Import applied — the imported translations are saved.");
       setReloadKey((k) => k + 1);
     } catch (err) {
       setSaveError(err.message);

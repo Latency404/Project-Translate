@@ -78,13 +78,13 @@ function classifyFsError(err, filePath) {
     if (e.code) causes.push(e.code)
   }
   if (causes.includes('EPERM') || causes.includes('EACCES')) {
-    err.message = `Zielordner nicht schreibbar: ${p} — Schreibrechte fehlen (Pfad schreibgeschützt). Berechtigungen prüfen und erneut versuchen.`
+    err.message = `Target folder not writable: ${p} — missing write permission (path is read-only). Check permissions and try again.`
     if (!err.status) err.status = 403
   } else if (causes.includes('ENOENT')) {
-    err.message = `Ordner nicht gefunden: ${p} — der Mod-Pfad existiert nicht mehr (Mod entfernt oder verschoben?).`
+    err.message = `Folder not found: ${p} — the mod path no longer exists (mod removed or moved?).`
     if (!err.status) err.status = 404
   } else if (causes.includes('ENOTDIR')) {
-    err.message = `Unerwartetes Verzeichnis-Layout: ${p}`
+    err.message = `Unexpected directory layout: ${p}`
     if (!err.status) err.status = 500
   }
   return err
@@ -101,17 +101,17 @@ function safeWriteError(err, filePath) {
 // null wird wie "" behandelt. Rückgabe: { saved: Zahl }.
 // Fehler werden als { error: "Mensch lesbarer Text" } geworfen (HTTP 4xx/5xx).
 function saveBatch(mod, entries, targetLang, backupRoot) {
-  if (!Array.isArray(entries)) throw Object.assign(new Error('entries fehlt'), { status: 400 })
+  if (!Array.isArray(entries)) throw Object.assign(new Error('entries missing'), { status: 400 })
   const byFile = new Map()
   for (const e of entries) {
     const sep = e.entryId.lastIndexOf('::')
-    if (sep === -1) throw Object.assign(new Error(`Ungültige entryId: ${e.entryId}`), { status: 400 })
+    if (sep === -1) throw Object.assign(new Error(`Invalid entryId: ${e.entryId}`), { status: 400 })
     const key = e.entryId.slice(sep + 2)
     const before = e.entryId.slice(0, sep)
     // version ist das erste Segment (enthält kein "/"), file den Rest:
     // "42.20/media/lua/shared/Translate/EN/ContextMenu.json::Key"
     const slash = before.indexOf('/')
-    if (slash === -1) throw Object.assign(new Error(`Ungültige entryId: ${e.entryId}`), { status: 400 })
+    if (slash === -1) throw Object.assign(new Error(`Invalid entryId: ${e.entryId}`), { status: 400 })
     const version = before.slice(0, slash)
     const file = before.slice(slash + 1)
     const translation = e.translation === null ? '' : String(e.translation)
@@ -134,7 +134,7 @@ function saveBatch(mod, entries, targetLang, backupRoot) {
     const tgtPath = path.join(vdir, 'media', 'lua', 'shared', 'Translate', targetLang, tgtFileName)
     // EN-Datei muss existieren, sonst ist der Key erfunden (unmatched).
     if (!fs.existsSync(enPath)) {
-      throw Object.assign(new Error(`EN-Datei nicht gefunden: ${toPosix(enPath)}`), { status: 404 })
+      throw Object.assign(new Error(`EN file not found: ${toPosix(enPath)}`), { status: 404 })
     }
     if (fs.existsSync(tgtPath)) {
       const bdir = path.join(backupRoot, stamp, backupName(mod.id, version, file))
