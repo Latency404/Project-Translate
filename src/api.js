@@ -87,3 +87,7 @@ export function importApply(text) {
     body: JSON.stringify({ text }),
   });
 }
+
+export function resetTranslations() {
+  return request("/api/reset-translations", { method: "POST" });
+}

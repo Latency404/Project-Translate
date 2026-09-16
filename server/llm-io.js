@@ -205,7 +205,7 @@ function importPreview(docs, mods, targetLang, sourceLang = SOURCE_LANG) {
 // Aus dem Short-Form-Datei-Key wird die entryId rekonstruiert:
 // "<version>/<EN_REL><cat>::<key>" — saveBatch leitet Zielpfad und
 // targetLang-Dateinamen (JSON: identisch, TXT: _EN → _<TGT>) davon ab.
-function importApply(docs, mods, targetLang, backupRoot, sourceLang = SOURCE_LANG) {
+function importApply(docs, mods, targetLang, backupRoot, baselineRoot, sourceLang = SOURCE_LANG) {
   const byId = new Map(mods.map((m) => [m.id, m]))
   const byName = new Map(mods.map((m) => [m.name, m]))
   const valid = buildValidKeys(mods, sourceLang)
@@ -226,7 +226,7 @@ function importApply(docs, mods, targetLang, backupRoot, sourceLang = SOURCE_LAN
       }
     }
     for (const items of byFile.values()) {
-      saved += saveBatch(mod, items, targetLang, backupRoot).saved
+      saved += saveBatch(mod, items, targetLang, backupRoot, baselineRoot).saved
     }
   }
   return { saved }

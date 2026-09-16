@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { ScanSearch, Save } from "lucide-react";
+import { ScanSearch, Save, RotateCcw } from "lucide-react";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
+import Modal from "../components/Modal.jsx";
 import ProgressBar from "../components/ProgressBar.jsx";
 import Tag from "../components/Tag.jsx";
 import * as api from "../api.js";
@@ -39,6 +40,10 @@ export default function Settings({ onOpenMods }) {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [saveErr, setSaveErr] = useState("");
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState("");
+  const [resetErr, setResetErr] = useState("");
 
   // Initial load
   useEffect(() => {
@@ -145,6 +150,33 @@ export default function Settings({ onOpenMods }) {
     } catch (err) {
       setError(err.message);
       setScanning(false);
+    }
+  };
+
+  const handleResetTranslations = async () => {
+    setResetting(true);
+    setResetErr("");
+    setResetMsg("");
+    try {
+      const result = await api.resetTranslations();
+      // Reset betrifft nur die gespeicherten (Disk-)Übersetzungen — noch
+      // ungespeicherte Eingaben im Editor leben als "dirty" im sessionStorage
+      // (Editor.jsx DIRTY_KEY = "pt_editor_dirty") und überleben einen
+      // View-Wechsel. Ohne diesen Schritt würde der Editor sie beim nächsten
+      // Öffnen wieder anzeigen, als hätte Reset sie übersprungen.
+      try {
+        sessionStorage.removeItem("pt_editor_dirty");
+      } catch { /* ignore */ }
+      setResetModalOpen(false);
+      setResetMsg(
+        result.resetCount > 0
+          ? `Reset ${result.resetCount} translation(s) across ${result.modCount} mod(s), including unsaved edits. Translations that shipped with a mod were kept. A backup of every overwritten file was kept.`
+          : "Nothing to reset — no translations were made through this app.",
+      );
+    } catch (err) {
+      setResetErr(err.message);
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -291,6 +323,63 @@ export default function Settings({ onOpenMods }) {
           )}
         </div>
       </Card>
+
+      {/* Reset translations */}
+      <Card title="Reset Translations" subtitle="Undo everything you translated yourself, across every scanned mod.">
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            Undoes every change made through this app — including unsaved edits
+            open in the Editor — as if it had never been used. Translations that
+            already shipped with a mod (present before you first edited that
+            file) are kept, not cleared. Original ({sourceLang}) files are never
+            touched, and a backup of each overwritten file is kept under
+            export/backups/ — same as any other save.
+          </p>
+          <Button
+            variant="danger"
+            icon={RotateCcw}
+            onClick={() => {
+              setResetErr("");
+              setResetMsg("");
+              setResetModalOpen(true);
+            }}
+          >
+            Reset Translations
+          </Button>
+          {resetErr && <p className="text-sm text-danger">{resetErr}</p>}
+          {!resetErr && resetMsg && <p className="text-sm text-success">{resetMsg}</p>}
+        </div>
+      </Card>
+
+      <Modal
+        open={resetModalOpen}
+        onClose={() => (!resetting ? setResetModalOpen(false) : undefined)}
+        title="Reset all translations?"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-text">
+            This undoes every translation you made through this app, in every
+            scanned mod — the whole library, not just a selection — including
+            any unsaved edits open in the Editor right now. Translations that
+            already shipped with a mod are kept. This cannot be undone from
+            within the app; a backup of each overwritten file is kept under
+            export/backups/, but restoring it means copying files back by hand.
+            Original ({sourceLang}) files are never modified.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setResetModalOpen(false)}
+              disabled={resetting}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleResetTranslations} disabled={resetting}>
+              {resetting ? "Resetting..." : "Yes, reset everything"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

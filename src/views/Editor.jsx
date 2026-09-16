@@ -6,7 +6,12 @@ import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
 import Modal from "../components/Modal.jsx";
 import ProgressBar from "../components/ProgressBar.jsx";
-import Tag from "../components/Tag.jsx";
+
+// Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
+// als Backend-Wert unverändert (Export-Ordnernamen etc. hängen daran).
+function displayModName(mod) {
+  return mod.name.replace(/\s*\(Base Game\)\s*$/, "");
+}
 
 // The universe of mods the Editor can show IS the Library selection — the
 // Editor only ever READS this key (the Library writes it). Deselecting a mod in
@@ -34,6 +39,12 @@ const DIRTY_KEY = "pt_editor_dirty";
 //   Fenster gerendert; „unten ankommen" vergrößert dieses Fenster aus dem
 //   bereits geladenen Array (keine Netzwerkanfrage mehr nötig).
 const PAGE_SIZE = 200;
+// Beim Umschalten auf eine aktive Sortierung wird der volle (such-gefilterte)
+// Bestand eines Mods sequenziell seitenweise geholt (s. PAGE_SIZE-Kommentar
+// oben) — eine größere Seite hier reduziert nur die Anzahl der Round-Trips
+// für sehr große Mods (Basisspiel: ~47k Einträge), ohne das Render-Fenster
+// (weiterhin PAGE_SIZE) zu vergrößern.
+const SORT_FETCH_PAGE_SIZE = 500;
 
 function loadStoredDirty() {
   try {
@@ -89,6 +100,14 @@ function sortEntries(entries, sort, dirty) {
   );
 }
 
+// Quelldatei einer entryId ableiten (Format s. CLAUDE.md: <version>/<Pfad>::<key>) —
+// kein Server-Feld nötig, die entryId trägt den Pfad schon.
+function sourceFileOf(entry) {
+  const afterVersion = entry.id.slice(entry.id.indexOf("/") + 1);
+  const relPath = afterVersion.slice(0, afterVersion.lastIndexOf("::"));
+  return relPath.slice(relPath.lastIndexOf("/") + 1);
+}
+
 function currentTranslationOf(entry, dirty) {
   const d = dirty.get(entry.id);
   return d ? d.value : entry.translation;
@@ -123,21 +142,22 @@ function SortHeader({ field, label, className, sort, onCycle }) {
 // One mod's rows. A separate component so useMemo can skip re-sorting on
 // every keystroke elsewhere in the Editor (a re-render of the parent alone
 // does not re-run this memo unless this mod's own props changed).
-function ModEntryList({ mod, info, search, sort, dirty, updateDirty, observerRef }) {
+function ModEntryList({ mod, info, search, sort, dirty, sortDirty, updateDirty, observerRef }) {
   const sortActive = sort !== null;
   const displayEntries = useMemo(() => {
     if (!sortActive) return info.entries;
-    return sortEntries(info.entries, sort, dirty).slice(0, info.renderCount);
+    // Bei Sortierung nach Translation wird die (entprellte) sortDirty statt
+    // der live dirty verwendet — ein kompletter Re-Sort von zehntausenden
+    // Zeilen bei JEDEM Tastendruck blockierte sonst spürbar den Main Thread
+    // (die Eingabe selbst bleibt live, s. currentTranslationOf unten).
+    return sortEntries(info.entries, sort, sortDirty).slice(0, info.renderCount);
   }, [
     info.entries,
     info.renderCount,
     sortActive,
     sort && sort.field,
     sort && sort.dir,
-    // Nur bei Sortierung nach Translation muss ein Tastendruck neu sortieren
-    // (Key/Original ändern sich durch Tippen nicht) — sonst bliebe `dirty`
-    // hier ein unnötig teurer Abhängigkeits-Trigger für jeden Mod-Block.
-    sortActive && sort.field === "translation" ? dirty : null,
+    sortActive && sort.field === "translation" ? sortDirty : null,
   ]);
 
   const total = info.total ?? info.entries.length;
@@ -157,6 +177,11 @@ function ModEntryList({ mod, info, search, sort, dirty, updateDirty, observerRef
     );
   }
 
+  // Unterteilung nach Quelldatei: nur in Server-/Natürlicher Reihenfolge
+  // sinnvoll — sortiert nach Key/Translation/Original liegen die Dateien
+  // durcheinander, ein Trenner wäre dort irreführend statt hilfreich.
+  let prevSourceFile = null;
+
   return (
     <>
       {displayEntries.map((entry) => {
@@ -167,25 +192,33 @@ function ModEntryList({ mod, info, search, sort, dirty, updateDirty, observerRef
         if (entryDirty) statusClass = "outline-accent";
         else if (!entry.translation) statusClass = "outline-warning";
 
+        const sourceFile = sourceFileOf(entry);
+        const showFileDivider = !sortActive && sourceFile !== prevSourceFile;
+        prevSourceFile = sourceFile;
+
         return (
-          <div
-            key={entry.id}
-            className="flex items-center border-b border-line last:border-b-0 hover:bg-raised/30"
-          >
-            <span className="w-[30%] shrink-0 truncate px-4 py-2 text-xs font-mono text-text">
-              {entry.key}
-            </span>
-            <span className="w-[40%] shrink-0 px-2 py-2">
-              <input
-                value={currentTranslation}
-                onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation, mod.id)}
-                placeholder="Translation..."
-                className={`h-9 w-full min-w-[20ch] rounded-md border border-line bg-raised px-3 text-sm text-text placeholder:text-muted/60 outline-2 outline-offset-1 focus-visible:outline-2 ${statusClass}`}
-              />
-            </span>
-            <span className="w-[30%] truncate px-4 py-2 text-sm font-mono text-text">
-              {entry.original}
-            </span>
+          <div key={entry.id}>
+            {showFileDivider && (
+              <div className="border-t border-line/60 bg-raised/40 px-4 py-1.5 text-xs font-mono text-muted">
+                {sourceFile}
+              </div>
+            )}
+            <div className="flex items-center border-b border-line last:border-b-0 hover:bg-raised/30">
+              <span className="w-[30%] shrink-0 truncate px-4 py-2 text-xs font-mono text-text">
+                {entry.key}
+              </span>
+              <span className="w-[40%] shrink-0 px-2 py-2">
+                <input
+                  value={currentTranslation}
+                  onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation, mod.id)}
+                  placeholder="Translation..."
+                  className={`h-9 w-full min-w-[20ch] rounded-md border border-line bg-raised px-3 text-sm text-text placeholder:text-muted/60 outline-2 outline-offset-1 focus-visible:outline-2 ${statusClass}`}
+                />
+              </span>
+              <span className="w-[30%] truncate px-4 py-2 text-sm font-mono text-text">
+                {entry.original}
+              </span>
+            </div>
           </div>
         );
       })}
@@ -253,6 +286,14 @@ export default function Editor({ onReselect }) {
   const sortActive = sort !== null;
 
   const [dirty, setDirty] = useState(() => loadStoredDirty());
+  // Entprellte Kopie von `dirty`, nur für den Re-Sort bei aktiver
+  // Translation-Sortierung (s. ModEntryList) — verhindert einen kompletten
+  // Re-Sort von zehntausenden Zeilen bei jedem Tastendruck.
+  const [dirtyDebounced, setDirtyDebounced] = useState(dirty);
+  useEffect(() => {
+    const t = setTimeout(() => setDirtyDebounced(dirty), 350);
+    return () => clearTimeout(t);
+  }, [dirty]);
   const [loading, setLoading] = useState(false);
   // Bumped after save/import: the entries effect depends on this, so the
   // list reloads after a save (the no-op setSearch() trick below is gone).
@@ -371,7 +412,7 @@ export default function Editor({ onReselect }) {
           let page = 1;
           let guard = 0;
           while (all.length < total && guard < 1000) {
-            const data = await api.getEntries(mod.id, { page, pageSize: PAGE_SIZE, search });
+            const data = await api.getEntries(mod.id, { page, pageSize: SORT_FETCH_PAGE_SIZE, search });
             total = data.total ?? 0;
             const batch = data.entries || [];
             all = all.concat(batch);
@@ -829,7 +870,7 @@ export default function Editor({ onReselect }) {
                 aria-label={`Show ${mod.name} in editor`}
               />
               <div className="min-w-0 flex-1 text-left text-sm">
-                <span className="block truncate text-text">{mod.name}</span>
+                <span className="block truncate text-text">{displayModName(mod)}</span>
                 <span className="mt-0.5 block text-xs font-mono text-muted">
                   {mod.translatedCount} / {mod.entryCount}
                 </span>
@@ -849,11 +890,8 @@ export default function Editor({ onReselect }) {
                 ? "Editor"
                 : entryMods.length > 1
                   ? `${entryMods.length} Mods`
-                  : entryMods[0]?.name || ""}
+                  : displayModName(entryMods[0]) || ""}
             </span>
-            {entryMods.length === 1 && entryMods[0].isBaseGame && (
-              <Tag tone="base">Base Game</Tag>
-            )}
             <div className="flex-1" />
             {entryMods.length > 0 && (
               <ProgressBar
@@ -971,9 +1009,8 @@ export default function Editor({ onReselect }) {
                   >
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm font-bold text-text">
-                        {mod.name}
+                        {displayModName(mod)}
                       </span>
-                      {mod.isBaseGame && <Tag tone="base">Base Game</Tag>}
                       <span className="text-xs font-mono text-muted">
                         {info.total ?? entries.length} entries
                       </span>
@@ -1003,6 +1040,7 @@ export default function Editor({ onReselect }) {
                     search={search}
                     sort={sort}
                     dirty={dirty}
+                    sortDirty={dirtyDebounced}
                     updateDirty={updateDirty}
                     observerRef={observerRef}
                   />

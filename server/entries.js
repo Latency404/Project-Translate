@@ -12,6 +12,15 @@
 // Backup: Vor jedem Überschreiben einer targetLang-Datei wird die alte Datei
 // kopiert nach export/backups/<YYYY-MM-DD_HH-mm>/<modId>__<version>__<file>.
 // Ein Ordner pro Speicher-Batch, Backups werden nie automatisch gelöscht.
+//
+// Baseline (für "Reset Translations", Settings): der allererste App-
+// Schreibzugriff auf eine targetLang-Datei sichert deren Zustand VOR diesem
+// Schreiben nach export/baseline/<modId>__<version>__<file>/ — entweder als
+// Kopie der Datei, oder als leere Markerdatei ".absent", falls die Datei
+// noch gar nicht existierte. Ein Reset stellt genau diesen Zustand wieder
+// her (oder löscht die Datei bei ".absent") statt einfach alles zu leeren —
+// vorhandene Übersetzungen, die schon vor der App-Nutzung da waren, bleiben
+// so erhalten. Einmal aufgenommen, wird eine Baseline nie überschrieben.
 const fs = require('node:fs')
 const path = require('node:path')
 const { versionDirOf, toPosix, readFlatMap, readTxtMap, targetFileName } = require('./scanner')
@@ -95,12 +104,85 @@ function safeWriteError(err, filePath) {
   return classifyFsError(err, filePath)
 }
 
+function baselineDirFor(baselineRoot, modId, version, file) {
+  return path.join(baselineRoot, backupName(modId, version, file))
+}
+
+// Einmalig (idempotent) den Vor-App-Zustand einer targetLang-Datei sichern —
+// wird vor jedem Überschreiben in saveBatch aufgerufen; ein bereits
+// vorhandener Baseline-Ordner bedeutet "schon gesichert" und bleibt unberührt.
+function ensureBaseline(baselineRoot, modId, version, file, tgtPath, tgtFileName) {
+  const bdir = baselineDirFor(baselineRoot, modId, version, file)
+  if (fs.existsSync(bdir)) return
+  fs.mkdirSync(bdir, { recursive: true })
+  if (fs.existsSync(tgtPath)) {
+    fs.copyFileSync(tgtPath, path.join(bdir, tgtFileName))
+  } else {
+    fs.writeFileSync(path.join(bdir, '.absent'), '')
+  }
+}
+
+// Anzahl Keys, in denen sich zwei flache Maps unterscheiden (fürs Reporting).
+function diffCount(a, b) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+  let n = 0
+  for (const k of keys) if (a[k] !== b[k]) n++
+  return n
+}
+
+// Eine targetLang-Datei auf ihre Baseline zurücksetzen (s. Kommentar oben).
+// Kein Baseline-Ordner vorhanden → die App hat diese Datei nie geschrieben,
+// es gibt nichts zurückzusetzen (sie ist bereits im Originalzustand).
+// Rückgabe: Anzahl der tatsächlich geänderten Keys (0 = keine Änderung nötig,
+// dann wird auch nicht geschrieben/gesichert).
+function restoreBaseline(mod, version, file, targetLang, backupRoot, baselineRoot) {
+  const vdir = versionDirOf(mod, version)
+  const tgtFileName = targetFileName(path.basename(file), targetLang)
+  const tgtPath = path.join(vdir, 'media', 'lua', 'shared', 'Translate', targetLang, tgtFileName)
+  const bdir = baselineDirFor(baselineRoot, mod.id, version, file)
+  if (!fs.existsSync(bdir)) return 0
+
+  const isTxt = tgtFileName.toLowerCase().endsWith('.txt')
+  const wasAbsent = fs.existsSync(path.join(bdir, '.absent'))
+  const baselinePath = path.join(bdir, tgtFileName)
+
+  const current = (isTxt ? readTxtMap(tgtPath) : readFlatMap(tgtPath)) || {}
+  const baseline = wasAbsent ? {} : (isTxt ? readTxtMap(baselinePath) : readFlatMap(baselinePath)) || {}
+
+  const changed = diffCount(current, baseline)
+  if (changed === 0) return 0
+
+  if (fs.existsSync(tgtPath)) {
+    const bkDir = path.join(backupRoot, timestampDir(), backupName(mod.id, version, file))
+    try {
+      fs.mkdirSync(bkDir, { recursive: true })
+      fs.copyFileSync(tgtPath, path.join(bkDir, tgtFileName))
+    } catch (e) {
+      throw safeWriteError(e, bkDir)
+    }
+  }
+
+  try {
+    if (wasAbsent) {
+      fs.rmSync(tgtPath, { force: true })
+    } else if (isTxt) {
+      const tableName = tgtFileName.slice(0, tgtFileName.length - 4)
+      writeLua(tgtPath, tableName, baseline)
+    } else {
+      writeJson(tgtPath, baseline)
+    }
+  } catch (e) {
+    throw safeWriteError(e, tgtPath)
+  }
+  return changed
+}
+
 // Ein Batch speichern: { entries: [{ entryId, translation }] }.
 // entryId-Format: <version>/<file>::<key>, file relativ zum Version-Ordner
 // (immer der EN-Pfad). translation = "" löscht den Key (leere Übersetzung),
 // null wird wie "" behandelt. Rückgabe: { saved: Zahl }.
 // Fehler werden als { error: "Mensch lesbarer Text" } geworfen (HTTP 4xx/5xx).
-function saveBatch(mod, entries, targetLang, backupRoot) {
+function saveBatch(mod, entries, targetLang, backupRoot, baselineRoot) {
   if (!Array.isArray(entries)) throw Object.assign(new Error('entries missing'), { status: 400 })
   const byFile = new Map()
   for (const e of entries) {
@@ -135,6 +217,14 @@ function saveBatch(mod, entries, targetLang, backupRoot) {
     // EN-Datei muss existieren, sonst ist der Key erfunden (unmatched).
     if (!fs.existsSync(enPath)) {
       throw Object.assign(new Error(`EN file not found: ${toPosix(enPath)}`), { status: 404 })
+    }
+    // Baseline VOR dieser Änderung sichern (No-op ab dem zweiten Schreiben).
+    if (baselineRoot) {
+      try {
+        ensureBaseline(baselineRoot, mod.id, version, file, tgtPath, tgtFileName)
+      } catch (e) {
+        throw safeWriteError(e, path.join(baselineRoot, backupName(mod.id, version, file)))
+      }
     }
     if (fs.existsSync(tgtPath)) {
       const bdir = path.join(backupRoot, stamp, backupName(mod.id, version, file))
@@ -175,4 +265,4 @@ function saveBatch(mod, entries, targetLang, backupRoot) {
   return { saved }
 }
 
-module.exports = { saveBatch, backupName, timestampDir, writeLua, classifyFsError }
+module.exports = { saveBatch, restoreBaseline, backupName, timestampDir, writeLua, classifyFsError }

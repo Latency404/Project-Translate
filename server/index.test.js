@@ -357,6 +357,72 @@ test('POST /api/import/llm/apply — leerer Text → 400', async () => {
   assert.ok(typeof res.json.error === 'string')
 })
 
+test('POST /api/reset-translations — stellt Baseline wieder her, verschont nie von der App geschriebene Dateien', async () => {
+  const pid = encodeURIComponent('3554514861/Fuel Bowser')
+  const vdir = path.join(fakeRoot, 'workshop', '3554514861', 'mods', 'Fuel Bowser', '42.20')
+  const enContextMenuPath = path.join(vdir, 'media', 'lua', 'shared', 'Translate', 'EN', 'ContextMenu.json')
+  const deIgUiPath = path.join(vdir, 'media', 'lua', 'shared', 'Translate', 'DE', 'IG_UI.json')
+  const enBefore = readFileSync(enContextMenuPath, 'utf8')
+
+  // IG_UI.json (DE) hat eine mit der Fixture ausgelieferte Uebersetzung, die
+  // die App bisher nie geschrieben hat (kein PUT/Import hat diese Datei
+  // angefasst) — sie hat also KEINE Baseline. Wir ueberschreiben ihren
+  // einzigen Key einmal ueber die API, damit die Baseline (= der Fixture-
+  // Zustand VOR diesem Schreiben) jetzt aufgenommen wird.
+  const before = await api('GET', `/mods/${pid}/entries`)
+  const igUiEntry = before.json.entries.find((e) => e.file.endsWith('IG_UI.json'))
+  assert.ok(igUiEntry)
+  assert.equal(igUiEntry.translation, 'Treibstofftankzug', 'Fixture-Vorbelegung fehlt')
+
+  const overwrite = await api('PUT', `/mods/${pid}/entries`, {
+    entries: [{ entryId: igUiEntry.id, translation: 'Vom User geaendert' }]
+  })
+  assert.equal(overwrite.status, 200)
+  assert.equal(JSON.parse(readFileSync(deIgUiPath, 'utf8')).IGUI_VehicleNameFuelBowserTrailer, 'Vom User geaendert')
+
+  // ContextMenu.json (DE) wurde schon vom fruehreren PUT-Test beschrieben
+  // (Baseline = leeres {} aus der Fixture) und traegt seither "Testübersetzung".
+  const res = await api('POST', '/reset-translations')
+  assert.equal(res.status, 200)
+  assert.ok(res.json.resetCount > 0)
+  assert.ok(res.json.modCount > 0)
+
+  // EN-Datei (Original) ist unveraendert geblieben.
+  assert.equal(readFileSync(enContextMenuPath, 'utf8'), enBefore)
+
+  // IG_UI.json ist auf die mitgelieferte Fixture-Uebersetzung zurueck — NICHT
+  // leer — weil das die Baseline dieser Datei ist.
+  assert.equal(
+    JSON.parse(readFileSync(deIgUiPath, 'utf8')).IGUI_VehicleNameFuelBowserTrailer,
+    'Treibstofftankzug'
+  )
+
+  const afterEntries = await api('GET', `/mods/${pid}/entries`)
+  const igUiAfter = afterEntries.json.entries.find((e) => e.file.endsWith('IG_UI.json'))
+  assert.equal(igUiAfter.translation, 'Treibstofftankzug')
+  const contextMenuAfter = afterEntries.json.entries.filter((e) => e.file.endsWith('ContextMenu.json'))
+  assert.ok(contextMenuAfter.every((e) => e.translation === null), 'ContextMenu.json sollte wieder leer sein')
+
+  // Eine Datei, die die App NIE geschrieben hat, bleibt von einem Reset
+  // unberuehrt: More Traits' DE-Datei behaelt ihren Fixture-Zustand.
+  const traitsPid = encodeURIComponent('1299328280/More Traits')
+  const traitsBefore = await api('GET', `/mods/${traitsPid}/entries`)
+  assert.ok(traitsBefore.json.entries.some((e) => e.translation !== null), 'More Traits sollte weiterhin Uebersetzungen haben')
+
+  // Backup der ueberschriebenen Dateien liegt vor.
+  const backups = path.join(exportRoot, 'backups')
+  const batchDirs = readDir(backups)
+  let found = false
+  for (const d of batchDirs) {
+    for (const sub of readDir(path.join(backups, d))) {
+      if (sub.includes('Fuel Bowser') && readDir(path.join(backups, d, sub)).includes('IG_UI.json')) {
+        found = true
+      }
+    }
+  }
+  assert.ok(found, 'Backup der ueberschriebenen DE-Datei (IG_UI.json) fehlt')
+})
+
 test('POST /api/config — geaenderte sourceLang verwirft den Scan-Cache (PLAN D3)', async () => {
   const before = await api('GET', '/mods')
   assert.equal(before.status, 200)

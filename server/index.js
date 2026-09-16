@@ -14,7 +14,7 @@ const path = require('node:path')
 const config = require('./config')
 const fake = require('./fake-api')
 const { scan } = require('./scanner')
-const { saveBatch, classifyFsError } = require('./entries')
+const { saveBatch, restoreBaseline, classifyFsError } = require('./entries')
 const llm = require('./llm-io')
 const { exportModsBundle } = require('./mod-export')
 
@@ -28,6 +28,7 @@ const PROJECT_ROOT = path.join(__dirname, '..')
 // erlaubt einen anderen Ort (Tests).
 const EXPORT_ROOT = process.env.PT_EXPORT_ROOT || path.join(PROJECT_ROOT, 'export')
 const BACKUP_ROOT = path.join(EXPORT_ROOT, 'backups')
+const BASELINE_ROOT = path.join(EXPORT_ROOT, 'baseline')
 const MOD_EXPORT_DEFAULT = path.join(EXPORT_ROOT, 'mods')
 
 // Fake-Mode: auch für Scan und Save die Fixture-Wurzel verwenden —
@@ -177,13 +178,52 @@ app.get('/api/mods/:modId/entries', (req, res) => {
   })
 })
 
+// Alle Übersetzungen (targetLang, global über jeden gescannten Mod) auf ihre
+// Baseline zurücksetzen — den Zustand vor dem allerersten App-Schreibzugriff
+// je targetLang-Datei (s. Kommentar bei restoreBaseline in entries.js). Eine
+// Datei, die die App nie geschrieben hat, bleibt unberührt — Übersetzungen,
+// die schon vor der App-Nutzung vorlagen, gehen so NICHT verloren. Die
+// EN-Originaldateien fasst saveBatch/restoreBaseline ohnehin nie an.
+app.post('/api/reset-translations', (req, res) => {
+  if (!cache) return fail(res, 404, 'No scan has been performed yet — POST /api/scan.')
+  const cfg = config.load()
+  const wasRescanning = rescanning
+  let resetCount = 0
+  let modCount = 0
+  try {
+    for (const mod of cache.mods) {
+      const entries = cache.entriesByModId[mod.id] || []
+      const files = new Map()
+      for (const e of entries) {
+        const key = `${e.version}/${e.file}`
+        if (!files.has(key)) files.set(key, { version: e.version, file: e.file })
+      }
+      let modChanged = false
+      for (const { version, file } of files.values()) {
+        const changed = restoreBaseline(mod, version, file, cfg.targetLang, BACKUP_ROOT, BASELINE_ROOT)
+        if (changed > 0) {
+          resetCount += changed
+          modChanged = true
+        }
+      }
+      if (modChanged) modCount += 1
+    }
+  } catch (err) {
+    return fail(res, err.status || 500, classifyFsError(err, BASELINE_ROOT).message)
+  }
+  rescan()
+    .then(() => (wasRescanning ? rescan() : undefined))
+    .catch(() => {})
+    .finally(() => res.json({ resetCount, modCount }))
+})
+
 app.put('/api/mods/:modId/entries', (req, res) => {
   const mod = getMod(res, req.params.modId)
   if (!mod) return
   const wasRescanning = rescanning
   let result
   try {
-    result = saveBatch(mod, req.body && req.body.entries, config.load().targetLang, BACKUP_ROOT)
+    result = saveBatch(mod, req.body && req.body.entries, config.load().targetLang, BACKUP_ROOT, BASELINE_ROOT)
   } catch (err) {
     return fail(res, err.status || 500, classifyFsError(err, mod.rootPath).message)
   }
@@ -264,7 +304,7 @@ app.post('/api/import/llm/apply', (req, res) => {
   const wasRescanning = rescanning
   let result
   try {
-    result = llm.importApply(docs, mods, cfg.targetLang, BACKUP_ROOT, cfg.sourceLang)
+    result = llm.importApply(docs, mods, cfg.targetLang, BACKUP_ROOT, BASELINE_ROOT, cfg.sourceLang)
   } catch (err) {
     return fail(res, err.status || 500, classifyFsError(err, 'Import').message)
   }

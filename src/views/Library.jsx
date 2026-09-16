@@ -5,7 +5,12 @@ import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
 import ProgressBar from "../components/ProgressBar.jsx";
-import Tag from "../components/Tag.jsx";
+
+// Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
+// als Backend-Wert unverändert (Export-Ordnernamen etc. hängen daran).
+function displayModName(mod) {
+  return mod.name.replace(/\s*\(Base Game\)\s*$/, "");
+}
 
 export default function Library({ onGoToSetup }) {
   const [mods, setMods] = useState([]);
@@ -230,14 +235,15 @@ export default function Library({ onGoToSetup }) {
                 </span>
               )}
 
-              {/* Name + Base Game tag */}
+              {/* Name */}
               <div className="mb-1 flex items-center gap-2">
-                <span className="font-semibold text-text">{mod.name}</span>
-                {mod.isBaseGame && <Tag tone="base">Base Game</Tag>}
+                <span className="font-semibold text-text">{displayModName(mod)}</span>
               </div>
 
               {/* ID */}
-              <p className="mb-3 font-mono text-xs text-muted">{mod.id}</p>
+              <p className="mb-3 font-mono text-xs text-muted">
+                {mod.isBaseGame ? "Base Game" : mod.id}
+              </p>
 
               {/* Poster */}
               <div className="mb-3 flex h-24 items-center justify-center overflow-hidden rounded-md bg-raised">
