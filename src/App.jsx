@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Button from "./components/Button.jsx";
-import Setup from "./views/Settings.jsx";
+import Settings from "./views/Settings.jsx";
 import Showcase from "./views/Showcase.jsx";
 import Library from "./views/Library.jsx";
 import Editor from "./views/Editor.jsx";
@@ -63,7 +63,7 @@ export default function App() {
           <Library key={libraryKey} onGoToSetup={() => setView("settings")} />
         )}
         {view === "settings" && (
-          <Setup
+          <Settings
             onOpenMods={() => {
               setLibraryKey((k) => k + 1);
               setView("mods");

@@ -263,7 +263,7 @@ function readTxtMap(filePath) {
 // JSON: gleich (ItemName.json → ItemName.json)
 // TXT: _EN.txt → _DE.txt (Sandbox_EN.txt → Sandbox_DE.txt)
 //     sonst: .txt → _DE.txt (Sandbox.txt → Sandbox_DE.txt)
-function targetFileName(enFileName, targetLang, enDir) {
+function targetFileName(enFileName, targetLang) {
   const ext = path.extname(enFileName)
   const base = enFileName.slice(0, -ext.length)
   if (ext === '.json') return enFileName
@@ -301,7 +301,7 @@ function scanEntriesForDir(mod, version, enDir, targetLang, modRoot) {
   for (const f of jsonNames) {
     const enMap = readFlatMap(path.join(enDir, f))
     if (!enMap) continue
-    const deFileName = targetFileName(f, targetLang, enDir)
+    const deFileName = targetFileName(f, targetLang)
     const deMap = readFlatMap(path.join(langDir, deFileName))
     const relPath = path.relative(modRoot, path.join(enDir, f))
     const file = toPosix(relPath)
@@ -327,7 +327,7 @@ function scanEntriesForDir(mod, version, enDir, targetLang, modRoot) {
   for (const f of txtNames) {
     const enMap = readTxtMap(path.join(enDir, f))
     if (!enMap) continue
-    const deFileName = targetFileName(f, targetLang, enDir)
+    const deFileName = targetFileName(f, targetLang)
     // TXT ist Lua-Translate (kein JSON) — readFlatMap würde null liefern und
     // vorhandene targetLang-Übersetzungen (Pre-Fill) unentdeckt lassen.
     const deMap = readTxtMap(path.join(langDir, deFileName))
@@ -351,20 +351,12 @@ function scanEntriesForDir(mod, version, enDir, targetLang, modRoot) {
     }
   }
 
-  // Deduplizierung: gleiche entryId → JSON hat Priorität.
-  // Wenn JSON+TXT gleiche entryId haben, den TXT-Eintrag entfernen.
+  // Deduplizierung: gleiche entryId → JSON hat Priorität. Da JSON-Dateien vor
+  // TXT-Dateien durchlaufen werden, ist ein bereits gesehener Eintrag immer JSON —
+  // ein späterer TXT-Eintrag mit derselben entryId wird einfach übersprungen.
   const seen = new Map()
   for (const e of entries) {
-    const existing = seen.get(e.id)
-    if (existing) {
-      // JSON-Eintrag hat Priorität — TXT-Eintrag überschreibt nur wenn kein JSON
-      // Da wir zuerst JSON durchlaufen, ist existing immer JSON → TXT überspringen
-      // Aber wir wollen den TXT-Eintrag nicht verlieren wenn es keinen JSON gibt →
-      // Die JSON-Einträge sind schon im Map, TXT-Einträge haben gleiche entryId → remove TXT
-      // Weil JSON zuerst: existing ist JSON, e ist TXT → TXT überspringen
-      // Umgekehrt: wenn TXT zuerst (sollte nicht vorkommen), JSON würde überschreiben
-      // Lösung: Map enthält nur JSON-Einträge für diese entryId
-    } else {
+    if (!seen.has(e.id)) {
       seen.set(e.id, e)
     }
   }

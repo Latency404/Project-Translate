@@ -868,7 +868,7 @@ export default function Editor({ onReselect }) {
           </div>
           <Button
             variant="secondary"
-            icon={FileInput}
+            icon={FileOutput}
             onClick={handleLlmExport}
             disabled={visible.length === 0 || exportLoading}
             title="Export visible mods as LLM JSON (EN originals)"
@@ -877,7 +877,7 @@ export default function Editor({ onReselect }) {
           </Button>
           <Button
             variant="secondary"
-            icon={FileOutput}
+            icon={FileInput}
             onClick={handleImportClick}
             disabled={importLoading}
             title="Choose a translated LLM file to import (browser file picker)"

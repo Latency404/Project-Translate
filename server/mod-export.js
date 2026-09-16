@@ -217,7 +217,7 @@ function readTranslatedFiles(rel, vdir, targetLang) {
     const en = isTxt ? readTxtMap(path.join(enDir, f)) : readFlatMap(path.join(enDir, f))
     if (!en) continue
     // Zieldatei: JSON identisch, TXT _EN → _<TGT>.
-    const tgtFileName = targetFileName(f, targetLang, enDir)
+    const tgtFileName = targetFileName(f, targetLang)
     const tgtPath = path.join(tgtDir, tgtFileName)
     if (!fs.existsSync(tgtPath)) continue
     const tgt = isTxt ? readTxtMap(tgtPath) : readFlatMap(tgtPath)
