@@ -81,13 +81,6 @@ export function importPreview(text) {
   });
 }
 
-export function importApply(text) {
-  return request("/api/import/llm/apply", {
-    method: "POST",
-    body: JSON.stringify({ text }),
-  });
-}
-
 export function resetTranslations() {
   return request("/api/reset-translations", { method: "POST" });
 }

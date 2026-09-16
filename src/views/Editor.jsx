@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileInput, FileOutput, Save } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, Save } from "lucide-react";
 import * as api from "../api.js";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
-import Modal from "../components/Modal.jsx";
-import ProgressBar from "../components/ProgressBar.jsx";
+import Tag from "../components/Tag.jsx";
+import { loadDirty, saveDirty, reviewModIds, statusOf } from "../reviewStore.js";
 
 // Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
 // als Backend-Wert unverändert (Export-Ordnernamen etc. hängen daran).
@@ -13,59 +13,30 @@ function displayModName(mod) {
   return mod.name.replace(/\s*\(Base Game\)\s*$/, "");
 }
 
+const STATUS_TAG = {
+  open: { tone: "warning", label: "Open" },
+  translated: { tone: "success", label: "Translated" },
+  review: { tone: "accent", label: "Needs Review" },
+};
+
 // The universe of mods the Editor can show IS the Library selection — the
-// Editor only ever READS this key (the Library writes it). Deselecting a mod in
-// the Editor sidebar never touches the Library selection.
+// Editor only ever READS this key (the Library writes it). Switching the
+// active mod in the Editor never touches the Library selection.
 const UNIVERSE_KEY = "pt_library_selected";
-// Editor-only visibility — the Editor's OWN selection, separate from the
-// Library. Persisted in its own key so per-mod visibility survives view
-// switches without touching the Library selection at all.
-const VISIBLE_KEY = "pt_editor_visible";
-// Unsaved edits (entryId -> { modId, value }). Persisted so a view switch (the
-// Editor is unmounted by App.jsx) doesn't silently drop them. modId is
-// recorded at edit time — grouping edits by mod for saving never depends on
-// what happens to be loaded in the DOM (see dirtyByMod below).
-const DIRTY_KEY = "pt_editor_dirty";
+// The Editor's own single active mod (one mod at a time — "durcharbeiten Mod
+// für Mod"). Persisted in its own key so it survives view switches without
+// touching the Library selection at all.
+const ACTIVE_KEY = "pt_editor_active_mod";
 
-// Nachladen beim Scrollen statt „alles auf einmal":
-// - Ohne aktive Sortierung holt jedes Mod-Block sein eigenes Fenster
-//   (Server-Pagination, PAGE_SIZE pro Anfrage) und lädt beim Erreichen des
-//   unteren Rands nach — der Server filtert (search) und paginiert bereits.
-// - Mit aktiver Sortierung ist eine Seite für sich genommen nicht sortierbar
-//   (die alphabetisch erste Zeile kann auf einer späteren Seite liegen) — der
-//   ganze (such-gefilterte) Bestand des Mods wird einmalig geholt (mehrere
-//   Anfragen à PAGE_SIZE) und dann clientseitig sortiert. Damit das nicht
-//   wieder zehntausende DOM-Zeilen erzeugt, wird davon weiterhin nur ein
-//   Fenster gerendert; „unten ankommen" vergrößert dieses Fenster aus dem
-//   bereits geladenen Array (keine Netzwerkanfrage mehr nötig).
+// Ganzer (such-gefilterter) Bestand eines Mods wird seitenweise geholt — eine
+// einzelne Seite reicht nicht, weil Sortierung UND die Datei-Tabs (Namen aller
+// Quelldateien des Mods) den vollen Bestand brauchen. Nur EIN Mod ist je
+// gleichzeitig geladen (Einzel-Mod-Fokus), daher ist das unproblematisch —
+// selbst das Basisspiel (~47k Einträge) bleibt ein vertretbarer Satz
+// Round-Trips. Das Render-Fenster bleibt trotzdem klein (PAGE_SIZE, per
+// Scroll-Reveal erweitert) — keine zehntausende DOM-Zeilen auf einmal.
+const FETCH_PAGE_SIZE = 500;
 const PAGE_SIZE = 200;
-// Beim Umschalten auf eine aktive Sortierung wird der volle (such-gefilterte)
-// Bestand eines Mods sequenziell seitenweise geholt (s. PAGE_SIZE-Kommentar
-// oben) — eine größere Seite hier reduziert nur die Anzahl der Round-Trips
-// für sehr große Mods (Basisspiel: ~47k Einträge), ohne das Render-Fenster
-// (weiterhin PAGE_SIZE) zu vergrößern.
-const SORT_FETCH_PAGE_SIZE = 500;
-
-function loadStoredDirty() {
-  try {
-    const raw = sessionStorage.getItem(DIRTY_KEY);
-    if (raw) {
-      const pairs = JSON.parse(raw);
-      if (Array.isArray(pairs)) {
-        // Alte Form (vor dem Nachladen-Umbau) war [id, "Wert"] — modId war
-        // implizit „was gerade geladen ist". Migriert als modId: null; eine
-        // spätere Effekt (s.u.) füllt das nach, sobald der Mod bekannt ist.
-        return new Map(
-          pairs.map(([id, val]) => [
-            id,
-            val && typeof val === "object" ? val : { modId: null, value: val },
-          ]),
-        );
-      }
-    }
-  } catch { /* ignore */ }
-  return new Map();
-}
 
 function loadUniverseIds() {
   try {
@@ -78,10 +49,17 @@ function loadUniverseIds() {
   return [];
 }
 
-// Pure, wiederverwendbar (auch im memoisierten ModEntryList unten): sortiert
-// eine Liste geladener Einträge nach Key/Translation/Original. `dirty` liefert
-// den LIVE-Wert einer noch ungespeicherten Übersetzung, damit Tippen während
-// aktiver Sortierung-nach-Translation die Reihenfolge konsistent hält.
+function loadActiveModId() {
+  try {
+    return sessionStorage.getItem(ACTIVE_KEY) || null;
+  } catch { /* ignore */ }
+  return null;
+}
+
+// Pure, wiederverwendbar: sortiert eine Liste geladener Einträge nach
+// Key/Translation/Original. `dirty` liefert den LIVE-Wert einer noch
+// ungespeicherten Übersetzung, damit Tippen während aktiver
+// Sortierung-nach-Translation die Reihenfolge konsistent hält.
 function sortEntries(entries, sort, dirty) {
   if (!sort || entries.length <= 1) return entries;
   const { field, dir } = sort;
@@ -117,11 +95,11 @@ function isDirtyEntry(entry, dirty) {
   return dirty.has(entry.id);
 }
 
-// Sortable column header (Key / Translation / Original). Shared `sort`
-// state across every mod block; click toggles asc → desc → server order.
+// Sortable column header (Key / Translation / Original). Click toggles
+// asc → desc → server order.
 function SortHeader({ field, label, className, sort, onCycle }) {
   const active = sort && sort.field === field;
-  const arrow = !active ? "↕" : sort.dir === "asc" ? "↑" : "↓";
+  const Icon = !active ? ChevronsUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
   return (
     <button
       type="button"
@@ -132,44 +110,37 @@ function SortHeader({ field, label, className, sort, onCycle }) {
       } ${className || ""}`}
     >
       {label}
-      <span className={`font-mono ${active ? "text-accent" : "text-muted/50"}`}>
-        {arrow}
-      </span>
+      <Icon size={12} className={active ? "text-accent" : "text-muted/50"} aria-hidden />
     </button>
   );
 }
 
-// One mod's rows. A separate component so useMemo can skip re-sorting on
-// every keystroke elsewhere in the Editor (a re-render of the parent alone
-// does not re-run this memo unless this mod's own props changed).
-function ModEntryList({ mod, info, search, sort, dirty, sortDirty, updateDirty, observerRef }) {
+// Die Zeilen des aktiven Mods. Eigene Komponente, damit useMemo den Re-Sort
+// nicht bei jedem Tastendruck woanders im Editor mit auslöst.
+function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updateDirty, sentinelRef, hasMore, fetching, showFileDividers }) {
   const sortActive = sort !== null;
   const displayEntries = useMemo(() => {
-    if (!sortActive) return info.entries;
-    // Bei Sortierung nach Translation wird die (entprellte) sortDirty statt
-    // der live dirty verwendet — ein kompletter Re-Sort von zehntausenden
-    // Zeilen bei JEDEM Tastendruck blockierte sonst spürbar den Main Thread
-    // (die Eingabe selbst bleibt live, s. currentTranslationOf unten).
-    return sortEntries(info.entries, sort, sortDirty).slice(0, info.renderCount);
+    const sorted = sortActive
+      ? sortEntries(entries, sort, sortActive && sort.field === "translation" ? sortDirty : dirty)
+      : entries;
+    return sorted.slice(0, renderCount);
+    // dirty ist absichtlich NICHT als Dependency dabei: nur beim Sortieren
+    // nach Translation braucht ein Re-Sort den (entprellten) Live-Wert — s.
+    // sortDirty unten. Sortierung nach Key/Original ändert sich nie durch
+    // Tippen, und die Zellen selbst lesen `dirty` ohnehin live (unabhängig
+    // von diesem Memo) — ein Re-Sort bei jedem Tastendruck würde sonst
+    // spürbar den Main Thread blockieren.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    info.entries,
-    info.renderCount,
+    entries,
+    renderCount,
     sortActive,
     sort && sort.field,
     sort && sort.dir,
     sortActive && sort.field === "translation" ? sortDirty : null,
   ]);
 
-  const total = info.total ?? info.entries.length;
-  const hasMore = sortActive
-    ? info.renderCount < info.entries.length
-    : !info.fetchedAll;
-
-  const sentinelRef = (node) => {
-    if (node && observerRef.current) observerRef.current.observe(node);
-  };
-
-  if (total === 0) {
+  if (entries.length === 0) {
     return (
       <p className="px-4 py-3 text-sm text-muted">
         {search !== "" ? "No entries for this search." : "No entries."}
@@ -177,9 +148,6 @@ function ModEntryList({ mod, info, search, sort, dirty, sortDirty, updateDirty, 
     );
   }
 
-  // Unterteilung nach Quelldatei: nur in Server-/Natürlicher Reihenfolge
-  // sinnvoll — sortiert nach Key/Translation/Original liegen die Dateien
-  // durcheinander, ein Trenner wäre dort irreführend statt hilfreich.
   let prevSourceFile = null;
 
   return (
@@ -193,7 +161,7 @@ function ModEntryList({ mod, info, search, sort, dirty, sortDirty, updateDirty, 
         else if (!entry.translation) statusClass = "outline-warning";
 
         const sourceFile = sourceFileOf(entry);
-        const showFileDivider = !sortActive && sourceFile !== prevSourceFile;
+        const showFileDivider = showFileDividers && sourceFile !== prevSourceFile;
         prevSourceFile = sourceFile;
 
         return (
@@ -210,7 +178,7 @@ function ModEntryList({ mod, info, search, sort, dirty, sortDirty, updateDirty, 
               <span className="w-[40%] shrink-0 px-2 py-2">
                 <input
                   value={currentTranslation}
-                  onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation, mod.id)}
+                  onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation)}
                   placeholder="Translation..."
                   className={`h-9 w-full min-w-[20ch] rounded-md border border-line bg-raised px-3 text-sm text-text placeholder:text-muted/60 outline-2 outline-offset-1 focus-visible:outline-2 ${statusClass}`}
                 />
@@ -223,13 +191,8 @@ function ModEntryList({ mod, info, search, sort, dirty, sortDirty, updateDirty, 
         );
       })}
       {hasMore && (
-        <div
-          ref={sentinelRef}
-          data-mod-id={mod.id}
-          data-sentinel-mode={sortActive ? "reveal" : "page"}
-          className="px-4 py-3 text-xs font-mono text-muted"
-        >
-          {info.fetching ? "Loading more..." : "Loading more..."}
+        <div ref={sentinelRef} className="px-4 py-3 text-xs font-mono text-muted">
+          {fetching ? "Loading more..." : "Loading more..."}
         </div>
       )}
     </>
@@ -238,24 +201,16 @@ function ModEntryList({ mod, info, search, sort, dirty, sortDirty, updateDirty, 
 
 export default function Editor({ onReselect }) {
   // --- Universe: the Library selection (read-only here) ---
-  // The Editor only shows the mods picked in the Library. This key is written
-  // by the Library; the Editor reads it on mount and never writes it back, so
-  // the sidebar selection stays fully separate from the Library selection.
   const [universeIds] = useState(() => loadUniverseIds());
-  // --- Editor-only visibility — the Editor's OWN selection ---
-  // The sidebar checkboxes toggle this: it hides/shows mods in the Editor only,
-  // never touching the Library selection. Persisted so per-mod visibility
-  // survives view switches. null = everything in the universe is visible.
-  const [visibleIds, setVisibleIds] = useState(() => {
+  // --- Active mod: exactly one at a time ("Mod für Mod durcharbeiten") ---
+  const [activeModId, setActiveModIdState] = useState(() => loadActiveModId());
+  const setActiveModId = (id) => {
+    setActiveModIdState(id);
     try {
-      const raw = sessionStorage.getItem(VISIBLE_KEY);
-      if (raw) {
-        const ids = JSON.parse(raw);
-        if (Array.isArray(ids)) return ids;
-      }
+      if (id) sessionStorage.setItem(ACTIVE_KEY, id);
+      else sessionStorage.removeItem(ACTIVE_KEY);
     } catch { /* ignore */ }
-    return null; // null = everything visible
-  });
+  };
 
   // --- State ---
   const [allMods, setAllMods] = useState([]);
@@ -264,350 +219,218 @@ export default function Editor({ onReselect }) {
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // --- LLM export / import ---
-  const [targetLang, setTargetLang] = useState("DE");
-  const [exportLoading, setExportLoading] = useState(false);
-  const [importPreview, setImportPreview] = useState(null);
-  const [importLoading, setImportLoading] = useState(false);
-  const [applyLoading, setApplyLoading] = useState(false);
-  const [importModalOpen, setImportModalOpen] = useState(false);
-  // Text der für den Import gewählten Datei (aus dem Browser-Open-Dialog) —
-  // wird bei Apply unverändert nachgeschickt.
-  const [importText, setImportText] = useState(null);
-  const fileInputRef = useRef(null);
+  // Sidebar: its own search + status filter (All Mods / Open / Translated / Review).
+  const [modSearch, setModSearch] = useState("");
+  const [modFilter, setModFilter] = useState("all");
 
-  // entriesByMod: Map(modId -> { entries, total, renderCount, fetchedAll, fetching }).
-  // entries ist NICHT mehr zwangsläufig der volle Bestand — siehe PAGE_SIZE-
-  // Kommentar oben.
-  const [entriesByMod, setEntriesByMod] = useState(new Map());
+  // Active mod's entries: always the FULL (search-filtered) set — needed both
+  // for client-side sort and to know every source file for the file tabs.
+  const [entries, setEntries] = useState([]);
+  // Infinity = "not loaded yet" (unknown) — keeps the prune effect below from
+  // treating an empty initial/in-flight `entries` array as "fully known and
+  // empty", which would otherwise wipe out perfectly valid dirty entries for
+  // whatever mod happens to be the initially restored active mod.
+  const [entriesTotal, setEntriesTotal] = useState(Infinity);
+  const [renderCount, setRenderCount] = useState(0);
+  const [entriesLoading, setEntriesLoading] = useState(false);
+
   const [search, setSearch] = useState("");
-  // Column sort for Key / Translation / Original (asc | desc); null = server order.
+  const [activeFile, setActiveFile] = useState(null); // null = "All Files"
   const [sort, setSort] = useState(null);
-  const sortActive = sort !== null;
 
-  const [dirty, setDirty] = useState(() => loadStoredDirty());
+  const [dirty, setDirty] = useState(() => loadDirty());
   // Entprellte Kopie von `dirty`, nur für den Re-Sort bei aktiver
-  // Translation-Sortierung (s. ModEntryList) — verhindert einen kompletten
-  // Re-Sort von zehntausenden Zeilen bei jedem Tastendruck.
+  // Translation-Sortierung — verhindert einen kompletten Re-Sort von
+  // zehntausenden Zeilen bei jedem Tastendruck (Eingabe selbst bleibt live).
   const [dirtyDebounced, setDirtyDebounced] = useState(dirty);
   useEffect(() => {
     const t = setTimeout(() => setDirtyDebounced(dirty), 350);
     return () => clearTimeout(t);
   }, [dirty]);
-  const [loading, setLoading] = useState(false);
-  // Bumped after save/import: the entries effect depends on this, so the
-  // list reloads after a save (the no-op setSearch() trick below is gone).
   const [reloadKey, setReloadKey] = useState(0);
 
-  // Refs mirroring the latest state for use inside async callbacks
-  // (loadMoreEntries) without re-creating that callback on every change.
-  const entriesByModRef = useRef(entriesByMod);
-  useEffect(() => {
-    entriesByModRef.current = entriesByMod;
-  }, [entriesByMod]);
   const searchRef = useRef(search);
   useEffect(() => {
     searchRef.current = search;
   }, [search]);
-  // Guards against firing a second network page-fetch for the same mod while
-  // one is already in flight (the scroll sentinel can re-intersect quickly).
-  const fetchingRef = useRef(new Set());
 
-  // --- Load config + library ---
+  // --- Load Library selection's mods ---
   useEffect(() => {
-    Promise.all([api.getConfig(), api.getMods()])
-      .then(([cfg, data]) => {
-        setTargetLang(cfg.targetLang || "DE");
-        setAllMods(data.mods || []);
-      })
+    api
+      .getMods()
+      .then((data) => setAllMods(data.mods || []))
       .catch((err) => {
         setError(err.message);
         setAllMods([]);
       });
   }, []);
 
-  // --- Persist the Editor's own visibility so it survives view switches ---
-  // (the universe key belongs to the Library — the Editor never writes it.)
-  // null (everything visible) clears the key; a concrete list is stored.
+  // --- Persist dirty edits so they survive a view switch ---
   useEffect(() => {
-    try {
-      if (visibleIds === null) {
-        sessionStorage.removeItem(VISIBLE_KEY);
-      } else {
-        sessionStorage.setItem(VISIBLE_KEY, JSON.stringify(visibleIds));
-      }
-    } catch { /* ignore */ }
-  }, [visibleIds]);
-
-  // --- Persist unsaved edits so they survive a view switch (Editor unmount) ---
-  useEffect(() => {
-    try {
-      if (dirty.size === 0) {
-        sessionStorage.removeItem(DIRTY_KEY);
-      } else {
-        sessionStorage.setItem(DIRTY_KEY, JSON.stringify(Array.from(dirty.entries())));
-      }
-    } catch { /* ignore */ }
+    saveDirty(dirty);
   }, [dirty]);
+
+  const reviewIds = useMemo(() => reviewModIds(dirty), [dirty]);
 
   // Universe: the mods picked in the Library (read-only source for the Editor).
   const universe = allMods.filter((m) => universeIds.includes(m.id));
-  // What is actually VISIBLE in the editor: the Editor's own selection on top
-  // of the universe (stale ids not in the universe are dropped). null =
-  // everything in the universe is visible.
-  const visible = (visibleIds ?? universeIds).filter((id) =>
-    universeIds.includes(id),
-  );
-  // Sidebar: the FULL Library selection — deselecting a mod keeps its entry
-  // in the sidebar (unchecked), it never disappears, and the Library selection
-  // stays untouched.
-  const sidebarMods = universe;
-  // Content: only the visible mods.
-  const entryMods = universe.filter((m) => visible.includes(m.id));
-  // Overall progress across all visible mods (header status bar: X/X).
-  const totalEntries = entryMods.reduce((s, m) => s + m.entryCount, 0);
-  const totalTranslated = entryMods.reduce((s, m) => s + m.translatedCount, 0);
 
-  // Entries are loaded for the full Library selection, so hiding a mod is
-  // display-only: its entries stay loaded, tracked, and savable.
-  const loadModsKey = universe.map((m) => m.id).join("\u0000");
-
-  // --- Mod visibility helpers (Editor only — the Library selection is read-only) ---
-  const toggleMod = (id) => {
-    setVisibleIds((prev) => {
-      const current = prev ?? universeIds;
-      const next = current.includes(id)
-        ? current.filter((x) => x !== id)
-        : [...current, id];
-      return next.length === universeIds.length ? null : next;
-    });
-  };
-
-  const allVisible =
-    universeIds.length > 0 && universeIds.every((id) => visible.includes(id));
-
-  const toggleAllMods = () => {
-    setVisibleIds(allVisible ? [] : [...universeIds]);
-  };
-
-  // --- Load entries for the full Library selection ---
-  // Without an active sort: one page per mod (server-paginated + searched);
-  // more pages are fetched on demand by loadMoreEntries (scroll sentinel).
-  // With an active sort: the whole (search-filtered) stock of each mod is
-  // fetched up front — see the PAGE_SIZE comment — because a partial page
-  // cannot be sorted correctly on its own.
+  // Default/repair the active mod once the universe is known: fall back to
+  // the first universe mod if nothing (or a stale id) is stored.
   useEffect(() => {
-    const mods = universe;
-    if (mods.length === 0) {
-      setEntriesByMod(new Map());
-      return;
+    if (universe.length === 0) return;
+    if (activeModId && universe.some((m) => m.id === activeModId)) return;
+    setActiveModId(universe[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [universe.map((m) => m.id).join(" ")]);
+
+  const activeMod = universe.find((m) => m.id === activeModId) || null;
+
+  // Sidebar list: the full Library selection, filtered by its own search +
+  // status pill (independent of what's actually open).
+  const sidebarMods = universe.filter((m) => {
+    if (modSearch.trim() !== "") {
+      const q = modSearch.toLowerCase();
+      if (!m.name.toLowerCase().includes(q) && !m.id.toLowerCase().includes(q)) return false;
     }
+    if (modFilter === "all") return true;
+    return statusOf(m, reviewIds) === modFilter;
+  });
+  const filterCounts = {
+    all: universe.length,
+    open: universe.filter((m) => statusOf(m, reviewIds) === "open").length,
+    translated: universe.filter((m) => statusOf(m, reviewIds) === "translated").length,
+    review: universe.filter((m) => statusOf(m, reviewIds) === "review").length,
+  };
+
+  // --- Load the active mod's full (search-filtered) entry set ---
+  useEffect(() => {
+    // Clear immediately (not just on completion) so a mod/search switch never
+    // lets the prune effect below see a mismatched pair — e.g. activeModId
+    // already pointing at the new mod while `entries` still holds the
+    // previous mod's (fully-known) set, which would make it prune the NEW
+    // mod's dirty entries against the OLD mod's entry ids.
+    setEntries([]);
+    setEntriesTotal(Infinity);
+    setRenderCount(0);
+    if (!activeModId) return;
     let cancelled = false;
-    setLoading(true);
-    Promise.all(
-      mods.map(async (mod) => {
-        if (sortActive) {
-          let all = [];
-          let total = Infinity;
-          let page = 1;
-          let guard = 0;
-          while (all.length < total && guard < 1000) {
-            const data = await api.getEntries(mod.id, { page, pageSize: SORT_FETCH_PAGE_SIZE, search });
-            total = data.total ?? 0;
-            const batch = data.entries || [];
-            all = all.concat(batch);
-            if (batch.length === 0) break;
-            page += 1;
-            guard += 1;
-          }
-          return [
-            mod.id,
-            {
-              entries: all,
-              total,
-              renderCount: Math.min(all.length, PAGE_SIZE),
-              fetchedAll: true,
-              fetching: false,
-            },
-          ];
-        }
-        const data = await api.getEntries(mod.id, { page: 1, pageSize: PAGE_SIZE, search });
-        const entries = data.entries || [];
-        const total = data.total ?? 0;
-        return [
-          mod.id,
-          {
-            entries,
-            total,
-            renderCount: entries.length,
-            fetchedAll: entries.length >= total,
-            fetching: false,
-          },
-        ];
-      }),
-    )
-      .then((pairs) => {
-        if (cancelled) return;
-        setEntriesByMod(new Map(pairs));
-        setSaveError("");
-      })
+    setEntriesLoading(true);
+    (async () => {
+      let all = [];
+      let total = Infinity;
+      let page = 1;
+      let guard = 0;
+      while (all.length < total && guard < 1000) {
+        const data = await api.getEntries(activeModId, { page, pageSize: FETCH_PAGE_SIZE, search });
+        total = data.total ?? 0;
+        const batch = data.entries || [];
+        all = all.concat(batch);
+        if (batch.length === 0) break;
+        page += 1;
+        guard += 1;
+      }
+      if (cancelled) return;
+      setEntries(all);
+      setEntriesTotal(total);
+      setRenderCount(Math.min(all.length, PAGE_SIZE));
+      setSaveError("");
+    })()
       .catch((err) => {
         if (!cancelled) setError(err.message);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setEntriesLoading(false);
       });
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadModsKey, search, reloadKey, sortActive]);
+  }, [activeModId, search, reloadKey]);
 
-  // --- Prune stale dirty ids, but ONLY once a mod's full (unfiltered) stock
-  // is actually known (entries.length reaches the server-reported total) ---
-  // A rescan can remove/rename an entry, leaving a stale entryId that would
-  // fail to save (its EN file is gone). Pruning it early — before the mod is
-  // fully loaded — would instead throw away perfectly valid edits on entries
-  // that simply haven't scrolled into view yet, which is exactly the data
-  // loss B1 must not (re-)introduce. `search !== ""` means the loaded set is
-  // filtered, not the whole stock, so it never qualifies as "fully known".
+  // --- Prune stale dirty ids for the ACTIVE mod, once its full (unfiltered)
+  // stock is known — a rescan can remove/rename an entry, leaving a stale
+  // entryId that would fail to save. Only prunes what's currently loaded &
+  // fully known (search === ""), never touches dirty entries of other mods. ---
   useEffect(() => {
-    if (search !== "") return;
+    if (search !== "" || !activeModId) return;
+    if (entries.length < entriesTotal) return;
     setDirty((prev) => {
+      const validIds = new Set(entries.map((e) => e.id));
       let next = null;
-      for (const [modId, info] of entriesByMod) {
-        const total = info.total ?? Infinity;
-        if (info.entries.length < total) continue; // not fully known yet
-        const validIds = new Set(info.entries.map((e) => e.id));
-        for (const [id, val] of prev) {
-          if (val.modId === modId && !validIds.has(id)) {
-            if (!next) next = new Map(prev);
-            next.delete(id);
-          }
+      for (const [id, val] of prev) {
+        if (val.modId === activeModId && !validIds.has(id)) {
+          if (!next) next = new Map(prev);
+          next.delete(id);
         }
       }
       return next || prev;
     });
-  }, [entriesByMod, search]);
+  }, [entries, entriesTotal, search, activeModId]);
 
   // --- Backward-compat: fill in modId for dirty entries restored from an
-  // older sessionStorage shape (modId: null) once we can identify their mod
-  // from loaded entries. Never deletes anything — only annotates. ---
+  // older sessionStorage shape (modId: null), once identifiable from the
+  // currently loaded mod. Never deletes anything — only annotates. ---
   useEffect(() => {
-    if (entriesByMod.size === 0) return;
+    if (entries.length === 0 || !activeModId) return;
     setDirty((prev) => {
       let next = null;
       for (const [id, val] of prev) {
         if (val.modId != null) continue;
-        for (const [modId, info] of entriesByMod) {
-          if (info.entries.some((e) => e.id === id)) {
-            if (!next) next = new Map(prev);
-            next.set(id, { modId, value: val.value });
-            break;
-          }
+        if (entries.some((e) => e.id === id)) {
+          if (!next) next = new Map(prev);
+          next.set(id, { ...val, modId: activeModId });
         }
       }
       return next || prev;
     });
-  }, [entriesByMod]);
+  }, [entries, activeModId]);
 
-  // --- Infinite scroll: one shared IntersectionObserver, one sentinel per
-  // mod block (see ModEntryList). `root` is the Editor's own scroll
-  // container, not the browser viewport — the entry area scrolls on its own. ---
-  const scrollContainerRef = useRef(null);
+  // --- Infinite scroll: widen the render window (no network call — the full
+  // set is already loaded). ---
   const observerRef = useRef(null);
-
-  // Next network page for a mod (non-sort mode only — see revealMore for the
-  // sort-mode counterpart, which needs no network call).
-  const loadMoreEntries = useCallback((modId) => {
-    if (fetchingRef.current.has(modId)) return;
-    const info = entriesByModRef.current.get(modId);
-    if (!info || info.fetchedAll) return;
-    fetchingRef.current.add(modId);
-    setEntriesByMod((prev) => {
-      const cur = prev.get(modId);
-      if (!cur) return prev;
-      const next = new Map(prev);
-      next.set(modId, { ...cur, fetching: true });
-      return next;
-    });
-    const nextPage = Math.floor(info.entries.length / PAGE_SIZE) + 1;
-    api
-      .getEntries(modId, { page: nextPage, pageSize: PAGE_SIZE, search: searchRef.current })
-      .then((data) => {
-        setEntriesByMod((prev) => {
-          const cur = prev.get(modId);
-          if (!cur) return prev;
-          const merged = cur.entries.concat(data.entries || []);
-          const total = data.total ?? cur.total;
-          const next = new Map(prev);
-          next.set(modId, {
-            ...cur,
-            entries: merged,
-            total,
-            renderCount: merged.length,
-            fetching: false,
-            fetchedAll: merged.length >= total,
-          });
-          return next;
-        });
-      })
-      .catch((err) => {
-        setEntriesByMod((prev) => {
-          const cur = prev.get(modId);
-          if (!cur) return prev;
-          const next = new Map(prev);
-          next.set(modId, { ...cur, fetching: false });
-          return next;
-        });
-        setSaveError(err.message);
-      })
-      .finally(() => {
-        fetchingRef.current.delete(modId);
-      });
-  }, []);
-
-  // Sort-mode reveal: the full sorted array is already in memory, so this
-  // just widens the render window — no network round-trip.
-  const revealMore = useCallback((modId) => {
-    setEntriesByMod((prev) => {
-      const cur = prev.get(modId);
-      if (!cur || cur.renderCount >= cur.entries.length) return prev;
-      const next = new Map(prev);
-      next.set(modId, {
-        ...cur,
-        renderCount: Math.min(cur.entries.length, cur.renderCount + PAGE_SIZE),
-      });
-      return next;
-    });
-  }, []);
-
+  const sentinelRef = (node) => {
+    if (node && observerRef.current) observerRef.current.observe(node);
+  };
   useEffect(() => {
-    const root = scrollContainerRef.current;
     const observer = new IntersectionObserver(
       (observedEntries) => {
         for (const oe of observedEntries) {
           if (!oe.isIntersecting) continue;
-          const modId = oe.target.getAttribute("data-mod-id");
-          const mode = oe.target.getAttribute("data-sentinel-mode");
-          if (!modId) continue;
-          if (mode === "reveal") revealMore(modId);
-          else loadMoreEntries(modId);
+          setRenderCount((c) => Math.min(entries.length, c + PAGE_SIZE));
         }
       },
-      { root, rootMargin: "600px 0px" },
+      { rootMargin: "600px 0px" },
     );
     observerRef.current = observer;
     return () => observer.disconnect();
-  }, [loadMoreEntries, revealMore]);
+  }, [entries.length]);
 
-  // --- Search handler ---
-  const handleSearch = (val) => {
-    setSearch(val);
-  };
+  // --- File tabs: distinct source files of the active mod's full (loaded) set ---
+  const files = useMemo(() => {
+    const seen = new Set();
+    const list = [];
+    for (const e of entries) {
+      const f = sourceFileOf(e);
+      if (!seen.has(f)) {
+        seen.add(f);
+        list.push(f);
+      }
+    }
+    return list;
+  }, [entries]);
 
-  // --- Dirty tracking: dirty only when the value differs from the loaded one ---
-  const updateDirty = useCallback((id, translation, original, modId) => {
+  useEffect(() => {
+    if (activeFile && !files.includes(activeFile)) setActiveFile(null);
+  }, [files, activeFile]);
+
+  const visibleEntries = activeFile
+    ? entries.filter((e) => sourceFileOf(e) === activeFile)
+    : entries;
+
+  // --- Dirty tracking: dirty only when the value differs from the loaded one.
+  // Preserves an existing "import" origin (still unreviewed) when the user
+  // edits an imported value further; brand-new edits are "manual". ---
+  const updateDirty = useCallback((id, translation, original) => {
     const value = translation === null ? "" : String(translation);
     setNotice("");
     if (value === original) {
@@ -619,32 +442,24 @@ export default function Editor({ onReselect }) {
       });
     } else {
       setDirty((prev) => {
+        const existing = prev.get(id);
         const next = new Map(prev);
-        next.set(id, { modId, value });
+        next.set(id, { modId: activeModId, value, origin: existing?.origin || "manual" });
         return next;
       });
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeModId]);
 
-  // Grouped dirty entries per SELECTED mod (visibility-independent: a hidden
-  // mod keeps its edits savable — hiding is display-only). Grouping uses the
-  // modId recorded on each edit — it never depends on what is currently
-  // loaded/rendered, so an edit on an entry that has since scrolled out of
-  // the loaded window is still found and saved.
-  const dirtyByMod = sidebarMods
-    .map((mod) => ({
-      mod,
-      items: Array.from(dirty.entries())
-        .filter(([, val]) => val.modId === mod.id)
-        .map(([id, val]) => [id, val.value]),
-    }))
-    .filter((g) => g.items.length > 0);
+  // Dirty items of the ACTIVE mod only — Save only ever touches the mod
+  // currently open (that's the whole point of "Mod für Mod").
+  const activeDirtyItems = Array.from(dirty.entries())
+    .filter(([, val]) => val.modId === activeModId)
+    .map(([id, val]) => [id, val.value]);
+  const dirtySize = activeDirtyItems.length;
 
-  const dirtySize = dirty.size;
-
-  // Unsaved edits whose mod is no longer part of the Library selection: they
-  // are kept (never deleted), but invisible and unsavable until the mod is
-  // reselected — worth a visible hint instead of a silent surprise.
+  // Unsaved edits whose mod is no longer part of the Library selection: kept
+  // (never deleted), but invisible and unsavable until the mod is reselected.
   const orphanedDirtyModIds = Array.from(
     new Set(
       Array.from(dirty.values())
@@ -653,139 +468,34 @@ export default function Editor({ onReselect }) {
     ),
   );
 
-  // --- Save all selected mods one after another ---
-  // Each mod is saved independently: a failure for one mod must not discard
-  // the edits of another, nor hide any but the last error message.
+  // --- Save the active mod's dirty entries ---
   const handleSave = async () => {
-    const withDirty = dirtyByMod.filter((g) => g.items.length > 0);
-    if (withDirty.length === 0) return;
+    if (dirtySize === 0 || !activeModId) return;
     setSaving(true);
     setSaveError("");
     setNotice("");
-    const failures = [];
-    const savedIds = new Set();
-    let savedModCount = 0;
-    for (const { mod, items } of withDirty) {
-      try {
-        await api.saveEntries(
-          mod.id,
-          items.map(([entryId, translation]) => ({ entryId, translation })),
-        );
-        items.forEach(([entryId]) => savedIds.add(entryId));
-        savedModCount += 1;
-      } catch (err) {
-        failures.push(`${mod.name} (${err.message})`);
-      }
-    }
-    // Only drop entries that actually saved — failed mods keep their edits.
-    setDirty((prev) => {
-      if (savedIds.size === 0) return prev;
-      const next = new Map(prev);
-      for (const id of savedIds) next.delete(id);
-      return next;
-    });
-    setSaving(false);
-    const savedMsg =
-      savedIds.size > 0
-        ? `Saved ${savedIds.size} entries in ${savedModCount} mod(s).`
-        : "";
-    if (failures.length > 0) {
-      setSaveError(
-        `${savedMsg ? savedMsg + " " : ""}Failed to save: ${failures.join("; ")}`,
+    try {
+      await api.saveEntries(
+        activeModId,
+        activeDirtyItems.map(([entryId, translation]) => ({ entryId, translation })),
       );
-    } else if (savedMsg) {
-      setNotice(savedMsg);
-    }
-    // Reload entries + updated counts. The save route awaits its rescan,
-    // so the cache is already fresh when this fires — reloadKey re-triggers
-    // the entries effect (the Library selection doesn't change on save).
-    setReloadKey((k) => k + 1);
-    api
-      .getMods()
-      .then((data) => setAllMods(data.mods || []))
-      .catch(() => {});
-  };
-
-  // --- LLM export: alle sichtbaren Mods in EINE Datei (Browser-Save-Dialog) ---
-  const handleLlmExport = async () => {
-    if (visible.length === 0) return;
-    setExportLoading(true);
-    setSaveError("");
-    setNotice("");
-    try {
-      const result = await api.exportLlm(visible, targetLang);
-      const blob = new Blob([result.text], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = result.filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setNotice(
-        `Exported ${result.modCount} mod(s), ${result.entryCount} entries as "${result.filename}" — hand the file to the LLM for translation, then use "Import".`,
-      );
-    } catch (err) {
-      setSaveError(err.message);
-    } finally {
-      setExportLoading(false);
-    }
-  };
-
-  // --- LLM import: Datei wählen (Browser-Open-Dialog) → Vorschau, Apply mit Bestätigung ---
-  const handleImportClick = () => {
-    if (fileInputRef.current) fileInputRef.current.click();
-  };
-
-  const handleImportFileChange = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    setImportLoading(true);
-    setSaveError("");
-    try {
-      const text = await file.text();
-      const result = await api.importPreview(text);
-      setImportText(text);
-      setImportPreview(result);
-      setImportModalOpen(true);
-    } catch (err) {
-      setSaveError(err.message);
-    } finally {
-      setImportLoading(false);
-      // Wert zurücksetzen, damit dieselbe Datei erneut wählbar ist.
-      e.target.value = "";
-    }
-  };
-
-  const handleImportApply = async () => {
-    setApplyLoading(true);
-    setSaveError("");
-    try {
-      await api.importApply(importText);
-      setImportModalOpen(false);
-      setImportPreview(null);
-      setImportText(null);
-      // Reload entries + counts so the editor shows the imported translations
-      // (apply awaits its rescan — the cache is fresh; reloadKey re-triggers
-      // the entries effect).
-      const data = await api.getMods();
-      setAllMods(data.mods || []);
-      setNotice("Import applied — the imported translations are saved.");
+      setDirty((prev) => {
+        const next = new Map(prev);
+        for (const [id] of activeDirtyItems) next.delete(id);
+        return next;
+      });
+      setNotice(`Saved ${activeDirtyItems.length} entries.`);
       setReloadKey((k) => k + 1);
+      api
+        .getMods()
+        .then((data) => setAllMods(data.mods || []))
+        .catch(() => {});
     } catch (err) {
-      setSaveError(err.message);
+      setSaveError(`${activeMod ? activeMod.name : activeModId}: ${err.message}`);
     } finally {
-      setApplyLoading(false);
+      setSaving(false);
     }
   };
-
-  const totalMatched = importPreview
-    ? Object.values(importPreview.perMod).reduce((s, p) => s + p.matched, 0)
-    : 0;
-  const totalUnmatched = importPreview
-    ? Object.values(importPreview.perMod).reduce((s, p) => s + p.unmatched, 0)
-    : 0;
 
   // --- Column sort: click a header to toggle asc → desc → (server order) ---
   const cycleSort = (field) => {
@@ -797,6 +507,8 @@ export default function Editor({ onReselect }) {
     });
   };
 
+  const hasMore = renderCount < visibleEntries.length;
+
   // === Error state (e.g. no scan) ===
   if (error && allMods.length === 0) {
     return (
@@ -805,7 +517,7 @@ export default function Editor({ onReselect }) {
           <p className="text-sm text-danger">{error}</p>
           <div className="mt-4">
             <Button variant="secondary" onClick={onReselect}>
-              Go to Library
+              Go to Mods
             </Button>
           </div>
         </Card>
@@ -822,61 +534,68 @@ export default function Editor({ onReselect }) {
     );
   }
 
-  // === Main editor --- sidebar = ALL mods, content = selected mods ===
+  const FILTERS = [
+    { key: "all", label: "All Mods" },
+    { key: "open", label: "Open" },
+    { key: "translated", label: "Translated" },
+    { key: "review", label: "Needs Review" },
+  ];
+
   return (
     <div className="flex h-full">
-      {/* Verstecktes Dateifeld: „Import" öffnet den Browser-Open-Dialog. */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".json,application/json"
-        onChange={handleImportFileChange}
-        className="hidden"
-        tabIndex={-1}
-        aria-hidden="true"
-      />
-      {/* Sidebar: the full Library selection. The checkboxes only control
-          what is VISIBLE in the editor — the Library selection is never
-          touched, so a mod never disappears from the sidebar. */}
+      {/* Sidebar: the full Library selection, single-select — click a mod to
+          open it. The Library selection itself is never touched here. */}
       <aside className="w-64 shrink-0 self-stretch overflow-y-auto border-r border-line bg-surface p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-mono font-medium text-muted uppercase">
-            Selected
-            {sidebarMods.length > 0 && (
-              <span className="ml-1 text-muted">
-                {`(${visible.length}/${sidebarMods.length})`}
-              </span>
-            )}
-          </p>
-          <button
-            onClick={toggleAllMods}
-            title="Show/hide all mods in the editor (Library selection untouched)"
-            className="rounded-md px-2 py-0.5 text-xs font-mono text-muted transition-colors hover:bg-raised hover:text-text"
-          >
-            {allVisible ? "Hide all" : "Show all"}
-          </button>
+        <Input
+          placeholder="Search Mods..."
+          value={modSearch}
+          onChange={(e) => setModSearch(e.target.value)}
+          className="mb-2"
+        />
+        <div className="mb-3 flex flex-wrap gap-1">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setModFilter(f.key)}
+              className={`rounded-full border px-2 py-0.5 text-xs font-medium transition-colors ${
+                modFilter === f.key
+                  ? "border-accent/40 bg-accent/15 text-accent"
+                  : "border-line bg-raised text-muted hover:text-text"
+              }`}
+            >
+              {f.label} ({filterCounts[f.key]})
+            </button>
+          ))}
         </div>
         <nav className="space-y-1">
-          {sidebarMods.map((mod) => (
-            <div
-              key={mod.id}
-              className="flex items-center gap-2 rounded-md px-2 py-2 transition-colors hover:bg-raised/50 bg-raised/30"
-            >
-              <input
-                type="checkbox"
-                checked={visible.includes(mod.id)}
-                onChange={() => toggleMod(mod.id)}
-                className="size-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
-                aria-label={`Show ${mod.name} in editor`}
-              />
-              <div className="min-w-0 flex-1 text-left text-sm">
-                <span className="block truncate text-text">{displayModName(mod)}</span>
-                <span className="mt-0.5 block text-xs font-mono text-muted">
-                  {mod.translatedCount} / {mod.entryCount}
+          {sidebarMods.map((mod) => {
+            const status = statusOf(mod, reviewIds);
+            const isActive = mod.id === activeModId;
+            return (
+              <button
+                key={mod.id}
+                onClick={() => setActiveModId(mod.id)}
+                className={`block w-full rounded-md border px-2 py-2 text-left transition-colors ${
+                  isActive
+                    ? "border-accent bg-accent/10"
+                    : "border-transparent bg-raised/30 hover:bg-raised/50"
+                }`}
+              >
+                <span className="block truncate text-sm text-text">{displayModName(mod)}</span>
+                <span className="mt-0.5 flex items-center gap-2">
+                  <span className="text-xs font-mono text-muted">
+                    {mod.translatedCount} / {mod.entryCount}
+                  </span>
+                  <Tag tone={STATUS_TAG[status].tone} className="ml-auto">
+                    {STATUS_TAG[status].label}
+                  </Tag>
                 </span>
-              </div>
-            </div>
-          ))}
+              </button>
+            );
+          })}
+          {sidebarMods.length === 0 && (
+            <p className="px-2 py-3 text-xs text-muted">No mods match.</p>
+          )}
         </nav>
       </aside>
 
@@ -886,58 +605,54 @@ export default function Editor({ onReselect }) {
         <header className="border-b border-line px-4 py-3">
           <div className="flex items-center gap-3">
             <span className="font-mono text-lg font-bold text-accent">
-              {entryMods.length === 0
-                ? "Editor"
-                : entryMods.length > 1
-                  ? `${entryMods.length} Mods`
-                  : displayModName(entryMods[0]) || ""}
+              {activeMod ? displayModName(activeMod) : "Editor"}
             </span>
-            <div className="flex-1" />
-            {entryMods.length > 0 && (
-              <ProgressBar
-                label={`All ${entryMods.length === 1 ? "mod" : "mods"}`}
-                value={totalTranslated}
-                max={totalEntries}
-                color="dust"
-                showValue
-                className="w-48"
-              />
+            {activeMod && (
+              <Tag tone={STATUS_TAG[statusOf(activeMod, reviewIds)].tone}>
+                {STATUS_TAG[statusOf(activeMod, reviewIds)].label}
+              </Tag>
             )}
           </div>
         </header>
 
-        {/* Search + Save + LLM Export/Import */}
+        {/* File tabs + Search + Save */}
         <div className="flex items-center gap-3 border-b border-line px-4 py-3">
-          <div className="flex-1">
-            <Input
-              placeholder="Search... (all mods)"
-              value={search}
-              onChange={(e) => handleSearch(e.target.value)}
-            />
+          <Input
+            placeholder="Search Entries..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-64 shrink-0"
+          />
+          <div className="flex flex-1 flex-wrap gap-1 overflow-x-auto">
+            <button
+              onClick={() => setActiveFile(null)}
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                activeFile === null
+                  ? "border-accent/40 bg-accent/15 text-accent"
+                  : "border-line bg-raised text-muted hover:text-text"
+              }`}
+            >
+              All Files
+            </button>
+            {files.map((f) => (
+              <button
+                key={f}
+                onClick={() => setActiveFile(f)}
+                className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  activeFile === f
+                    ? "border-accent/40 bg-accent/15 text-accent"
+                    : "border-line bg-raised text-muted hover:text-text"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
           </div>
-          <Button
-            variant="secondary"
-            icon={FileOutput}
-            onClick={handleLlmExport}
-            disabled={visible.length === 0 || exportLoading}
-            title="Export visible mods as LLM JSON (EN originals)"
-          >
-            {exportLoading ? "Exporting..." : "Export"}
-          </Button>
-          <Button
-            variant="secondary"
-            icon={FileInput}
-            onClick={handleImportClick}
-            disabled={importLoading}
-            title="Choose a translated LLM file to import (browser file picker)"
-          >
-            {importLoading ? "Loading..." : "Import"}
-          </Button>
           <Button
             variant="primary"
             icon={Save}
             onClick={handleSave}
-            disabled={dirtySize === 0 || saving}
+            disabled={dirtySize === 0 || saving || !activeModId}
           >
             {saving ? "Saving..." : dirtySize === 0 ? "Save" : `Save (${dirtySize})`}
           </Button>
@@ -953,31 +668,27 @@ export default function Editor({ onReselect }) {
         {orphanedDirtyModIds.length > 0 && (
           <p className="px-4 pt-2 text-sm text-warning">
             You have unsaved changes in {orphanedDirtyModIds.length} mod(s) no
-            longer selected in the Library — reselect{" "}
+            longer selected on the Mods page — reselect{" "}
             {orphanedDirtyModIds.length === 1 ? "it" : "them"} there to save or
             discard those changes.
           </p>
         )}
 
-        {/* Entry area — one block per selected mod */}
-        <div ref={scrollContainerRef} className="flex-1 overflow-auto">
-          {entryMods.length === 0 && (
+        {/* Entry area */}
+        <div className="flex-1 overflow-auto">
+          {!activeMod && (
             <div className="mx-auto max-w-md px-6 py-10">
               <Card title="Editor">
                 {universe.length > 0 ? (
-                  <p className="text-sm text-muted">
-                    All selected mods are hidden in the Editor. Show them via
-                    the sidebar or „Show all" — the Library selection itself
-                    is untouched.
-                  </p>
+                  <p className="text-sm text-muted">No mod selected — pick one from the sidebar.</p>
                 ) : (
                   <>
                     <p className="text-sm text-muted">
-                      No mods selected. Pick them in the Library.
+                      No mods selected. Pick them on the Mods page.
                     </p>
                     <div className="mt-4 flex gap-2">
                       <Button variant="secondary" onClick={onReselect}>
-                        Go to Library
+                        Go to Mods
                       </Button>
                     </div>
                   </>
@@ -986,126 +697,36 @@ export default function Editor({ onReselect }) {
             </div>
           )}
 
-          {entryMods.length > 0 && loading && (
+          {activeMod && entriesLoading && entries.length === 0 && (
             <p className="px-4 py-6 text-sm text-muted">Loading...</p>
           )}
 
-          {entryMods.length > 0 && !loading &&
-            entryMods.map((mod) => {
-              const info = entriesByMod.get(mod.id) || {
-                entries: [],
-                total: 0,
-                renderCount: 0,
-                fetchedAll: true,
-                fetching: false,
-              };
-              const entries = info.entries;
-              return (
-                <div key={mod.id}>
-                  {/* Mod block header: visual separation between mods —
-                      gleiche obere Trennlinie bei jedem Block (auch dem ersten) */}
-                  <div
-                    className="sticky top-0 z-10 border-t-4 border-t-line border-b-2 border-accent bg-surface px-4 py-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm font-bold text-text">
-                        {displayModName(mod)}
-                      </span>
-                      <span className="text-xs font-mono text-muted">
-                        {info.total ?? entries.length} entries
-                      </span>
-                      <div className="flex-1" />
-                      <ProgressBar
-                        value={mod.translatedCount}
-                        max={mod.entryCount}
-                        color="dust"
-                        showValue
-                        className="w-40"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Column headers per mod block — click to sort (asc/desc/reset) */}
-                  <div className="border-b border-line bg-raised px-4 py-2 text-xs font-mono font-medium text-muted">
-                    <div className="flex items-center">
-                      <SortHeader field="key" label="Key" className="w-[30%] shrink-0" sort={sort} onCycle={cycleSort} />
-                      <SortHeader field="translation" label="Translation" className="w-[40%] shrink-0" sort={sort} onCycle={cycleSort} />
-                      <SortHeader field="original" label="Original" className="w-[30%]" sort={sort} onCycle={cycleSort} />
-                    </div>
-                  </div>
-
-                  <ModEntryList
-                    mod={mod}
-                    info={info}
-                    search={search}
-                    sort={sort}
-                    dirty={dirty}
-                    sortDirty={dirtyDebounced}
-                    updateDirty={updateDirty}
-                    observerRef={observerRef}
-                  />
-                </div>
-              );
-            })}
-        </div>
-      </main>
-
-      {/* Import confirmation modal */}
-      <Modal
-        open={importModalOpen}
-        onClose={() => setImportModalOpen(false)}
-        title="Apply LLM import"
-      >
-        <div className="space-y-4">
-          {totalMatched === 0 && totalUnmatched === 0 ? (
-            <p className="text-sm text-muted">
-              No matching entries found in the chosen file.
-            </p>
-          ) : (
+          {activeMod && (entries.length > 0 || !entriesLoading) && (
             <>
-              <div className="space-y-1">
-                {Object.values(importPreview.perMod).map((pm) => (
-                  <div
-                    key={pm.mod}
-                    className="flex items-center gap-2 rounded px-2 py-1"
-                  >
-                    <span className="flex-1 text-sm text-text">{pm.mod}</span>
-                    <span className="font-mono text-sm text-success">
-                      {pm.matched}
-                    </span>
-                    {pm.unmatched > 0 && (
-                      <span className="font-mono text-sm text-warning">
-                        {pm.unmatched}
-                      </span>
-                    )}
-                  </div>
-                ))}
+              <div className="sticky top-0 z-10 border-b border-line bg-raised px-4 py-2 text-xs font-mono font-medium text-muted">
+                <div className="flex items-center">
+                  <SortHeader field="key" label="Key" className="w-[30%] shrink-0" sort={sort} onCycle={cycleSort} />
+                  <SortHeader field="translation" label="Translation" className="w-[40%] shrink-0" sort={sort} onCycle={cycleSort} />
+                  <SortHeader field="original" label="Original" className="w-[30%]" sort={sort} onCycle={cycleSort} />
+                </div>
               </div>
-              <p className="text-sm text-text">
-                {totalMatched} entries will be written to {targetLang} files.
-                {totalUnmatched > 0 &&
-                  ` (${totalUnmatched} unmatched will be discarded).`}
-              </p>
+              <EntryRows
+                entries={visibleEntries}
+                renderCount={renderCount}
+                search={search}
+                sort={sort}
+                dirty={dirty}
+                sortDirty={dirtyDebounced}
+                updateDirty={updateDirty}
+                sentinelRef={sentinelRef}
+                hasMore={hasMore}
+                fetching={entriesLoading}
+                showFileDividers={activeFile === null}
+              />
             </>
           )}
-
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => setImportModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              disabled={applyLoading || totalMatched === 0}
-              onClick={handleImportApply}
-            >
-              {applyLoading ? "Applying..." : "Yes, apply"}
-            </Button>
-          </div>
         </div>
-      </Modal>
+      </main>
     </div>
   );
 }

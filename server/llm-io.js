@@ -14,6 +14,12 @@
 // Datei-Key, JSON-Key). Keys, die nicht existieren, werden als unmatched
 // gelistet und nicht übernommen.
 //
+// Es gibt bewusst KEIN importApply — der Import schreibt nichts auf die Platte.
+// importPreview() liefert neben den Zähl-Feldern auch `matches` (rekonstruierte
+// entryIds + Übersetzung); die Frontend übernimmt diese als ungespeicherte
+// (dirty) Einträge, die man im Editor Mod für Mod prüft und über den normalen
+// Save-Weg (PUT /api/mods/:modId/entries → saveBatch) einzeln speichert.
+//
 // Layout-Traversal entspricht scanner.scan(): Base Game "base" direkt am Root;
 // Mods common → root (nur wenn kein common) → neueste Version. JSON- und
 // TXT-Dateien (Lua-Translate) werden gelesen; JSON-Dateien mit Trailing
@@ -26,7 +32,6 @@ const {
   readTxtMap,
   SOURCE_LANG
 } = require('./scanner')
-const { saveBatch } = require('./entries')
 
 // EN-Stellen eines Mods: [{ version, enDir }] — dieselben Regeln wie
 // scanner.scan(): common (exklusiv mit root), root nur ohne common, die
@@ -170,13 +175,19 @@ function resolveMod(doc, byId, byName) {
   return (doc.modId && byId.get(doc.modId)) || byName.get(doc.mod) || null
 }
 
-// Import-Vorschau: { matched, unmatched, perMod: { <modId>: { mod, matched, unmatched } } }.
-// matched/unmatched zählen JSON-Keys (nicht Dateien).
+// Import-Vorschau: { matched, unmatched, perMod: { <modId>: { mod, matched, unmatched } },
+// matches: [{ modId, entryId, translation }] }. matched/unmatched zählen
+// JSON-Keys (nicht Dateien). `matches` sind die bereits gültigen Treffer mit
+// rekonstruierter entryId ("<version>/<EN_REL><cat>::<key>", EN_REL =
+// media/lua/shared/Translate/<sourceLang>/) — die Frontend übernimmt sie
+// direkt als dirty Einträge, ohne dass hier irgendetwas geschrieben wird.
 function importPreview(docs, mods, targetLang, sourceLang = SOURCE_LANG) {
   const byId = new Map(mods.map((m) => [m.id, m]))
   const byName = new Map(mods.map((m) => [m.name, m]))
   const valid = buildValidKeys(mods, sourceLang)
+  const enRel = `media/lua/shared/Translate/${sourceLang}/`
   const perMod = {}
+  const matches = []
   let matched = 0
   let unmatched = 0
   for (const doc of docs) {
@@ -190,6 +201,7 @@ function importPreview(docs, mods, targetLang, sourceLang = SOURCE_LANG) {
         if (ok) {
           matched++
           perMod[mod.id].matched++
+          matches.push({ modId: mod.id, entryId: `${parts.version}/${enRel}${parts.cat}::${key}`, translation: value })
         } else {
           unmatched++
           perMod[mod.id].unmatched++
@@ -197,46 +209,13 @@ function importPreview(docs, mods, targetLang, sourceLang = SOURCE_LANG) {
       }
     }
   }
-  return { matched, unmatched, perMod }
-}
-
-// Apply: übernimmt die gültigen Keys und schreibt die targetLang-Dateien
-// (inkl. Backup via saveBatch). Ungültige/fehlende Keys bleiben unverändert.
-// Aus dem Short-Form-Datei-Key wird die entryId rekonstruiert:
-// "<version>/<EN_REL><cat>::<key>" — saveBatch leitet Zielpfad und
-// targetLang-Dateinamen (JSON: identisch, TXT: _EN → _<TGT>) davon ab.
-function importApply(docs, mods, targetLang, backupRoot, baselineRoot, sourceLang = SOURCE_LANG) {
-  const byId = new Map(mods.map((m) => [m.id, m]))
-  const byName = new Map(mods.map((m) => [m.name, m]))
-  const valid = buildValidKeys(mods, sourceLang)
-  const enRel = `media/lua/shared/Translate/${sourceLang}/`
-  let saved = 0
-  for (const doc of docs) {
-    const mod = resolveMod(doc, byId, byName)
-    if (!mod) continue
-    const byFile = new Map()
-    for (const [fileKey, keys] of Object.entries(doc.files)) {
-      const parts = fileKeyParts(fileKey)
-      if (!parts) continue
-      for (const [key, value] of Object.entries(keys || {})) {
-        if (valid.has(`${mod.id}::${fileKey}::${key}`) && typeof value === 'string') {
-          if (!byFile.has(fileKey)) byFile.set(fileKey, [])
-          byFile.get(fileKey).push({ entryId: `${parts.version}/${enRel}${parts.cat}::${key}`, translation: value })
-        }
-      }
-    }
-    for (const items of byFile.values()) {
-      saved += saveBatch(mod, items, targetLang, backupRoot, baselineRoot).saved
-    }
-  }
-  return { saved }
+  return { matched, unmatched, perMod, matches }
 }
 
 module.exports = {
   exportLlmBundle,
   normalizeImportInput,
   importPreview,
-  importApply,
   enLocations,
   buildValidKeys
 }

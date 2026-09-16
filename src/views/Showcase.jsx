@@ -17,9 +17,9 @@ const DEFAULTS = {
   text: "#f5f5f5",
   muted: "#ababab",
   dust: "#c4c4c4",
-  accent: "#e21d1d",
-  "accent-light": "#ff4040",
-  "accent-deep": "#8a1414",
+  accent: "#3b82f6",
+  "accent-light": "#60a5fa",
+  "accent-deep": "#1d4ed8",
   warning: "#e2901d",
   success: "#1de252",
   danger: "#e21d1d",
@@ -301,8 +301,9 @@ export default function Showcase() {
           <div className="flex flex-wrap gap-2">
             <Tag tone="neutral">Neutral</Tag>
             <Tag tone="base">Base Game</Tag>
-            <Tag tone="warning">Missing</Tag>
+            <Tag tone="warning">Open</Tag>
             <Tag tone="success">Translated</Tag>
+            <Tag tone="accent">Needs Review</Tag>
             <Tag tone="danger">Error</Tag>
           </div>
         </Card>

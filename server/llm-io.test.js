@@ -11,8 +11,9 @@ const {
 const { tmpdir } = require('node:os')
 const path = require('node:path')
 const { scan } = require('./scanner')
+const { saveBatch } = require('./entries')
 const {
-  exportLlmBundle, normalizeImportInput, importPreview, importApply
+  exportLlmBundle, normalizeImportInput, importPreview
 } = require('./llm-io')
 
 // TXT/common- und root-JSON-Layouts (3.1): werden in die Fixture-Kopie in
@@ -153,7 +154,7 @@ test('importPreview: matched + unmatched zählen (aus Einzel-Mod-Datei)', () => 
   assert.ok(!Object.values(preview.perMod).some((p) => p.mod !== coffee.name))
 })
 
-test('importApply: nur gültige Keys landen in der DE-Datei, mit Backup', () => {
+test('importPreview: matches liefert die rekonstruierte entryId, saveBatch schreibt sie in die DE-Datei', () => {
   const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
   const doc = {
     mod: belt.name,
@@ -170,8 +171,20 @@ test('importApply: nur gültige Keys landen in der DE-Datei, mit Backup', () => 
   }
   const { docs, error } = normalizeImportInput(JSON.stringify(doc))
   assert.equal(error, null)
+  const preview = importPreview(docs, mods, 'DE')
+  assert.equal(preview.matches.length, 1)
+  assert.deepEqual(preview.matches[0], {
+    modId: belt.id,
+    entryId: '42.20/media/lua/shared/Translate/EN/ItemName.json::ExpandedBelt.ExpandedBelt',
+    translation: 'Neuer Gürtel'
+  })
   const backupRoot = path.join(workdir, 'backups')
-  const result = importApply(docs, mods, 'DE', backupRoot)
+  const result = saveBatch(
+    belt,
+    preview.matches.map(({ entryId, translation }) => ({ entryId, translation })),
+    'DE',
+    backupRoot
+  )
   assert.equal(result.saved, 1)
   const tgt = path.join(
     fakeRoot, 'workshop', '3411213493', 'mods', 'Expanded Belt', '42.20',
@@ -248,7 +261,7 @@ test('exportLlmBundle: TXT-Mod → Datei-Key common/<Datei>, EN-Werte', () => {
   assert.equal(fieldDoc.files['common/Sandbox_EN.txt'].Sandbox_FieldNotes_HowTo, 'How to use the field notes')
 })
 
-test('importApply: TXT → DE-Lua-Datei, bestehende Keys bleiben, Backup', () => {
+test('importPreview: matches (TXT) → saveBatch schreibt DE-Lua-Datei, bestehende Keys bleiben, Backup', () => {
   const field = mods.find((m) => m.id === '9999000001/Field Notes')
   const doc = {
     mod: field.name,
@@ -264,8 +277,15 @@ test('importApply: TXT → DE-Lua-Datei, bestehende Keys bleiben, Backup', () =>
   }
   const { docs, error } = normalizeImportInput(JSON.stringify(doc))
   assert.equal(error, null)
+  const preview = importPreview(docs, mods, 'DE')
+  assert.equal(preview.matches.length, 1)
   const backupRoot = path.join(workdir, 'backups-txt')
-  const result = importApply(docs, mods, 'DE', backupRoot)
+  const result = saveBatch(
+    field,
+    preview.matches.map(({ entryId, translation }) => ({ entryId, translation })),
+    'DE',
+    backupRoot
+  )
   assert.equal(result.saved, 1)
   // Ziel: common/media/lua/shared/Translate/DE/Sandbox_DE.txt
   const tgt = path.join(

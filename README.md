@@ -48,21 +48,26 @@ PT_FAKE=1 npm run dev
    Run **Scan** to read the installation; this can take a while the first time with
    many mods installed. Changing the game/Workshop folder or the source language
    invalidates the current scan — the app rescans automatically the next time you
-   open the Library.
-2. **Library** — pick the mods you want to translate (the base game is listed too).
-   Selection carries over to the Editor and Export.
-3. **Editor** — browse every text entry of the selected mods, search and sort them,
-   and either type translations directly or use the LLM round trip below. **Save**
-   writes changes to disk (with an automatic backup of anything overwritten) and
-   re-scans so the counts stay accurate.
-4. **LLM export/import** (in the Editor) — **Export** downloads the visible entries as
-   one JSON file with the original-language texts. Hand that file to an LLM (or
-   translate it by hand) and get back a translated version in the same structure.
-   **Import** loads that file, shows a preview of how many entries matched, and
-   applies it after confirmation.
-5. **Export** (mod) — bundles the translated entries of the selected mods into one
-   installable mod folder, with a valid `mod.info` per layout location. Copy that
-   folder into your game's `mods` directory and enable it in the launcher.
+   open the Mods page.
+2. **Mods** — pick the mods you want to translate (the base game is listed too);
+   filter by status (Open / Translated / Needs Review). Selection carries over to
+   the Editor and to the global **Export Mod** button. This page also has the LLM
+   round trip: **Export** downloads the selected mods' entries as one JSON file
+   with the original-language texts — hand that to an LLM (or translate it by
+   hand) and get back a translated version in the same structure. **Import** loads
+   that file, shows a preview of how many entries matched, and on confirmation
+   marks the affected mods **Needs Review** — nothing is written to disk yet.
+3. **Editor** — pick one mod from the sidebar at a time and work through its
+   entries (search, sort, filter by file). Entries imported via the LLM round trip
+   show up pre-filled but unsaved, exactly like a manual edit — review them and
+   hit **Save**, which writes to disk (with an automatic backup of anything
+   overwritten) and re-scans so the counts stay accurate. Once every "Needs
+   Review" entry of a mod is saved, it reverts to its normal Open/Translated
+   status.
+4. **Export Mod** (top-right, on every page) — bundles the translated entries of
+   the currently selected mods into one installable mod folder, with a valid
+   `mod.info` per layout location. Copy that folder into your game's `mods`
+   directory and enable it in the launcher.
 
 ## Commands
 

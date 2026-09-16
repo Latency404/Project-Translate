@@ -37,23 +37,28 @@ server/              Express-API (CommonJS)
   config.js          config.json lesen/schreiben, Standardpfade
   scanner.js         Steam-Wurzeln → { mods, entriesByModId }; JSON- und Lua-TXT-Parser
   entries.js         Einträge speichern + Backup, fs-Fehler klassifizieren
-  llm-io.js          LLM-Export-Bundle, Import-Vorschau und -Apply
+  llm-io.js          LLM-Export-Bundle, Import-Vorschau (inkl. matches)
   mod-export.js      Installierbaren Übersetzungs-Mod erzeugen
   fake-api.js        Nur Wurzel-Tausch auf server/fixtures/ (PT_FAKE=1)
   fixtures/          Beispieldaten im echten PZ-Layout
   fixtures-inject.js Synthetische Layout-Fixtures für tmp-Kopien in Tests
 src/
-  App.jsx            View-Umschaltung per State (kein Router-Paket)
+  App.jsx            View-Umschaltung per State (kein Router-Paket); globaler
+                     "Export Mod"-Button (Popover, baut die installierbare Mod)
   api.js             Einziger Zugriffspunkt auf die API
+  reviewStore.js     Geteilter Session-State für dirty Editor-Einträge
+                     (Mods-Seite + Editor) — Basis für den "Zu Prüfen"-Status
   components/        Button, Card, Input, Modal, ProgressBar, Tag
   styles/theme.css   Design-Tokens (CSS-Variablen)
-  views/             Settings, Library, Editor, Exchange (= "Export"), Showcase (= "Design")
-Resources/           Sample-Mods, Logos, Figma-Icons (git-ignoriert)
+  views/             Settings, Mods, Editor, Showcase (= "Design")
+Resources/           Sample-Mods, Logos, Figma-Mockups/Icons (git-ignoriert)
 export/              Laufzeit-Ausgabe: mods/, backups/ (git-ignoriert)
 config.json          Laufzeit (git-ignoriert)
 ```
 
-Navigation: Settings | Library | Editor | Export | Design.
+Navigation: Mods | Editor | Settings | Design, plus globaler "Export Mod"-Button
+(baut die installierbare Mod aus der aktuellen Mods-Auswahl, unabhängig von der
+gerade offenen Seite).
 
 ## Verträge, die nicht brechen dürfen
 
@@ -66,13 +71,16 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   konfigurierbar (`config.sourceLang`, Default `EN`, `scanner.js` Parameter `sourceLang`)
   und steckt im Pfad-Segment — ein Wechsel ändert alle entryIds. `POST /api/config`
   verwirft deshalb den Scan-Cache, wenn sich `sourceLang`, `gameRoot` oder
-  `workshopDir` ändert (`index.js`); die Library scannt danach automatisch neu.
+  `workshopDir` ändert (`index.js`); die Mods-Seite scannt danach automatisch neu.
 - **LLM-Datei-Keys** sind die Kurzform `<version>/<Dateiname>` (z. B. `42.20/UI.json`);
   `llm-io.js` rekonstruiert daraus die entryId.
 - **API-Routenform** (`server/index.js`): `GET /api/status`, `POST /api/scan`,
   `GET|POST /api/config`, `GET /api/mods`, `GET|PUT /api/mods/:modId/entries`,
-  `POST /api/export/llm`, `POST /api/import/llm/preview`, `POST /api/import/llm/apply`,
-  `POST /api/export/mod`. Fehler immer als `{ error: "<lesbarer Text>" }` + 4xx/5xx.
+  `POST /api/export/llm`, `POST /api/import/llm/preview`, `POST /api/export/mod`.
+  Fehler immer als `{ error: "<lesbarer Text>" }` + 4xx/5xx. Es gibt bewusst
+  **keine** `/api/import/llm/apply`-Route: Import schreibt nichts auf die Platte
+  (s. Import-Review-Status unten) — `POST /api/import/llm/preview` liefert neben
+  den Zähl-Feldern auch `matches: [{ modId, entryId, translation }]`.
 - **Layout-Regeln** (identisch in `scanner.js`, `llm-io.js`, `mod-export.js`):
   `common` schließt `root` aus; zusätzlich immer nur die **neueste** Versionsnummer.
   Basisspiel hat einen Ort mit Version `base`.
@@ -82,11 +90,21 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
 - **Backup vor jedem Überschreiben** nach
   `export/backups/<YYYY-MM-DD_HH-mm>/<modId>__<version>__<file>/`. Ein Ordner pro
   Speicher-Batch, wird nie automatisch gelöscht.
-- **sessionStorage-Keys**: `pt_library_selected` (die Auswahl — nur die Library
-  schreibt sie, Editor und Export lesen sie), `pt_library_locked`, `pt_editor_visible`
-  (nur Sichtbarkeit im Editor), `pt_active_view`.
-- **Disk ist die Quelle der Wahrheit**: PUT und Import-Apply lösen einen Rescan aus,
-  bevor sie antworten.
+- **sessionStorage-Keys**: `pt_library_selected` (die Mods-Auswahl — nur die
+  Mods-Seite schreibt sie, Editor und der globale Export-Mod-Button lesen sie),
+  `pt_library_locked`, `pt_editor_active_mod` (der EINE aktuell im Editor
+  geöffnete Mod — Editor-eigen, nie die Mods-Auswahl selbst), `pt_active_view`,
+  `pt_editor_dirty` (ungespeicherte Einträge, `entryId -> { modId, value, origin }`;
+  `origin` ist `"manual"` oder `"import"` — s. `src/reviewStore.js`).
+- **Disk ist die Quelle der Wahrheit**: PUT löst einen Rescan aus, bevor es
+  antwortet. Ausnahme bewusst: ein LLM-Import schreibt NICHT direkt — er füllt
+  nur `pt_editor_dirty` (`origin: "import"`), bis der Nutzer die Einträge im
+  Editor Mod für Mod prüft und speichert (dann wie jeder andere Save via PUT).
+- **"Zu Prüfen"-Status**: eine Mod gilt als "Zu Prüfen" (statt Open/Translated),
+  solange sie mindestens einen offenen `origin: "import"`-Eintrag in
+  `pt_editor_dirty` hat — rein client-seitig berechnet (`reviewStore.statusOf`),
+  kein Server-Feld. Verschwindet automatisch, sobald diese Einträge gespeichert
+  (oder verworfen) sind.
 - **Pfade immer POSIX-Style** (`/`) in APIs und config.json, auch auf Windows.
 
 ## Regeln

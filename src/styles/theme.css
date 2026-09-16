@@ -17,19 +17,18 @@
   --color-muted: #ababab;      /* Sekundärtext, Labels */
   --color-dust: #c4c4c4;       /* Dust Grey — z. B. Base-Game-Tag */
 
-  /* Akzent — USER-Wahl. Danger trägt denselben Ton: danger wird nur für
-     negative Pills/Buttons (Fehler, Abbruch) verwendet, accent für primäre
-     Aktionen — sie treffen nie aufeinander (z. B. nie beide in einer Bar).
+  /* Akzent — Figma-Redesign (vorläufig, noch nicht final): Blau statt Rot.
      accent-light = hellerer Hover-Ton (Hover wird heller, nicht dunkler);
-     accent-deep bleibt als dunkler Ton für z. B. aktive/gedrückte Zustände. */
-  --color-accent: #e21d1d;
-  --color-accent-light: #ff4040;
-  --color-accent-deep: #8a1414;
+     accent-deep bleibt als dunkler Ton für z. B. aktive/gedrückte Zustände.
+     danger ist jetzt ein EIGENER (roter) Ton, nicht mehr identisch mit accent. */
+  --color-accent: #3b82f6;
+  --color-accent-light: #60a5fa;
+  --color-accent-deep: #1d4ed8;
 
   /* Status */
   --color-warning: #e2901d;
   --color-success: #1de252;    /* USER-Wahl */
-  --color-danger: #e21d1d;     /* = accent-Ton */
+  --color-danger: #e21d1d;
 
   /* Schriften */
   --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;

@@ -119,7 +119,7 @@ export default function Settings({ onOpenMods }) {
       setSourceLang(saved.sourceLang || "EN");
       setTargetLang(saved.targetLang);
       setStatus(await api.getStatus());
-      // A changed path or language leaves the scan cache stale — the Library
+      // A changed path or language leaves the scan cache stale — the Mods page
       // and Editor keep showing entries from before the change until a new
       // scan runs. Say so instead of letting that surprise the user later.
       const rescanNeeded =
@@ -289,7 +289,7 @@ export default function Settings({ onOpenMods }) {
             </Button>
             {scanComplete && (
               <Button variant="secondary" size="sm" onClick={onOpenMods}>
-                Go to Library
+                Go to Mods
               </Button>
             )}
           </div>

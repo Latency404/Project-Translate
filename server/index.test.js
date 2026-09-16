@@ -112,6 +112,7 @@ test('Scan: 5 Mods mit entryCount, Basisspiel dabei', async () => {
   assert.ok(names.includes('Project Zomboid (Base Game)'))
   assert.ok(names.includes('More Traits'))
   for (const m of mods) assert.ok(m.entryCount > 0, `entryCount für ${m.name}`)
+  for (const m of mods) assert.ok(m.filesCount > 0, `filesCount für ${m.name}`)
 
   const base = mods.find((m) => m.id === 'BASE')
   assert.equal(base.isBaseGame, true)
@@ -125,6 +126,7 @@ test('Scan: 5 Mods mit entryCount, Basisspiel dabei', async () => {
   assert.deepEqual(coffee.versions, ['42.20']) // nur die neueste Version
   assert.equal(coffee.entryCount, 11) // 42.20 (ContextMenu 5 + IG_UI 6)
   assert.equal(coffee.translatedCount, 11) // 42.20 DE (5 + 6)
+  assert.equal(coffee.filesCount, 2) // ContextMenu.json + IG_UI.json
 
   const traits = mods.find((m) => m.id === '1299328280/More Traits')
   assert.ok(traits)
@@ -329,30 +331,35 @@ test('POST /api/export/mod — leere Mod-Auswahl → 400', async () => {
   assert.match(res.json.error, /No valid mod selection/)
 })
 
-test('POST /api/import/llm/apply — schreibt Uebersetzungen, loest Rescan aus', async () => {
+test('POST /api/import/llm/preview — liefert matches (entryId + Uebersetzung), schreibt nichts', async () => {
   const exp = await api('POST', '/export/llm', {
     modIds: ['1299328280/More Traits'],
     targetLang: 'DE'
   })
   assert.equal(exp.status, 200)
 
-  // Rundreise: den exportierten Text unveraendert zurueckspielen (idempotent,
-  // also unabhaengig vom vorherigen Uebersetzungsstand pruefbar) und dabei
-  // sicherstellen, dass die Route wirklich schreibt und neu scannt.
-  const apply = await api('POST', '/import/llm/apply', { text: exp.json.text })
-  assert.equal(apply.status, 200)
-  assert.ok(apply.json.saved > 0)
+  const before = await api('GET', '/mods')
+  const traitsBefore = before.json.mods.find((m) => m.id === '1299328280/More Traits')
 
-  // Rescan ist Teil der Route (wartet ab) — /api/mods muss sofort den neuen
-  // Stand zeigen, ohne dass der Test selbst noch auf einen Scan wartet.
-  const mods = await api('GET', '/mods')
-  const traits = mods.json.mods.find((m) => m.id === '1299328280/More Traits')
-  assert.ok(traits)
-  assert.equal(traits.translatedCount, traits.entryCount)
+  const preview = await api('POST', '/import/llm/preview', { text: exp.json.text })
+  assert.equal(preview.status, 200)
+  assert.ok(preview.json.matched > 0)
+  assert.ok(Array.isArray(preview.json.matches))
+  assert.equal(preview.json.matches.length, preview.json.matched)
+  for (const m of preview.json.matches) {
+    assert.equal(m.modId, '1299328280/More Traits')
+    assert.match(m.entryId, /^[^/]+\/media\/lua\/shared\/Translate\/EN\/.+::.+$/)
+    assert.equal(typeof m.translation, 'string')
+  }
+
+  // Die Route schreibt nichts — /api/mods bleibt unveraendert.
+  const after = await api('GET', '/mods')
+  const traitsAfter = after.json.mods.find((m) => m.id === '1299328280/More Traits')
+  assert.equal(traitsAfter.translatedCount, traitsBefore.translatedCount)
 })
 
-test('POST /api/import/llm/apply — leerer Text → 400', async () => {
-  const res = await api('POST', '/import/llm/apply', { text: '' })
+test('POST /api/import/llm/preview — leerer Text → 400', async () => {
+  const res = await api('POST', '/import/llm/preview', { text: '' })
   assert.equal(res.status, 400)
   assert.ok(typeof res.json.error === 'string')
 })

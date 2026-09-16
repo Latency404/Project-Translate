@@ -113,16 +113,26 @@ app.post('/api/scan', (req, res) => {
     })
 })
 
+// filesCount = Anzahl distincter Quelldateien (version/file) des Mods — für
+// den "N Files"-Badge auf der Mods-Seite. Gleiche Ableitung wie die
+// Datei-Gruppierung in der Reset-Translations-Route unten.
+function filesCountOf(mod) {
+  const entries = cache.entriesByModId[mod.id] || []
+  const files = new Set()
+  for (const e of entries) files.add(`${e.version}/${e.file}`)
+  return files.size
+}
+
 app.get('/api/mods', (req, res) => {
   if (!cache) return fail(res, 404, 'No scan has been performed yet — POST /api/scan.')
-  const mods = cache.mods.map((m) => ({ ...m, poster: posterUrl(m) }))
+  const mods = cache.mods.map((m) => ({ ...m, poster: posterUrl(m), filesCount: filesCountOf(m) }))
   res.json({ mods })
 })
 
 // --- Base-Game-Poster (Ressource aus Resources/) ---
 // Das Logo des Basisspiels liegt als statische Ressource im Projekt
 // (Resources/projectzomboidlogo.jpg) und wird unabhängig vom Scan als
-// /base-game-poster.jpg gedient. Die Library zeigt es für den BASE-Mod.
+// /base-game-poster.jpg gedient. Die Mods-Seite zeigt es für den BASE-Mod.
 const BASE_POSTER_FILE = path.join(PROJECT_ROOT, 'Resources', 'projectzomboidlogo.jpg')
 app.get('/base-game-poster.jpg', (req, res) => {
   if (!fs.existsSync(BASE_POSTER_FILE)) return fail(res, 404, 'Poster nicht gefunden')
@@ -252,7 +262,7 @@ app.post('/api/config', (req, res) => {
   // sourceLang steckt im entryId (der Quell-Pfad) — ein alter Cache würde
   // sonst Einträge unter entryIds zeigen, die es so nicht mehr gibt, sobald
   // erneut gespeichert wird. Verwerfen statt stillschweigend veraltet lassen:
-  // GET /api/mods liefert danach 404 ("kein Scan"), worauf die Library
+  // GET /api/mods liefert danach 404 ("kein Scan"), worauf die Mods-Seite
   // automatisch neu scannt. gameRoot/workshopDir ändern das entryId-Format
   // nicht (nur WO gesucht wird, im Fake-Modus ohnehin von der echten
   // Konfiguration entkoppelt) — dafür genügt der Hinweis in Settings (E6).
@@ -288,33 +298,15 @@ function importDocsOf(body) {
   return llm.normalizeImportInput(body && body.text)
 }
 
+// Liefert zusätzlich `matches` (rekonstruierte entryIds + Übersetzung) — es
+// gibt bewusst keine /apply-Route mehr: der Import schreibt nichts auf die
+// Platte, die Frontend übernimmt `matches` als dirty Einträge (s. llm-io.js).
 app.post('/api/import/llm/preview', (req, res) => {
   const { docs, error } = importDocsOf(req.body)
   if (error) return fail(res, 400, error)
   const mods = cache ? cache.mods : []
   const cfg = config.load()
   res.json(llm.importPreview(docs, mods, cfg.targetLang, cfg.sourceLang))
-})
-
-app.post('/api/import/llm/apply', (req, res) => {
-  const { docs, error } = importDocsOf(req.body)
-  if (error) return fail(res, 400, error)
-  const mods = cache ? cache.mods : []
-  const cfg = config.load()
-  const wasRescanning = rescanning
-  let result
-  try {
-    result = llm.importApply(docs, mods, cfg.targetLang, BACKUP_ROOT, BASELINE_ROOT, cfg.sourceLang)
-  } catch (err) {
-    return fail(res, err.status || 500, classifyFsError(err, 'Import').message)
-  }
-  // Wie beim PUT: Rescan wird GEMACHT, damit der Client die importierten
-  // Werte sofort sieht; war beim Schreiben ein rescan aktiv, läuft danach
-  // ein zweiter (das erste Snapshot ist veraltet).
-  rescan()
-    .then(() => (wasRescanning ? rescan() : undefined))
-    .catch(() => {})
-    .finally(() => res.json(result))
 })
 
 // --- Mod-Export ---
