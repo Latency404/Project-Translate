@@ -601,6 +601,17 @@ export default function Editor({ onReselect }) {
 
   const dirtySize = dirty.size;
 
+  // Unsaved edits whose mod is no longer part of the Library selection: they
+  // are kept (never deleted), but invisible and unsavable until the mod is
+  // reselected — worth a visible hint instead of a silent surprise.
+  const orphanedDirtyModIds = Array.from(
+    new Set(
+      Array.from(dirty.values())
+        .map((v) => v.modId)
+        .filter((modId) => modId != null && !universeIds.includes(modId)),
+    ),
+  );
+
   // --- Save all selected mods one after another ---
   // Each mod is saved independently: a failure for one mod must not discard
   // the edits of another, nor hide any but the last error message.
@@ -900,6 +911,14 @@ export default function Editor({ onReselect }) {
         )}
         {!saveError && notice && (
           <p className="px-4 pt-2 text-sm text-success">{notice}</p>
+        )}
+        {orphanedDirtyModIds.length > 0 && (
+          <p className="px-4 pt-2 text-sm text-warning">
+            You have unsaved changes in {orphanedDirtyModIds.length} mod(s) no
+            longer selected in the Library — reselect{" "}
+            {orphanedDirtyModIds.length === 1 ? "it" : "them"} there to save or
+            discard those changes.
+          </p>
         )}
 
         {/* Entry area — one block per selected mod */}

@@ -100,6 +100,7 @@ export default function Settings({ onOpenMods }) {
     setSaveErr("");
     setSaveMsg("");
     setSaving(true);
+    const prevConfig = config;
     try {
       const saved = await api.saveConfig({
         gameRoot,
@@ -113,7 +114,20 @@ export default function Settings({ onOpenMods }) {
       setSourceLang(saved.sourceLang || "EN");
       setTargetLang(saved.targetLang);
       setStatus(await api.getStatus());
-      setSaveMsg("Configuration saved.");
+      // A changed path or language leaves the scan cache stale — the Library
+      // and Editor keep showing entries from before the change until a new
+      // scan runs. Say so instead of letting that surprise the user later.
+      const rescanNeeded =
+        !!prevConfig &&
+        (saved.gameRoot !== prevConfig.gameRoot ||
+          saved.workshopDir !== prevConfig.workshopDir ||
+          saved.targetLang !== prevConfig.targetLang ||
+          (saved.sourceLang || "EN") !== (prevConfig.sourceLang || "EN"));
+      setSaveMsg(
+        rescanNeeded
+          ? "Configuration saved. Run a new scan to pick up the change — existing entries still reflect the previous settings."
+          : "Configuration saved.",
+      );
     } catch (err) {
       setSaveErr(err.message);
     } finally {
