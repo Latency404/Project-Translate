@@ -304,3 +304,55 @@ test('POST /api/config — Quell- und Zielsprache identisch → 400', async () =
   assert.equal(res.status, 400)
   assert.match(res.json.error, /Source and target language must not be the same/)
 })
+
+test('POST /api/export/mod — legt eine installierbare Mod mit mod.info an', async () => {
+  const targetDir = path.join(workdir, 'mod-export-route')
+  const res = await api('POST', '/export/mod', {
+    modIds: ['2688538916/Coffee Machines Fix'],
+    targetLang: 'DE',
+    targetDir
+  })
+  assert.equal(res.status, 200)
+  assert.equal(res.json.targetLang, 'DE')
+  assert.equal(res.json.results.length, 1)
+  const [result] = res.json.results
+  assert.ok(result.written.length > 0)
+
+  const infoFiles = readDir(result.targetPath).filter((n) => n === 'mod.info')
+  const nested = readDir(path.join(result.targetPath, '42.20'))
+  assert.ok(infoFiles.length > 0 || nested.includes('mod.info'), 'mod.info fehlt am erwarteten Ort')
+})
+
+test('POST /api/export/mod — leere Mod-Auswahl → 400', async () => {
+  const res = await api('POST', '/export/mod', { modIds: [], targetLang: 'DE' })
+  assert.equal(res.status, 400)
+  assert.match(res.json.error, /No valid mod selection/)
+})
+
+test('POST /api/import/llm/apply — schreibt Uebersetzungen, loest Rescan aus', async () => {
+  const exp = await api('POST', '/export/llm', {
+    modIds: ['1299328280/More Traits'],
+    targetLang: 'DE'
+  })
+  assert.equal(exp.status, 200)
+
+  // Rundreise: den exportierten Text unveraendert zurueckspielen (idempotent,
+  // also unabhaengig vom vorherigen Uebersetzungsstand pruefbar) und dabei
+  // sicherstellen, dass die Route wirklich schreibt und neu scannt.
+  const apply = await api('POST', '/import/llm/apply', { text: exp.json.text })
+  assert.equal(apply.status, 200)
+  assert.ok(apply.json.saved > 0)
+
+  // Rescan ist Teil der Route (wartet ab) — /api/mods muss sofort den neuen
+  // Stand zeigen, ohne dass der Test selbst noch auf einen Scan wartet.
+  const mods = await api('GET', '/mods')
+  const traits = mods.json.mods.find((m) => m.id === '1299328280/More Traits')
+  assert.ok(traits)
+  assert.equal(traits.translatedCount, traits.entryCount)
+})
+
+test('POST /api/import/llm/apply — leerer Text → 400', async () => {
+  const res = await api('POST', '/import/llm/apply', { text: '' })
+  assert.equal(res.status, 400)
+  assert.ok(typeof res.json.error === 'string')
+})
