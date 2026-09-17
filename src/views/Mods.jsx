@@ -105,7 +105,7 @@ export default function Mods({ onGoToSetup }) {
     }
     if (statusFilter === "all") return true;
     return statusOf(m, reviewIds) === statusFilter;
-  });
+  }).sort((a, b) => Number(b.isBaseGame) - Number(a.isBaseGame));
   const filterCounts = {
     all: mods.length,
     open: mods.filter((m) => statusOf(m, reviewIds) === "open").length,
@@ -149,14 +149,14 @@ export default function Mods({ onGoToSetup }) {
 
   // --- LLM export: die Selektion in EINE Datei (Browser-Save-Dialog) ---
   const [exportLoading, setExportLoading] = useState(false);
-  const [notice, setNotice] = useState("");
+
   const [actionError, setActionError] = useState("");
 
   const handleLlmExport = async () => {
     if (selected.size === 0) return;
     setExportLoading(true);
     setActionError("");
-    setNotice("");
+
     try {
       const result = await api.exportLlm(Array.from(selected), targetLang);
       const blob = new Blob([result.text], { type: "application/json" });
@@ -214,10 +214,7 @@ export default function Mods({ onGoToSetup }) {
     }
     setDirty(next);
     saveDirty(next);
-    const modCount = Object.keys(importPreview.perMod).length;
-    setNotice(
-      `${importPreview.matches.length} entries in ${modCount} mod(s) marked "Needs Review" — open them in the Editor to check and save.`,
-    );
+
     setImportModalOpen(false);
     setImportPreview(null);
   };
@@ -334,7 +331,6 @@ export default function Mods({ onGoToSetup }) {
       </div>
 
       {actionError && <p className="mb-4 text-sm text-danger">{actionError}</p>}
-      {!actionError && notice && <p className="mb-4 text-sm text-success">{notice}</p>}
 
       {/* Grid */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-3">

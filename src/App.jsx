@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import Settings from "./views/Settings.jsx";
-import Showcase from "./views/Showcase.jsx";
 import Mods from "./views/Mods.jsx";
 import Editor from "./views/Editor.jsx";
 import * as api from "./api.js";
@@ -11,7 +10,6 @@ const VIEWS = [
   { key: "mods", label: "Mods" },
   { key: "editor", label: "Editor" },
   { key: "settings", label: "Settings" },
-  { key: "showcase", label: "Design" },
 ];
 
 // Rendert sein Kind fixed-positioniert direkt unter `anchorRef`, als Portal
@@ -237,7 +235,6 @@ export default function App() {
             }}
           />
         )}
-        {view === "showcase" && <Showcase />}
         {view === "editor" && (
           <Editor
             onReselect={() => {

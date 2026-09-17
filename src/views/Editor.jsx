@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronsUpDown, Save } from "lucide-react";
+import nextIcon from "../assets/file-tabs-next.svg";
+import previousIcon from "../assets/file-tabs-previous.svg";
 import * as api from "../api.js";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
@@ -151,10 +153,14 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
     <>
       {displayEntries.map((entry) => {
         const currentTranslation = currentTranslationOf(entry, dirty);
-        const entryDirty = isDirtyEntry(entry, dirty);
+        const dirtyEntry = dirty.get(entry.id);
+        const entryDirty = dirtyEntry !== undefined;
+        const needsReview = dirtyEntry?.origin === "import";
 
         let borderClass = "border-success";
-        if (entryDirty) borderClass = "border-accent";
+        // Importierte Einträge nutzen bewusst denselben Akzentton wie die
+        // "Needs Review"-Pill, bis sie gespeichert wurden.
+        if (needsReview || entryDirty) borderClass = "border-accent";
         else if (!entry.translation) borderClass = "border-warning";
 
         const sourceFile = sourceFileOf(entry);
@@ -215,7 +221,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
   const [allMods, setAllMods] = useState([]);
   const [error, setError] = useState("");
   const [saveError, setSaveError] = useState("");
-  const [notice, setNotice] = useState("");
+
   const [saving, setSaving] = useState(false);
 
   // Sidebar: its own search + status filter (All Mods / Open / Translated / Review).
@@ -236,6 +242,10 @@ export default function Editor({ onReselect, onGoToSettings }) {
   const [search, setSearch] = useState("");
   const [activeFile, setActiveFile] = useState(null); // null = "All Files"
   const [sort, setSort] = useState(null);
+  const [fileTabPage, setFileTabPage] = useState(0);
+  const [fileTabPages, setFileTabPages] = useState([[]]);
+  const fileTabBarRef = useRef(null);
+  const fileTabMeasureRef = useRef(null);
 
   const [dirty, setDirty] = useState(() => loadDirty());
   // Entprellte Kopie von `dirty`, nur für den Re-Sort bei aktiver
@@ -300,7 +310,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
     }
     if (modFilter === "all") return true;
     return statusOf(m, reviewIds) === modFilter;
-  });
+  }).sort((a, b) => Number(b.isBaseGame) - Number(a.isBaseGame));
   const filterCounts = {
     all: universe.length,
     open: universe.filter((m) => statusOf(m, reviewIds) === "open").length,
@@ -363,7 +373,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
       const validIds = new Set(entries.map((e) => e.id));
       let next = null;
       for (const [id, val] of prev) {
-        if (val.modId === activeModId && !validIds.has(id)) {
+        if (val.modId === activeModId && val.origin !== "import" && !validIds.has(id)) {
           if (!next) next = new Map(prev);
           next.delete(id);
         }
@@ -428,6 +438,69 @@ export default function Editor({ onReselect, onGoToSettings }) {
     if (activeFile && !files.includes(activeFile)) setActiveFile(null);
   }, [files, activeFile]);
 
+  useLayoutEffect(() => {
+    const tabBar = fileTabBarRef.current;
+    const measure = fileTabMeasureRef.current;
+    if (!tabBar || !measure) return undefined;
+
+    const calculatePages = () => {
+      const items = Array.from(measure.children);
+      const previousWidth = items[0]?.getBoundingClientRect().width || 0;
+      const allFilesWidth = items[1]?.getBoundingClientRect().width || 0;
+      const nextWidth = items.at(-1)?.getBoundingClientRect().width || 0;
+      const fileWidths = items.slice(2, -1).map((item) => item.getBoundingClientRect().width);
+      const gap = Number.parseFloat(getComputedStyle(tabBar).gap) || 0;
+      const fileWidthsTotal = fileWidths.reduce((total, width) => total + width, 0)
+        + Math.max(0, fileWidths.length - 1) * gap;
+      const needsNextButton = previousWidth + allFilesWidth + fileWidthsTotal
+        + (fileWidths.length > 0 ? gap * 2 : gap) > tabBar.clientWidth;
+      const availableFileWidth = tabBar.clientWidth - previousWidth - allFilesWidth
+        - (needsNextButton ? nextWidth : 0) - gap * (needsNextButton ? 3 : 2);
+
+      const pages = [];
+      let page = [];
+      let usedWidth = 0;
+      files.forEach((file, index) => {
+        const width = fileWidths[index] || 0;
+        const requiredWidth = page.length === 0 ? width : width + gap;
+        if (page.length > 0 && usedWidth + requiredWidth > availableFileWidth) {
+          pages.push(page);
+          page = [];
+          usedWidth = 0;
+        }
+        page.push(file);
+        usedWidth += page.length === 1 ? width : width + gap;
+      });
+      if (page.length > 0) pages.push(page);
+      if (pages.length === 0) pages.push([]);
+
+      setFileTabPages((current) => (
+        current.length === pages.length && current.every((currentPage, index) =>
+          currentPage.length === pages[index].length
+          && currentPage.every((file, fileIndex) => file === pages[index][fileIndex]))
+          ? current
+          : pages
+      ));
+    };
+
+    calculatePages();
+    const resizeObserver = new ResizeObserver(calculatePages);
+    resizeObserver.observe(tabBar);
+    return () => resizeObserver.disconnect();
+  }, [files]);
+
+  useEffect(() => {
+    setFileTabPage(0);
+  }, [files]);
+
+  useEffect(() => {
+    setFileTabPage((page) => Math.min(page, Math.max(0, fileTabPages.length - 1)));
+  }, [fileTabPages]);
+
+  const visibleFileTabs = fileTabPages[fileTabPage] || [];
+  const hasPreviousFileTabPage = fileTabPage > 0;
+  const hasNextFileTabPage = fileTabPage < fileTabPages.length - 1;
+
   const visibleEntries = activeFile
     ? entries.filter((e) => sourceFileOf(e) === activeFile)
     : entries;
@@ -438,22 +511,21 @@ export default function Editor({ onReselect, onGoToSettings }) {
   const updateDirty = useCallback((id, translation, original) => {
     const value = translation === null ? "" : String(translation);
     const originalValue = original === null || original === undefined ? "" : String(original);
-    setNotice("");
-    if (value === originalValue) {
-      setDirty((prev) => {
-        if (!prev.has(id)) return prev;
+
+    setDirty((prev) => {
+      const existing = prev.get(id);
+      // Ein Import bleibt bis zum erfolgreichen Save ein Review-Eintrag —
+      // auch wenn sein Wert während der Prüfung wieder dem Original gleicht.
+      if (value === originalValue && existing?.origin !== "import") {
+        if (!existing) return prev;
         const next = new Map(prev);
         next.delete(id);
         return next;
-      });
-    } else {
-      setDirty((prev) => {
-        const existing = prev.get(id);
-        const next = new Map(prev);
-        next.set(id, { modId: activeModId, value, origin: existing?.origin || "manual" });
-        return next;
-      });
-    }
+      }
+      const next = new Map(prev);
+      next.set(id, { modId: activeModId, value, origin: existing?.origin || "manual" });
+      return next;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeModId]);
 
@@ -479,7 +551,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
     if (dirtySize === 0 || !activeModId) return;
     setSaving(true);
     setSaveError("");
-    setNotice("");
+
     try {
       await api.saveEntries(
         activeModId,
@@ -490,7 +562,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
         for (const [id] of activeDirtyItems) next.delete(id);
         return next;
       });
-      setNotice(`Saved ${activeDirtyItems.length} entries.`);
+
       setReloadKey((k) => k + 1);
       api
         .getMods()
@@ -554,7 +626,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
     <div className="mx-auto flex h-full w-full max-w-[90rem]">
       {/* Sidebar: the full Library selection, single-select — click a mod to
           open it. The Library selection itself is never touched here. */}
-      <aside className="flex w-[19.0625rem] shrink-0 flex-col gap-3 self-stretch overflow-y-auto border-r border-line bg-surface p-4">
+      <aside className="flex w-[19.0625rem] shrink-0 flex-col gap-3 self-stretch overflow-y-auto border-r border-line py-4 pr-4">
         <Input
           placeholder="Search Mods..."
           value={modSearch}
@@ -596,14 +668,32 @@ export default function Editor({ onReselect, onGoToSettings }) {
       {/* Main content */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* File tabs + Search + Save */}
-        <div className="flex items-center gap-3 p-4">
+        <div className="flex items-center gap-3 py-4 pl-4">
           <Input
             placeholder="Search Entries..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-[12.5rem] shrink-0"
           />
-          <div className="flex flex-1 flex-wrap gap-1 overflow-x-auto">
+          <div ref={fileTabBarRef} className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+            <div ref={fileTabMeasureRef} aria-hidden="true" className="pointer-events-none absolute invisible flex gap-1 whitespace-nowrap">
+              <span className="h-6 w-6 shrink-0" />
+              <button type="button" tabIndex={-1} className="flex h-6 shrink-0 items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold">All Files</button>
+              {files.map((file) => (
+                <button key={file} type="button" tabIndex={-1} className="flex h-6 shrink-0 items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold">{file}</button>
+              ))}
+              <span className="h-6 w-6 shrink-0" />
+            </div>
+            <button
+              type="button"
+              disabled={!hasPreviousFileTabPage}
+              onClick={() => setFileTabPage((page) => Math.max(0, page - 1))}
+              className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-raised hover:bg-line disabled:cursor-default disabled:opacity-40 disabled:hover:bg-raised"
+              aria-label="Show previous files"
+              title="Previous files"
+            >
+              <img src={previousIcon} alt="" className="h-3 w-3" />
+            </button>
             <button
               onClick={() => setActiveFile(null)}
               className={`flex h-6 shrink-0 cursor-pointer items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold transition-colors ${
@@ -614,10 +704,11 @@ export default function Editor({ onReselect, onGoToSettings }) {
             >
               All Files
             </button>
-            {files.map((f) => (
+            {visibleFileTabs.map((f) => (
               <button
                 key={f}
                 onClick={() => setActiveFile(f)}
+                title={f}
                 className={`flex h-6 shrink-0 cursor-pointer items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold transition-colors ${
                   activeFile === f
                     ? "bg-slate text-text"
@@ -627,6 +718,18 @@ export default function Editor({ onReselect, onGoToSettings }) {
                 {f}
               </button>
             ))}
+
+            {hasNextFileTabPage && (
+              <button
+                type="button"
+                onClick={() => setFileTabPage((page) => page + 1)}
+                className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-raised hover:bg-line"
+                aria-label="Show next files"
+                title="Next files"
+              >
+                <img src={nextIcon} alt="" className="h-3 w-3" />
+              </button>
+            )}
           </div>
           <Button
             variant="secondary"
@@ -642,9 +745,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
         {saveError && (
           <p className="px-4 pb-2 text-sm text-danger">{saveError}</p>
         )}
-        {!saveError && notice && (
-          <p className="px-4 pb-2 text-sm text-success">{notice}</p>
-        )}
+
         {orphanedDirtyModIds.length > 0 && (
           <p className="px-4 pb-2 text-sm text-warning">
             You have unsaved changes in {orphanedDirtyModIds.length} mod(s) no
