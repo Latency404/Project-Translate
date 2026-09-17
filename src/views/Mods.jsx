@@ -273,6 +273,7 @@ export default function Mods({ onGoToSetup }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-[12.5rem] shrink-0"
+            clearable
           />
           <div className="flex flex-wrap gap-1">
             {FILTERS.map((f) => (

@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronsUpDown, Save } from "lucide-react";
-import nextIcon from "../assets/file-tabs-next.svg";
-import previousIcon from "../assets/file-tabs-previous.svg";
 import * as api from "../api.js";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
@@ -242,10 +240,9 @@ export default function Editor({ onReselect, onGoToSettings }) {
   const [search, setSearch] = useState("");
   const [activeFile, setActiveFile] = useState(null); // null = "All Files"
   const [sort, setSort] = useState(null);
-  const [fileTabPage, setFileTabPage] = useState(0);
-  const [fileTabPages, setFileTabPages] = useState([[]]);
   const fileTabBarRef = useRef(null);
-  const fileTabMeasureRef = useRef(null);
+  const fileTabDragRef = useRef({ dragging: false, startX: 0, scrollLeft: 0, moved: false });
+  const [fileTabDragging, setFileTabDragging] = useState(false);
 
   const [dirty, setDirty] = useState(() => loadDirty());
   // Entprellte Kopie von `dirty`, nur für den Re-Sort bei aktiver
@@ -438,68 +435,47 @@ export default function Editor({ onReselect, onGoToSettings }) {
     if (activeFile && !files.includes(activeFile)) setActiveFile(null);
   }, [files, activeFile]);
 
-  useLayoutEffect(() => {
-    const tabBar = fileTabBarRef.current;
-    const measure = fileTabMeasureRef.current;
-    if (!tabBar || !measure) return undefined;
+  // Datei-Tabs: alle in einer Reihe, horizontal per Maus-Drag scrollbar
+  // (kein Scrollbalken sichtbar, `scrollbar-none`). Bewusst KEIN
+  // setPointerCapture: das würde den click danach auf den Container statt
+  // auf den darunterliegenden Tab-Button umleiten (Chromium-Verhalten) und
+  // jeden Klick auf einen Tab unmöglich machen. Move/Up daher per
+  // window-Listener, damit ein Drag auch außerhalb der Bar weiterläuft.
+  // `moved` unterscheidet Drag von Klick, damit ein Ziehen keinen Tab aktiviert.
+  const handleFileTabPointerDown = (e) => {
+    const bar = fileTabBarRef.current;
+    if (!bar) return;
+    fileTabDragRef.current = { startX: e.clientX, scrollLeft: bar.scrollLeft, moved: false };
+    setFileTabDragging(true);
 
-    const calculatePages = () => {
-      const items = Array.from(measure.children);
-      const previousWidth = items[0]?.getBoundingClientRect().width || 0;
-      const allFilesWidth = items[1]?.getBoundingClientRect().width || 0;
-      const nextWidth = items.at(-1)?.getBoundingClientRect().width || 0;
-      const fileWidths = items.slice(2, -1).map((item) => item.getBoundingClientRect().width);
-      const gap = Number.parseFloat(getComputedStyle(tabBar).gap) || 0;
-      const fileWidthsTotal = fileWidths.reduce((total, width) => total + width, 0)
-        + Math.max(0, fileWidths.length - 1) * gap;
-      const needsNextButton = previousWidth + allFilesWidth + fileWidthsTotal
-        + (fileWidths.length > 0 ? gap * 2 : gap) > tabBar.clientWidth;
-      const availableFileWidth = tabBar.clientWidth - previousWidth - allFilesWidth
-        - (needsNextButton ? nextWidth : 0) - gap * (needsNextButton ? 3 : 2);
-
-      const pages = [];
-      let page = [];
-      let usedWidth = 0;
-      files.forEach((file, index) => {
-        const width = fileWidths[index] || 0;
-        const requiredWidth = page.length === 0 ? width : width + gap;
-        if (page.length > 0 && usedWidth + requiredWidth > availableFileWidth) {
-          pages.push(page);
-          page = [];
-          usedWidth = 0;
-        }
-        page.push(file);
-        usedWidth += page.length === 1 ? width : width + gap;
-      });
-      if (page.length > 0) pages.push(page);
-      if (pages.length === 0) pages.push([]);
-
-      setFileTabPages((current) => (
-        current.length === pages.length && current.every((currentPage, index) =>
-          currentPage.length === pages[index].length
-          && currentPage.every((file, fileIndex) => file === pages[index][fileIndex]))
-          ? current
-          : pages
-      ));
+    const handleMove = (moveEvent) => {
+      const state = fileTabDragRef.current;
+      const delta = moveEvent.clientX - state.startX;
+      if (Math.abs(delta) > 3) state.moved = true;
+      bar.scrollLeft = state.scrollLeft - delta;
     };
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      setFileTabDragging(false);
+      // Falls kein click folgt (z. B. Drag endet über einem anderen Tab als
+      // dem Start-Tab), bliebe `moved` sonst dauerhaft hängen und würde jeden
+      // künftigen Klick blockieren.
+      window.setTimeout(() => {
+        fileTabDragRef.current.moved = false;
+      }, 0);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+  };
 
-    calculatePages();
-    const resizeObserver = new ResizeObserver(calculatePages);
-    resizeObserver.observe(tabBar);
-    return () => resizeObserver.disconnect();
-  }, [files]);
-
-  useEffect(() => {
-    setFileTabPage(0);
-  }, [files]);
-
-  useEffect(() => {
-    setFileTabPage((page) => Math.min(page, Math.max(0, fileTabPages.length - 1)));
-  }, [fileTabPages]);
-
-  const visibleFileTabs = fileTabPages[fileTabPage] || [];
-  const hasPreviousFileTabPage = fileTabPage > 0;
-  const hasNextFileTabPage = fileTabPage < fileTabPages.length - 1;
+  const handleFileTabClickCapture = (e) => {
+    if (fileTabDragRef.current.moved) {
+      e.preventDefault();
+      e.stopPropagation();
+      fileTabDragRef.current.moved = false;
+    }
+  };
 
   const visibleEntries = activeFile
     ? entries.filter((e) => sourceFileOf(e) === activeFile)
@@ -626,11 +602,12 @@ export default function Editor({ onReselect, onGoToSettings }) {
     <div className="mx-auto flex h-full w-full max-w-[90rem]">
       {/* Sidebar: the full Library selection, single-select — click a mod to
           open it. The Library selection itself is never touched here. */}
-      <aside className="flex w-[19.0625rem] shrink-0 flex-col gap-3 self-stretch overflow-y-auto border-r border-line py-4 pr-4">
+      <aside className="flex w-[19.0625rem] shrink-0 flex-col gap-3 self-stretch overflow-y-auto border-r border-line py-4 pl-2 pr-4 -ml-2">
         <Input
           placeholder="Search Mods..."
           value={modSearch}
           onChange={(e) => setModSearch(e.target.value)}
+          clearable
         />
         <div className="flex flex-wrap gap-1">
           {FILTERS.map((f) => (
@@ -674,26 +651,14 @@ export default function Editor({ onReselect, onGoToSettings }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-[12.5rem] shrink-0"
+            clearable
           />
-          <div ref={fileTabBarRef} className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-            <div ref={fileTabMeasureRef} aria-hidden="true" className="pointer-events-none absolute invisible flex gap-1 whitespace-nowrap">
-              <span className="h-6 w-6 shrink-0" />
-              <button type="button" tabIndex={-1} className="flex h-6 shrink-0 items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold">All Files</button>
-              {files.map((file) => (
-                <button key={file} type="button" tabIndex={-1} className="flex h-6 shrink-0 items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold">{file}</button>
-              ))}
-              <span className="h-6 w-6 shrink-0" />
-            </div>
-            <button
-              type="button"
-              disabled={!hasPreviousFileTabPage}
-              onClick={() => setFileTabPage((page) => Math.max(0, page - 1))}
-              className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-raised hover:bg-line disabled:cursor-default disabled:opacity-40 disabled:hover:bg-raised"
-              aria-label="Show previous files"
-              title="Previous files"
-            >
-              <img src={previousIcon} alt="" className="h-3 w-3" />
-            </button>
+          <div
+            ref={fileTabBarRef}
+            onPointerDown={handleFileTabPointerDown}
+            onClickCapture={handleFileTabClickCapture}
+            className={`scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto ${fileTabDragging ? "cursor-grabbing" : "cursor-grab"}`}
+          >
             <button
               onClick={() => setActiveFile(null)}
               className={`flex h-6 shrink-0 cursor-pointer items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold transition-colors ${
@@ -704,7 +669,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
             >
               All Files
             </button>
-            {visibleFileTabs.map((f) => (
+            {files.map((f) => (
               <button
                 key={f}
                 onClick={() => setActiveFile(f)}
@@ -718,18 +683,6 @@ export default function Editor({ onReselect, onGoToSettings }) {
                 {f}
               </button>
             ))}
-
-            {hasNextFileTabPage && (
-              <button
-                type="button"
-                onClick={() => setFileTabPage((page) => page + 1)}
-                className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-raised hover:bg-line"
-                aria-label="Show next files"
-                title="Next files"
-              >
-                <img src={nextIcon} alt="" className="h-3 w-3" />
-              </button>
-            )}
           </div>
           <Button
             variant="secondary"
