@@ -60,10 +60,10 @@ export function saveEntries(modId, entries) {
   );
 }
 
-export function exportLlm(modIds, targetLang) {
+export function exportLlm(modIds) {
   return request("/api/export/llm", {
     method: "POST",
-    body: JSON.stringify({ modIds, targetLang }),
+    body: JSON.stringify({ modIds }),
   });
 }
 

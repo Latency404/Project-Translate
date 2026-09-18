@@ -4,8 +4,11 @@ import * as api from "../api.js";
 import Button from "../components/Button.jsx";
 import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
+import Modal from "../components/Modal.jsx";
 import Tag from "../components/Tag.jsx";
 import ModCard from "../components/ModCard.jsx";
+import DiscardIcon from "../components/DiscardIcon.jsx";
+import { useToast } from "../components/Toast.jsx";
 import { loadDirty, saveDirty, reviewModIds, statusOf, FILTER_TONE_CLASS } from "../reviewStore.js";
 
 // Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
@@ -180,7 +183,7 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
               </span>
               <span className="flex w-1/3 shrink-0 items-center border-l border-muted/15 px-4 py-2">
                 <input
-                  value={currentTranslation}
+                  value={currentTranslation ?? ""}
                   onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation)}
                   placeholder="Translation..."
                   className={`h-10 w-full min-w-[20ch] rounded-lg border-2 bg-raised px-3 text-ui font-semibold text-text placeholder:text-muted placeholder:font-semibold focus-visible:outline-none focus-visible:border-accent ${borderClass}`}
@@ -217,8 +220,8 @@ export default function Editor({ onReselect, onGoToSettings }) {
 
   // --- State ---
   const [allMods, setAllMods] = useState([]);
-  const [error, setError] = useState("");
-  const [saveError, setSaveError] = useState("");
+  const toast = useToast();
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const [saving, setSaving] = useState(false);
 
@@ -234,6 +237,14 @@ export default function Editor({ onReselect, onGoToSettings }) {
   // empty", which would otherwise wipe out perfectly valid dirty entries for
   // whatever mod happens to be the initially restored active mod.
   const [entriesTotal, setEntriesTotal] = useState(Infinity);
+  // Which mod `entries` actually belongs to — set together with `entries`
+  // itself once a fetch completes, deliberately NOT assumed to equal
+  // `activeModId` right after switching mods. On a mod switch, `activeModId`
+  // updates immediately but `entries` still holds the PREVIOUS mod's
+  // (fully-loaded) set for one more render; without this, the prune effect
+  // below would read that stale set as if it were the new mod's and delete
+  // the new mod's still-valid dirty entries as "stale".
+  const [entriesModId, setEntriesModId] = useState(null);
   const [renderCount, setRenderCount] = useState(0);
   const [entriesLoading, setEntriesLoading] = useState(false);
 
@@ -271,16 +282,22 @@ export default function Editor({ onReselect, onGoToSettings }) {
         if (err.message && err.message.toLowerCase().includes('scan')) {
           onGoToSettings();
         } else {
-          setError(err.message);
+          setLoadFailed(true);
+          toast("error", err.message);
           setAllMods([]);
         }
       });
-  }, [onGoToSettings]);
+  }, [onGoToSettings, toast]);
 
   // --- Persist dirty edits so they survive a view switch ---
   useEffect(() => {
-    saveDirty(dirty);
-  }, [dirty]);
+    if (!saveDirty(dirty)) {
+      toast(
+        "error",
+        "Could not save unsaved edits for the view switch — too large for the browser's session storage.",
+      );
+    }
+  }, [dirty, toast]);
 
   const reviewIds = useMemo(() => reviewModIds(dirty), [dirty]);
 
@@ -324,6 +341,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
     // mod's dirty entries against the OLD mod's entry ids.
     setEntries([]);
     setEntriesTotal(Infinity);
+    setEntriesModId(null);
     setRenderCount(0);
     if (!activeModId) return;
     let cancelled = false;
@@ -345,11 +363,11 @@ export default function Editor({ onReselect, onGoToSettings }) {
       if (cancelled) return;
       setEntries(all);
       setEntriesTotal(total);
+      setEntriesModId(activeModId);
       setRenderCount(Math.min(all.length, PAGE_SIZE));
-      setSaveError("");
     })()
       .catch((err) => {
-        if (!cancelled) setError(err.message);
+        if (!cancelled) toast("error", err.message);
       })
       .finally(() => {
         if (!cancelled) setEntriesLoading(false);
@@ -357,14 +375,19 @@ export default function Editor({ onReselect, onGoToSettings }) {
     return () => {
       cancelled = true;
     };
-  }, [activeModId, search, reloadKey]);
+  }, [activeModId, search, reloadKey, toast]);
 
   // --- Prune stale dirty ids for the ACTIVE mod, once its full (unfiltered)
   // stock is known — a rescan can remove/rename an entry, leaving a stale
   // entryId that would fail to save. Only prunes what's currently loaded &
-  // fully known (search === ""), never touches dirty entries of other mods. ---
+  // fully known (search === ""), never touches dirty entries of other mods.
+  // Guarded by entriesModId === activeModId (not just `entries` being
+  // "fully known") — right after switching mods, `entries` can for one
+  // render still be the PREVIOUS mod's fully-loaded set while `activeModId`
+  // already points at the new one; without this guard that stale pairing
+  // would wrongly prune the new mod's still-valid dirty entries. ---
   useEffect(() => {
-    if (search !== "" || !activeModId) return;
+    if (search !== "" || !activeModId || entriesModId !== activeModId) return;
     if (entries.length < entriesTotal) return;
     setDirty((prev) => {
       const validIds = new Set(entries.map((e) => e.id));
@@ -377,13 +400,16 @@ export default function Editor({ onReselect, onGoToSettings }) {
       }
       return next || prev;
     });
-  }, [entries, entriesTotal, search, activeModId]);
+  }, [entries, entriesTotal, entriesModId, search, activeModId]);
 
   // --- Backward-compat: fill in modId for dirty entries restored from an
   // older sessionStorage shape (modId: null), once identifiable from the
-  // currently loaded mod. Never deletes anything — only annotates. ---
+  // currently loaded mod. Never deletes anything — only annotates. Same
+  // entriesModId guard as the prune effect above — otherwise a stale id
+  // match against the PREVIOUS mod's still-loaded entries could tag an
+  // entry with the wrong mod right after switching. ---
   useEffect(() => {
-    if (entries.length === 0 || !activeModId) return;
+    if (entries.length === 0 || !activeModId || entriesModId !== activeModId) return;
     setDirty((prev) => {
       let next = null;
       for (const [id, val] of prev) {
@@ -395,7 +421,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
       }
       return next || prev;
     });
-  }, [entries, activeModId]);
+  }, [entries, entriesModId, activeModId]);
 
   // --- Infinite scroll: widen the render window (no network call — the full
   // set is already loaded). ---
@@ -521,12 +547,39 @@ export default function Editor({ onReselect, onGoToSettings }) {
         .filter((modId) => modId != null && !universeIds.includes(modId)),
     ),
   );
+  const orphanedCount = orphanedDirtyModIds.length;
+  useEffect(() => {
+    if (orphanedCount === 0) return;
+    toast(
+      "warning",
+      `You have unsaved changes in ${orphanedCount} mod(s) no longer selected on the Mods page. Reselect ${orphanedCount === 1 ? "it" : "them"} there to save or discard those changes.`,
+    );
+  }, [orphanedCount, toast]);
+
+  // --- Discard the active mod's unsaved edits (nothing written to disk,
+  // this only clears the dirty entries — same "active mod only" scope as
+  // Save). Irreversible from the UI's point of view (the typed values are
+  // gone), so it asks for confirmation first instead of acting immediately. ---
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+
+  const handleDiscardClick = () => {
+    if (dirtySize === 0 || !activeModId) return;
+    setDiscardConfirmOpen(true);
+  };
+
+  const handleDiscardConfirm = () => {
+    setDirty((prev) => {
+      const next = new Map(prev);
+      for (const [id] of activeDirtyItems) next.delete(id);
+      return next;
+    });
+    setDiscardConfirmOpen(false);
+  };
 
   // --- Save the active mod's dirty entries ---
   const handleSave = async () => {
     if (dirtySize === 0 || !activeModId) return;
     setSaving(true);
-    setSaveError("");
 
     try {
       await api.saveEntries(
@@ -545,7 +598,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
         .then((data) => setAllMods(data.mods || []))
         .catch(() => {});
     } catch (err) {
-      setSaveError(`${activeMod ? activeMod.name : activeModId}: ${err.message}`);
+      toast("error", `${activeMod ? activeMod.name : activeModId}: ${err.message}`);
     } finally {
       setSaving(false);
     }
@@ -564,12 +617,11 @@ export default function Editor({ onReselect, onGoToSettings }) {
   const hasMore = renderCount < visibleEntries.length;
 
   // === Error state (e.g. no scan) ===
-  if (error && allMods.length === 0) {
+  if (loadFailed && allMods.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
         <Card title="Editor">
-          <p className="text-sm text-danger">{error}</p>
-          <div className="mt-4">
+          <div>
             <Button variant="secondary" onClick={onReselect}>
               Go to Mods
             </Button>
@@ -686,6 +738,15 @@ export default function Editor({ onReselect, onGoToSettings }) {
           </div>
           <Button
             variant="secondary"
+            icon={DiscardIcon}
+            onClick={handleDiscardClick}
+            disabled={dirtySize === 0 || saving || !activeModId}
+            title="Discard unsaved changes in this mod"
+          >
+            Discard
+          </Button>
+          <Button
+            variant="secondary"
             icon={Save}
             onClick={handleSave}
             disabled={dirtySize === 0 || saving || !activeModId}
@@ -693,20 +754,6 @@ export default function Editor({ onReselect, onGoToSettings }) {
             {saving ? "Saving..." : dirtySize === 0 ? "Save" : `Save (${dirtySize})`}
           </Button>
         </div>
-
-        {/* Error / success display */}
-        {saveError && (
-          <p className="px-4 pb-2 text-sm text-danger">{saveError}</p>
-        )}
-
-        {orphanedDirtyModIds.length > 0 && (
-          <p className="px-4 pb-2 text-sm text-warning">
-            You have unsaved changes in {orphanedDirtyModIds.length} mod(s) no
-            longer selected on the Mods page — reselect{" "}
-            {orphanedDirtyModIds.length === 1 ? "it" : "them"} there to save or
-            discard those changes.
-          </p>
-        )}
 
         {/* Entry area */}
         <div className="flex-1 overflow-auto">
@@ -774,6 +821,28 @@ export default function Editor({ onReselect, onGoToSettings }) {
         </div>
       </main>
     </div>
+
+    <Modal
+      open={discardConfirmOpen}
+      onClose={() => setDiscardConfirmOpen(false)}
+      title="Discard unsaved changes?"
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-text">
+          {dirtySize} unsaved change{dirtySize === 1 ? "" : "s"} in{" "}
+          {activeMod ? displayModName(activeMod) : "this mod"} will be lost.
+          This cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setDiscardConfirmOpen(false)}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={handleDiscardConfirm}>
+            Discard
+          </Button>
+        </div>
+      </div>
+    </Modal>
     </div>
   );
 }

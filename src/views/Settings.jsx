@@ -6,7 +6,23 @@ import Input from "../components/Input.jsx";
 import Modal from "../components/Modal.jsx";
 import ProgressBar from "../components/ProgressBar.jsx";
 import Tag from "../components/Tag.jsx";
+import { useToast } from "../components/Toast.jsx";
 import * as api from "../api.js";
+
+// saveErr ist eine oder mehrere Satz-für-Satz-Meldungen von POST /api/config
+// (server/config.js validate()), z. B. "Game folder does not exist or is
+// not a directory: ... . Source and target language must not be the same."
+// Wir teilen sie am Feld auf, damit sie direkt bei der betroffenen Eingabe
+// steht; alles Übrige (`otherErrs`) geht als Toast raus.
+function splitSaveErr(saveErr) {
+  const parts = saveErr ? saveErr.split(/(?<=\.)\s+/).filter(Boolean) : [];
+  const gameRootErrs = parts.filter((p) => p.startsWith("Game folder"));
+  const workshopErrs = parts.filter((p) => p.startsWith("Workshop folder"));
+  const langErrs = parts.filter((p) => p.toLowerCase().includes("language"));
+  const placed = new Set([...gameRootErrs, ...workshopErrs, ...langErrs]);
+  const otherErrs = parts.filter((p) => !placed.has(p));
+  return { gameRootErrs, workshopErrs, langErrs, otherErrs };
+}
 
 function StatusCard({ title, path, found }) {
   return (
@@ -29,7 +45,7 @@ function StatusCard({ title, path, found }) {
 export default function Settings({ onOpenMods }) {
   const [config, setConfig] = useState(null);
   const [status, setStatus] = useState(null);
-  const [error, setError] = useState("");
+  const toast = useToast();
   const [gameRoot, setGameRoot] = useState("");
   const [workshopDir, setWorkshopDir] = useState("");
   const [sourceLang, setSourceLang] = useState("EN");
@@ -38,12 +54,9 @@ export default function Settings({ onOpenMods }) {
   const [scanDone, setScanDone] = useState(false);
   const [scanProgress, setScanProgress] = useState({ done: 0, total: 0, current: "" });
   const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState("");
   const [saveErr, setSaveErr] = useState("");
   const [resetModalOpen, setResetModalOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [resetMsg, setResetMsg] = useState("");
-  const [resetErr, setResetErr] = useState("");
 
   // Initial load
   useEffect(() => {
@@ -56,8 +69,8 @@ export default function Settings({ onOpenMods }) {
         setTargetLang(cfg.targetLang);
         setStatus(st);
       })
-      .catch((err) => setError(err.message));
-  }, []);
+      .catch((err) => toast("error", err.message));
+  }, [toast]);
 
   // Polling during scan: query status every 1000 ms until scanRunning is false.
   useEffect(() => {
@@ -71,27 +84,18 @@ export default function Settings({ onOpenMods }) {
           clearInterval(timer);
           setScanning(false);
           setScanDone(true);
+          toast("success", `Scan complete — ${st.modCount} mods found.`);
         }
       } catch (err) {
-        setError(err.message);
+        toast("error", err.message);
         clearInterval(timer);
         setScanning(false);
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [scanning]);
+  }, [scanning, toast]);
 
-  // saveErr ist eine oder mehrere Satz-für-Satz-Meldungen von POST /api/config
-  // (server/config.js validate()), z. B. "Game folder does not exist or is
-  // not a directory: ... . Source and target language must not be the same."
-  // Wir teilen sie am Feld auf, damit sie direkt bei der betroffenen Eingabe
-  // steht statt nur allgemein unter dem Save-Button.
-  const saveErrParts = saveErr ? saveErr.split(/(?<=\.)\s+/).filter(Boolean) : [];
-  const gameRootErrs = saveErrParts.filter((p) => p.startsWith("Game folder"));
-  const workshopErrs = saveErrParts.filter((p) => p.startsWith("Workshop folder"));
-  const langErrs = saveErrParts.filter((p) => p.toLowerCase().includes("language"));
-  const placedErrs = new Set([...gameRootErrs, ...workshopErrs, ...langErrs]);
-  const otherErrs = saveErrParts.filter((p) => !placedErrs.has(p));
+  const { gameRootErrs, workshopErrs, langErrs } = splitSaveErr(saveErr);
 
   // Unsaved changes: any field differs from the last loaded/saved config.
   const configDirty =
@@ -103,7 +107,6 @@ export default function Settings({ onOpenMods }) {
 
   const handleSave = async () => {
     setSaveErr("");
-    setSaveMsg("");
     setSaving(true);
     const prevConfig = config;
     try {
@@ -128,35 +131,35 @@ export default function Settings({ onOpenMods }) {
           saved.workshopDir !== prevConfig.workshopDir ||
           saved.targetLang !== prevConfig.targetLang ||
           (saved.sourceLang || "EN") !== (prevConfig.sourceLang || "EN"));
-      setSaveMsg(
+      toast(
+        "success",
         rescanNeeded
           ? "Configuration saved. Run a new scan to pick up the change — existing entries still reflect the previous settings."
           : "Configuration saved.",
       );
     } catch (err) {
       setSaveErr(err.message);
+      const { otherErrs } = splitSaveErr(err.message);
+      if (otherErrs.length > 0) toast("error", otherErrs.join(" "));
     } finally {
       setSaving(false);
     }
   };
 
   const handleScan = async () => {
-    setError("");
     setScanDone(false);
     setScanning(true);
     setScanProgress({ done: 0, total: 0, current: "" });
     try {
       await api.startScan();
     } catch (err) {
-      setError(err.message);
+      toast("error", err.message);
       setScanning(false);
     }
   };
 
   const handleResetTranslations = async () => {
     setResetting(true);
-    setResetErr("");
-    setResetMsg("");
     try {
       const result = await api.resetTranslations();
       // Reset betrifft nur die gespeicherten (Disk-)Übersetzungen — noch
@@ -168,13 +171,15 @@ export default function Settings({ onOpenMods }) {
         sessionStorage.removeItem("pt_editor_dirty");
       } catch { /* ignore */ }
       setResetModalOpen(false);
-      setResetMsg(
+      toast(
+        "success",
         result.resetCount > 0
           ? `Reset ${result.resetCount} translation(s) across ${result.modCount} mod(s), including unsaved edits. Translations that shipped with a mod were kept. A backup of every overwritten file was kept.`
           : "Nothing to reset — no translations were made through this app.",
       );
     } catch (err) {
-      setResetErr(err.message);
+      setResetModalOpen(false);
+      toast("error", err.message);
     } finally {
       setResetting(false);
     }
@@ -275,8 +280,6 @@ export default function Settings({ onOpenMods }) {
               {saving ? "Saving..." : "Save"}
             </Button>
           </div>
-          {otherErrs.length > 0 && <p className="text-sm text-danger">{otherErrs.join(" ")}</p>}
-          {!saveErr && saveMsg && <p className="text-sm text-success">{saveMsg}</p>}
         </div>
       </Card>
 
@@ -310,17 +313,6 @@ export default function Settings({ onOpenMods }) {
             </div>
           )}
 
-          {/* Result */}
-          {scanComplete && !error && (
-            <p className="text-sm text-success font-medium">
-              Scan complete — {status.modCount} mods found.
-            </p>
-          )}
-
-          {/* Error */}
-          {error && (
-            <p className="text-sm text-danger">{error}</p>
-          )}
         </div>
       </Card>
 
@@ -338,16 +330,10 @@ export default function Settings({ onOpenMods }) {
           <Button
             variant="danger"
             icon={RotateCcw}
-            onClick={() => {
-              setResetErr("");
-              setResetMsg("");
-              setResetModalOpen(true);
-            }}
+            onClick={() => setResetModalOpen(true)}
           >
             Reset Translations
           </Button>
-          {resetErr && <p className="text-sm text-danger">{resetErr}</p>}
-          {!resetErr && resetMsg && <p className="text-sm text-success">{resetMsg}</p>}
         </div>
       </Card>
 

@@ -51,7 +51,9 @@ function fail(res, status, message) {
   return res.status(status).json({ error: message })
 }
 
-app.use(express.json())
+// Default-Limit von express.json() ist 100kb — ein LLM-Import-Bundle für viele
+// Mods/Einträge überschreitet das leicht ("request entity too large").
+app.use(express.json({ limit: '200mb' }))
 
 // --- Scan-State (in-memory-Cache) ---
 let cache = null // { mods, entriesByModId }
@@ -282,11 +284,10 @@ app.post('/api/export/llm', (req, res) => {
   const body = req.body || {}
   const modIds = Array.isArray(body.modIds) ? body.modIds : []
   const cfg = config.load()
-  const lang = targetLangOf(body, cfg.targetLang)
   const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
   if (!mods.length) return fail(res, 400, 'No valid mod selection.')
   try {
-    const result = llm.exportLlmBundle(mods, lang, cfg.sourceLang)
+    const result = llm.exportLlmBundle(mods, cfg.sourceLang)
     res.json(result)
   } catch (err) {
     fail(res, 500, err.message || 'LLM-Export fehlgeschlagen')
@@ -304,11 +305,11 @@ function importDocsOf(body) {
 // gibt bewusst keine /apply-Route mehr: der Import schreibt nichts auf die
 // Platte, die Frontend übernimmt `matches` als dirty Einträge (s. llm-io.js).
 app.post('/api/import/llm/preview', (req, res) => {
-  const { docs, error } = importDocsOf(req.body)
+  const { docs, error, detectedTargetLang } = importDocsOf(req.body)
   if (error) return fail(res, 400, error)
   const mods = cache ? cache.mods : []
   const cfg = config.load()
-  res.json(llm.importPreview(docs, mods, cfg.targetLang, cfg.sourceLang))
+  res.json({ ...llm.importPreview(docs, mods, cfg.targetLang, cfg.sourceLang), detectedTargetLang })
 })
 
 // --- Mod-Export ---

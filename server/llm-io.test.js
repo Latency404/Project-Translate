@@ -94,13 +94,13 @@ after(() => {
 test('exportLlmBundle: EINE Datei mit allen ausgewählten Mods, korrektes Format', () => {
   const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
   const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
-  const { text, filename, targetLang, modCount, entryCount } = exportLlmBundle([coffee, belt], 'DE')
-  assert.equal(targetLang, 'DE')
+  const { text, filename, modCount, entryCount } = exportLlmBundle([coffee, belt])
   assert.equal(modCount, 2)
-  assert.equal(filename, 'llm-translation-de.json')
+  assert.equal(filename, 'llm-translation.json')
   assert.ok(entryCount > 0)
   const doc = JSON.parse(text)
-  assert.equal(doc.targetLang, 'DE')
+  assert.equal(doc.targetLang, '') // neutral, keine Zielsprache festgelegt
+  assert.equal(typeof doc.note, 'string')
   assert.ok(Array.isArray(doc.mods) && doc.mods.length === 2)
   const coffeeDoc = doc.mods.find((d) => d.modId === coffee.id)
   assert.ok(coffeeDoc)
@@ -115,7 +115,7 @@ test('exportLlmBundle: EINE Datei mit allen ausgewählten Mods, korrektes Format
 
 test('Roundtrip: exportiertes Bundle → normalizeImportInput → Preview zählt alles als matched', () => {
   const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
-  const { text, entryCount } = exportLlmBundle([coffee], 'DE')
+  const { text, entryCount } = exportLlmBundle([coffee])
   const { docs, error } = normalizeImportInput(text)
   assert.equal(error, null)
   assert.equal(docs.length, 1)
@@ -252,7 +252,7 @@ test('scan: root-Layout (JSON) → Einträge mit Pre-Fill', () => {
 
 test('exportLlmBundle: TXT-Mod → Datei-Key common/<Datei>, EN-Werte', () => {
   const field = mods.find((m) => m.id === '9999000001/Field Notes')
-  const { text } = exportLlmBundle([field], 'DE')
+  const { text } = exportLlmBundle([field])
   const doc = JSON.parse(text)
   const fieldDoc = doc.mods.find((d) => d.modId === field.id)
   const keys = Object.keys(fieldDoc.files)
@@ -314,7 +314,7 @@ test('D3: sourceLang="DE" — Export liest Originale aus dem DE-Baum, Roundtrip 
   const radio = r.mods.find((m) => m.id === '9999000002/Radio Mod')
   assert.ok(radio, 'Radio Mod nicht gefunden')
 
-  const { text, entryCount } = exportLlmBundle([radio], 'EN', 'DE')
+  const { text, entryCount } = exportLlmBundle([radio], 'DE')
   assert.equal(entryCount, 1)
   const doc = JSON.parse(text)
   const radioDoc = doc.mods.find((d) => d.modId === radio.id)

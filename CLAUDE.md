@@ -133,7 +133,6 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   im Abschlussbericht erwähnen, nicht einbauen.
 - Tests nie so anpassen, dass sie durchlaufen — stattdessen den Code reparieren.
 - Vor dem Abschluss `npm test` und `npm run build` ausführen und das Ergebnis berichten.
-- Der Dev-Server wird nie im Hintergrund stehen gelassen; wer ihn startet, beendet ihn.
 - `server/scanner.test.js` läuft gegen die echte Steam-Installation und überspringt
   sich auf Maschinen ohne Project Zomboid. Das ist Absicht.
 - Smoke-Tests, die direkt gegen `server/fixtures/` schreiben, verändern die Fixtures:

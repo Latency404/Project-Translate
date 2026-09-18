@@ -6,6 +6,7 @@ import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
 import Modal from "../components/Modal.jsx";
 import ModCard from "../components/ModCard.jsx";
+import { useToast } from "../components/Toast.jsx";
 import { loadDirty, saveDirty, reviewModIds, statusOf, FILTER_TONE_CLASS } from "../reviewStore.js";
 
 // Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
@@ -16,6 +17,7 @@ function displayModName(mod) {
 
 const FILTERS = [
   { key: "all", label: "All Mods" },
+  { key: "selected", label: "Selected" },
   { key: "open", label: "Open" },
   { key: "translated", label: "Translated" },
   { key: "review", label: "Needs Review" },
@@ -23,7 +25,8 @@ const FILTERS = [
 
 export default function Mods({ onGoToSetup }) {
   const [mods, setMods] = useState([]);
-  const [error, setError] = useState("");
+  const toast = useToast();
+  const [loadFailed, setLoadFailed] = useState(false);
   const [targetLang, setTargetLang] = useState("DE");
 
   const [search, setSearch] = useState("");
@@ -86,10 +89,11 @@ export default function Mods({ onGoToSetup }) {
         if (err.message && err.message.toLowerCase().includes('scan')) {
           onGoToSetup();
         } else {
-          setError(err.message);
+          setLoadFailed(true);
+          toast("error", err.message);
         }
       });
-  }, [onGoToSetup]);
+  }, [onGoToSetup, toast]);
 
   useEffect(() => {
     api.getConfig()
@@ -104,10 +108,12 @@ export default function Mods({ onGoToSetup }) {
       if (!m.name.toLowerCase().includes(q) && !m.id.toLowerCase().includes(q)) return false;
     }
     if (statusFilter === "all") return true;
+    if (statusFilter === "selected") return selected.has(m.id);
     return statusOf(m, reviewIds) === statusFilter;
   }).sort((a, b) => Number(b.isBaseGame) - Number(a.isBaseGame));
   const filterCounts = {
     all: mods.length,
+    selected: selected.size,
     open: mods.filter((m) => statusOf(m, reviewIds) === "open").length,
     translated: mods.filter((m) => statusOf(m, reviewIds) === "translated").length,
     review: mods.filter((m) => statusOf(m, reviewIds) === "review").length,
@@ -150,15 +156,12 @@ export default function Mods({ onGoToSetup }) {
   // --- LLM export: die Selektion in EINE Datei (Browser-Save-Dialog) ---
   const [exportLoading, setExportLoading] = useState(false);
 
-  const [actionError, setActionError] = useState("");
-
   const handleLlmExport = async () => {
     if (selected.size === 0) return;
     setExportLoading(true);
-    setActionError("");
 
     try {
-      const result = await api.exportLlm(Array.from(selected), targetLang);
+      const result = await api.exportLlm(Array.from(selected));
       const blob = new Blob([result.text], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -169,7 +172,7 @@ export default function Mods({ onGoToSetup }) {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      setActionError(err.message);
+      toast("error", err.message);
     } finally {
       setExportLoading(false);
     }
@@ -192,14 +195,16 @@ export default function Mods({ onGoToSetup }) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     setImportLoading(true);
-    setActionError("");
     try {
       const text = await file.text();
       const result = await api.importPreview(text);
       setImportPreview(result);
       setImportModalOpen(true);
+      if (result.detectedTargetLang && result.detectedTargetLang !== targetLang) {
+        toast("info", `Detected imported language: ${result.detectedTargetLang} (configured: ${targetLang})`);
+      }
     } catch (err) {
-      setActionError(err.message);
+      toast("error", err.message);
     } finally {
       setImportLoading(false);
       e.target.value = "";
@@ -213,7 +218,13 @@ export default function Mods({ onGoToSetup }) {
       next.set(entryId, { modId, value: translation, origin: "import" });
     }
     setDirty(next);
-    saveDirty(next);
+    const persisted = saveDirty(next);
+    if (!persisted) {
+      toast(
+        "error",
+        "Could not save the import for review — it's too large for the browser's session storage. Try importing fewer mods at once.",
+      );
+    }
 
     setImportModalOpen(false);
     setImportPreview(null);
@@ -221,14 +232,16 @@ export default function Mods({ onGoToSetup }) {
 
   const totalMatched = importPreview ? importPreview.matched : 0;
   const totalUnmatched = importPreview ? importPreview.unmatched : 0;
+  const matchedModCount = importPreview
+    ? Object.values(importPreview.perMod).filter((pm) => pm.matched > 0).length
+    : 0;
 
   // === Error state (real errors only — "no scan yet" redirects to Settings instead) ===
-  if (error) {
+  if (loadFailed) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
         <Card title="Mods">
-          <p className="text-sm text-danger">{error}</p>
-          <div className="mt-4">
+          <div>
             <Button variant="secondary" onClick={onGoToSetup}>
               Go to Settings
             </Button>
@@ -331,8 +344,6 @@ export default function Mods({ onGoToSetup }) {
         </div>
       </div>
 
-      {actionError && <p className="mb-4 text-sm text-danger">{actionError}</p>}
-
       {/* Grid */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-3">
         {filtered.map((mod) => (
@@ -349,14 +360,6 @@ export default function Mods({ onGoToSetup }) {
         ))}
       </div>
 
-      {filtered.length > 0 && (
-        <footer className="mt-4">
-          <p className="text-sm text-muted">
-            {selected.size} mod{selected.size === 1 ? "" : "s"} selected
-          </p>
-        </footer>
-      )}
-
       {/* Import confirmation modal */}
       <Modal
         open={importModalOpen}
@@ -369,25 +372,12 @@ export default function Mods({ onGoToSetup }) {
               No matching entries found in the chosen file.
             </p>
           ) : (
-            <>
-              <div className="space-y-1">
-                {importPreview && Object.values(importPreview.perMod).map((pm) => (
-                  <div key={pm.mod} className="flex items-center gap-2 rounded px-2 py-1">
-                    <span className="flex-1 text-sm text-text">{pm.mod}</span>
-                    <span className="font-mono text-sm text-success">{pm.matched}</span>
-                    {pm.unmatched > 0 && (
-                      <span className="font-mono text-sm text-warning">{pm.unmatched}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <p className="text-sm text-text">
-                {totalMatched} entries will be marked "Needs Review" — nothing is
-                written to disk yet. Open the affected mods in the Editor to
-                check and save them.
-                {totalUnmatched > 0 && ` (${totalUnmatched} unmatched will be discarded.)`}
-              </p>
-            </>
+            <p className="text-sm text-text">
+              {totalMatched} entries across {matchedModCount} mods will be marked
+              "Needs Review" — nothing is written to disk yet. Open the affected
+              mods in the Editor to check and save them.
+              {totalUnmatched > 0 && ` (${totalUnmatched} unmatched will be discarded.)`}
+            </p>
           )}
 
           <div className="flex justify-end gap-2">

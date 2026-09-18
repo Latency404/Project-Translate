@@ -200,14 +200,14 @@ test('PUT /api/mods/:modId/entries — speichern + Backup + Ziel-Datei', async (
 test('POST /api/export/llm + POST /api/import/llm/preview → Roundtrip über die Routen', async () => {
   // Export: alle ausgewählten Mods in EINE Datei (JSON-String), keine Disk-Datei.
   const exp = await api('POST', '/export/llm', {
-    modIds: ['2688538916/Coffee Machines Fix'],
-    targetLang: 'DE'
+    modIds: ['2688538916/Coffee Machines Fix']
   })
   assert.equal(exp.status, 200)
   assert.ok(typeof exp.json.text === 'string' && exp.json.text.length > 0)
   assert.equal(exp.json.modCount, 1)
-  assert.equal(exp.json.filename, 'llm-translation-de.json')
+  assert.equal(exp.json.filename, 'llm-translation.json')
   assert.ok(exp.json.entryCount > 0)
+  assert.equal(JSON.parse(exp.json.text).targetLang, '') // neutral, keine Zielsprache festgelegt
 
   // Import-Vorschau: dieselben Inhalte als Text → alles matched, nichts unmatched.
   const pv = await api('POST', '/import/llm/preview', { text: exp.json.text })

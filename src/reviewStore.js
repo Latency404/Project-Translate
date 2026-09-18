@@ -31,6 +31,10 @@ export function loadDirty() {
   return new Map();
 }
 
+// Gibt zurück, ob das Schreiben geklappt hat — ein sessionStorage-Quota-Fehler
+// (z. B. bei einem sehr großen LLM-Import) würde sonst lautlos verschluckt und
+// die Einträge wären beim nächsten View-Wechsel (Editor liest sessionStorage
+// frisch ein) spurlos weg, obwohl die Mods-Seite den React-State noch zeigt.
 export function saveDirty(dirty) {
   try {
     if (dirty.size === 0) {
@@ -38,7 +42,10 @@ export function saveDirty(dirty) {
     } else {
       sessionStorage.setItem(DIRTY_KEY, JSON.stringify(Array.from(dirty.entries())));
     }
-  } catch { /* ignore */ }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Set der modIds, die mindestens einen noch offenen (dirty) Import-Eintrag
@@ -64,8 +71,11 @@ export function statusOf(mod, reviewIds) {
 // Needs Review=accent (USER-Wahl, übernimmt den Ton, den zuvor "All Mods"
 // hatte). "All Mods" selbst ist jetzt Slate (#596973, USER-Wahl) wie die
 // aktiven File-Filter-Pillen im Editor ("All Files" / <Datei>.json).
+// "Selected" (nur die aktuell ausgewählten Mods) trägt denselben Ton wie
+// "All Mods" — beide sind reine Mengen-Filter, kein Übersetzungsstatus.
 export const FILTER_TONE_CLASS = {
   all: "bg-slate text-text",
+  selected: "bg-slate text-text",
   open: "bg-warning/15 text-warning",
   translated: "bg-success/15 text-success",
   review: "bg-accent/15 text-accent",

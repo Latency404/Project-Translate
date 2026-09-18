@@ -4,6 +4,7 @@ import { ChevronDown } from "lucide-react";
 import Settings from "./views/Settings.jsx";
 import Mods from "./views/Mods.jsx";
 import Editor from "./views/Editor.jsx";
+import { ToastProvider, useToast } from "./components/Toast.jsx";
 import * as api from "./api.js";
 
 const VIEWS = [
@@ -48,9 +49,8 @@ function ExportModPopover() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [targetLang, setTargetLang] = useState("DE");
   const [exporting, setExporting] = useState(false);
-  const [status, setStatus] = useState(null); // { kind: "success"|"error", text }
+  const toast = useToast();
   const ref = useRef(null);
-  const statusTimer = useRef(null);
 
   useEffect(() => {
     api.getConfig().then((cfg) => setTargetLang(cfg.targetLang || "DE")).catch(() => {});
@@ -72,14 +72,6 @@ function ExportModPopover() {
     };
   }, [settingsOpen]);
 
-  useEffect(() => () => clearTimeout(statusTimer.current), []);
-
-  const showStatus = (kind, text) => {
-    setStatus({ kind, text });
-    clearTimeout(statusTimer.current);
-    statusTimer.current = setTimeout(() => setStatus(null), 6000);
-  };
-
   const selectedIds = () => {
     try {
       const raw = sessionStorage.getItem("pt_library_selected");
@@ -93,11 +85,10 @@ function ExportModPopover() {
   const handleExportClick = async () => {
     const modIds = selectedIds();
     if (modIds.length === 0) {
-      showStatus("error", "Select mod(s) on the Mods page first.");
+      toast("error", "Select mod(s) on the Mods page first.");
       return;
     }
     setExporting(true);
-    setStatus(null);
     try {
       const { blob, filename } = await api.exportModZip(modIds, targetLang);
       const url = URL.createObjectURL(blob);
@@ -109,7 +100,7 @@ function ExportModPopover() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      showStatus("error", e.message);
+      toast("error", e.message);
     } finally {
       setExporting(false);
     }
@@ -151,21 +142,19 @@ function ExportModPopover() {
         </FloatingPanel>
       )}
 
-      {status && (
-        <FloatingPanel
-          anchorRef={ref}
-          className={`w-72 rounded-lg border border-line bg-surface p-3 text-xs shadow-2xl ${
-            status.kind === "success" ? "text-success" : "text-danger"
-          }`}
-        >
-          {status.text}
-        </FloatingPanel>
-      )}
     </div>
   );
 }
 
 export default function App() {
+  return (
+    <ToastProvider>
+      <AppShell />
+    </ToastProvider>
+  );
+}
+
+function AppShell() {
   // Persist the active view in sessionStorage so it survives Vite HMR reloads
   // (triggered by server restarts during save operations).
   const [view, setViewState] = useState(() => {

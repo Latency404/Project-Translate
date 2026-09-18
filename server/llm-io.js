@@ -2,17 +2,22 @@
 //
 // Export (EINE Datei für alle ausgewählten Mods, als JSON-String — die Frontend
 // lädt sie über den Browser-Save-Dialog herunter):
-//   { targetLang, mods: [ { mod, modId, files: { "<version>/<Kategorie>.json|txt": { key: original } } } ] }
+//   { targetLang: "", note, mods: [ { mod, modId, files: { "<version>/<Kategorie>.json|txt": { key: original } } } ] }
 // Datei-Keys tragen das Versions-Segment (42.20 / common / root / base), damit
-// mehrere Versionen desselben Mods keine Kollisionen erzeugen. Der LLM bekommt
-// die Originaltexte und übersetzt die Werte; Struktur und Keys bleiben
-// unverändert.
+// mehrere Versionen desselben Mods keine Kollisionen erzeugen. Der Export legt
+// bewusst KEINE Zielsprache fest — er ist die neutrale EN-Originalfassung.
+// `targetLang` ist ein leeres Tag, `note` bittet das LLM, beim Übersetzen
+// selbst hineinzuschreiben, in welche Sprache es übersetzt hat — damit
+// erkennt der Import automatisch, in welche Sprache übersetzt wurde.
 //
 // Import: die Frontend sendet den Text einer einzigen Datei (Browser-Open-
 // Dialog). normalizeImportInput() akzeptiert Bundle (mods-Array), ein Array von
 // Mod-Docs oder eine einzelne Mod-Datei. Zuordnung über (modId oder mod-Name,
 // Datei-Key, JSON-Key). Keys, die nicht existieren, werden als unmatched
-// gelistet und nicht übernommen.
+// gelistet und nicht übernommen. Bei Bundle-Form liefert es zusätzlich
+// `detectedTargetLang` (das `targetLang`-Feld des Bundles) — die Frontend
+// vergleicht es mit der konfigurierten Zielsprache und zeigt bei Abweichung
+// eine kurze Toast-Notification.
 //
 // Es gibt bewusst KEIN importApply — der Import schreibt nichts auf die Platte.
 // importPreview() liefert neben den Zähl-Feldern auch `matches` (rekonstruierte
@@ -113,20 +118,22 @@ function modFiles(mod, sourceLang = SOURCE_LANG) {
   return files
 }
 
-// Alle ausgewählten Mods in EINE Datei bündeln. Rückgabe:
-//   { text, filename, targetLang, modCount, entryCount }
-// Die Frontend lädt `text` als `filename` über den Save-Dialog herunter.
-function exportLlmBundle(mods, targetLang, sourceLang = SOURCE_LANG) {
+// Alle ausgewählten Mods in EINE Datei bündeln — bewusst OHNE festgelegte
+// Zielsprache: der Export ist die neutrale EN-Originalfassung, `targetLang`
+// bleibt ein leeres Tag, das die KI beim Übersetzen selbst setzt (s. `note`).
+// Rückgabe: { text, filename, modCount, entryCount }. Die Frontend lädt
+// `text` als `filename` über den Save-Dialog herunter.
+function exportLlmBundle(mods, sourceLang = SOURCE_LANG) {
   const modDocs = mods.map((mod) => ({ mod: mod.name, modId: mod.id, files: modFiles(mod, sourceLang) }))
-  const doc = { targetLang, mods: modDocs }
+  const note = 'These are the original English texts. Translate every string value in "files" into the target language of your choice, keeping keys and structure unchanged. Then set "targetLang" above to the ISO code of that language (e.g. "DE", "ES", "FR") so the import can detect it.'
+  const doc = { targetLang: '', note, mods: modDocs }
   let entryCount = 0
   for (const d of modDocs) {
     for (const keys of Object.values(d.files)) entryCount += Object.keys(keys).length
   }
   return {
     text: JSON.stringify(doc, null, 2) + '\n',
-    filename: `llm-translation-${String(targetLang).toLowerCase()}.json`,
-    targetLang,
+    filename: 'llm-translation.json',
     modCount: mods.length,
     entryCount
   }
@@ -137,29 +144,37 @@ function exportLlmBundle(mods, targetLang, sourceLang = SOURCE_LANG) {
 //   - Array von Mod-Docs
 //   - Bundle-Objekt { targetLang, mods: [...] }
 //   - Einzelnes Mod-Doc { mod, modId, files }
+// detectedTargetLang: das oberste `targetLang`-Feld eines Bundles — die
+// exportierte Datei bittet das LLM, es auf die tatsächlich übersetzte
+// Sprache zu setzen, falls abweichend (s. exportLlmBundle). Nur bei
+// Bundle-Form vorhanden, sonst null (Array/Einzel-Mod-Doc tragen es nicht).
 function normalizeImportInput(input) {
   if (typeof input === 'string') {
     let text = input
     if (text.charCodeAt(0) === 0xfeff) text = text.slice(1) // BOM
     text = text.trim()
-    if (!text) return { docs: [], error: 'Die Datei ist leer.' }
+    if (!text) return { docs: [], error: 'Die Datei ist leer.', detectedTargetLang: null }
     try {
       input = JSON.parse(text)
     } catch (e) {
-      return { docs: [], error: `JSON konnte nicht gelesen werden: ${e.message}` }
+      return { docs: [], error: `JSON konnte nicht gelesen werden: ${e.message}`, detectedTargetLang: null }
     }
   }
   let docs
+  let detectedTargetLang = null
   if (Array.isArray(input)) {
     docs = input
   } else if (input && typeof input === 'object' && Array.isArray(input.mods)) {
     docs = input.mods
+    if (typeof input.targetLang === 'string' && input.targetLang.trim()) {
+      detectedTargetLang = input.targetLang.trim().toUpperCase()
+    }
   } else if (input && typeof input === 'object') {
     docs = [input]
   } else {
-    return { docs: [], error: 'Unerwartetes Dateiformat — keine gültigen Mod-Daten.' }
+    return { docs: [], error: 'Unerwartetes Dateiformat — keine gültigen Mod-Daten.', detectedTargetLang: null }
   }
-  return { docs, error: null }
+  return { docs, error: null, detectedTargetLang }
 }
 
 // Datei-Key "<version>/<cat>" in Version + Kategorienamen zerlegen.
