@@ -20,6 +20,9 @@ import {
   FILTER_TONE_CLASS,
 } from "../reviewStore.js";
 
+// Pseudo-Tab neben "All Files": zeigt über alle Dateien nur Einträge ohne Übersetzung.
+const OPEN_TAB = Symbol("open");
+
 // Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
 // als Backend-Wert unverändert (Export-Ordnernamen etc. hängen daran).
 function displayModName(mod) {
@@ -259,7 +262,8 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
   const [entriesLoading, setEntriesLoading] = useState(false);
 
   const [search, setSearch] = useState("");
-  const [activeFile, setActiveFile] = useState(null); // null = "All Files"
+  // null = "All Files", OPEN_TAB = alle Einträge ohne Übersetzung, sonst ein Dateiname
+  const [activeFile, setActiveFile] = useState(null);
   const [sort, setSort] = useState(null);
   const fileTabBarRef = useRef(null);
   const fileTabDragRef = useRef({ dragging: false, startX: 0, scrollLeft: 0, moved: false });
@@ -481,7 +485,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
   }, [entries]);
 
   useEffect(() => {
-    if (activeFile && !files.includes(activeFile)) setActiveFile(null);
+    if (activeFile && activeFile !== OPEN_TAB && !files.includes(activeFile)) setActiveFile(null);
   }, [files, activeFile]);
 
   // Datei-Tabs: alle in einer Reihe, horizontal per Maus-Drag scrollbar
@@ -526,9 +530,14 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
     }
   };
 
-  const visibleEntries = activeFile
-    ? entries.filter((e) => sourceFileOf(e) === activeFile)
-    : entries;
+  // "Open": wie die Zeilenmarkierung (border-warning) — keine gespeicherte Übersetzung.
+  // Ein gerade getippter Wert lässt die Zeile stehen, sie verschwindet erst nach dem Speichern.
+  const visibleEntries =
+    activeFile === OPEN_TAB
+      ? entries.filter((e) => !e.translation)
+      : activeFile
+        ? entries.filter((e) => sourceFileOf(e) === activeFile)
+        : entries;
 
   // --- Dirty tracking: dirty only when the value differs from the loaded one.
   // Preserves an existing "import" origin (still unreviewed) when the user
@@ -701,26 +710,30 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
       {/* Sidebar: the full Library selection, single-select — click a mod to
           open it. The Library selection itself is never touched here. */}
       <aside className="flex w-[19.0625rem] shrink-0 flex-col gap-3 self-stretch overflow-y-auto border-r border-line py-4 pl-2 pr-4 -ml-2">
-        <Input
-          placeholder="Search Mods..."
-          value={modSearch}
-          onChange={(e) => setModSearch(e.target.value)}
-          clearable
-        />
-        <div className="flex flex-wrap gap-1">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setModFilter(f.key)}
-              className={`flex h-6 cursor-pointer items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold transition-colors ${
-                modFilter === f.key
-                  ? FILTER_TONE_CLASS[f.key]
-                  : "bg-raised text-muted hover:text-text"
-              }`}
-            >
-              {f.label} ({filterCounts[f.key]})
-            </button>
-          ))}
+        {/* Suche + Filter bleiben beim Scrollen der Mod-Liste oben kleben
+            (-top-4/-mt-4/pt-4 heben das Aside-Padding auf, -mb-3 das Flex-Gap). */}
+        <div className="sticky -top-4 z-10 -mb-3 -mt-4 flex flex-col gap-3 bg-ink pb-3 pt-4">
+          <Input
+            placeholder="Search Mods..."
+            value={modSearch}
+            onChange={(e) => setModSearch(e.target.value)}
+            clearable
+          />
+          <div className="flex flex-wrap gap-1">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setModFilter(f.key)}
+                className={`flex h-6 cursor-pointer items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold transition-colors ${
+                  modFilter === f.key
+                    ? FILTER_TONE_CLASS[f.key]
+                    : "bg-raised text-muted hover:text-text"
+                }`}
+              >
+                {f.label} ({filterCounts[f.key]})
+              </button>
+            ))}
+          </div>
         </div>
         <nav className="flex flex-col gap-3">
           {sidebarMods.map((mod) => (
@@ -766,6 +779,17 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
               }`}
             >
               All Files
+            </button>
+            <button
+              onClick={() => setActiveFile(OPEN_TAB)}
+              title="Show all entries without a translation"
+              className={`flex h-6 shrink-0 cursor-pointer items-center whitespace-nowrap rounded-full px-3 text-ui font-semibold transition-colors ${
+                activeFile === OPEN_TAB
+                  ? "bg-slate text-text"
+                  : "bg-raised text-muted hover:text-text"
+              }`}
+            >
+              Open
             </button>
             {files.map((f) => (
               <button
@@ -868,7 +892,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
                 sentinelRef={sentinelRef}
                 hasMore={hasMore}
                 fetching={entriesLoading}
-                showFileDividers={activeFile === null}
+                showFileDividers={activeFile === null || activeFile === OPEN_TAB}
               />
             </>
           )}

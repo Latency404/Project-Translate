@@ -311,8 +311,11 @@ export default function Mods({ activeLang, onGoToSetup }) {
         aria-hidden="true"
       />
 
-      {/* Search + status filters + Export/Import/Select all/Lock */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      {/* Search + status filters + Export/Import/Select all/Lock. Bleibt beim
+          Scrollen unter der Navbar kleben (sticky im Scroll-Container <main>);
+          -mt-4/-mx-6 + pt-4/px-6 heben das Außen-Padding auf, damit der
+          Hintergrund die Karten sauber überdeckt. */}
+      <div className="sticky top-0 z-10 -mx-6 -mt-4 mb-1 flex flex-wrap items-center justify-between gap-3 bg-ink px-6 pb-3 pt-4">
         <div className="flex flex-wrap items-center gap-3">
           <Input
             placeholder="Search Mods..."
