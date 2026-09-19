@@ -345,7 +345,7 @@ export default function Settings({ onOpenMods, onLangsChanged, activeLang: activ
       toast(
         "success",
         rescanNeeded
-          ? "Configuration saved. Search for mods again to load the new settings."
+          ? "Configuration saved. Rescanning mods in the background."
           : "Configuration saved.",
       );
     } catch (err) {

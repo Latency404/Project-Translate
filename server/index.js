@@ -153,12 +153,17 @@ app.get('/api/status', (req, res) => {
 
 app.post('/api/scan', (req, res) => {
   if (scanRunning) return fail(res, 409, 'A scan is already running.')
+  startScan()
+  res.status(202).json({ scanRunning: true })
+})
+
+// Startet einen Scan im Hintergrund (Fortschritt über /api/status).
+function startScan() {
   const r = roots()
   const cfg = config.load()
   scanRunning = true
   scanError = null
   scanProgress = { done: 0, total: 0, current: '' }
-  res.status(202).json({ scanRunning: true })
   scan(r.gameRoot, r.workshopDir, cfg.targetLangs, config.SOURCE_LANG, {
     onProgress: (p) => {
       scanProgress = p
@@ -172,7 +177,7 @@ app.post('/api/scan', (req, res) => {
       scanRunning = false
       scanError = err && err.message ? err.message : 'Scan failed.'
     })
-})
+}
 
 // filesCount = Anzahl distincter Quelldateien (version/file) des Mods — für
 // den "N Files"-Badge auf der Mods-Seite. Gleiche Ableitung wie die
@@ -435,7 +440,11 @@ app.post('/api/config', (req, res) => {
     saved.gameRoot !== before.gameRoot ||
     saved.workshopDir !== before.workshopDir
   ) {
+    // Gab es schon einen Scan, läuft der neue automatisch im Hintergrund —
+    // der Nutzer muss nicht selbst neu suchen.
+    const hadScan = cache !== null
     cache = null
+    if (hadScan && !scanRunning) startScan()
   }
   res.json(saved)
 })

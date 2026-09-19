@@ -505,7 +505,7 @@ test('POST /api/config — activeLang nicht Teil von targetLangs → 400', async
   assert.match(res.json.error, /Active language must be one of the selected target languages\./)
 })
 
-test('POST /api/config — targetLangs-Änderung verwirft den Scan-Cache', async () => {
+test('POST /api/config — targetLangs-Änderung startet einen Hintergrund-Scan', async () => {
   const before = await api('GET', '/mods')
   assert.equal(before.status, 200)
 
@@ -518,11 +518,12 @@ test('POST /api/config — targetLangs-Änderung verwirft den Scan-Cache', async
   })
   assert.equal(changed.status, 200)
 
-  // Der alte Cache kennt IT nicht — 404 statt veralteter/undefiniter Felder.
-  const afterChange = await api('GET', '/mods')
-  assert.equal(afterChange.status, 404)
+  // Der alte Cache kennt IT nicht — der Server scannt selbst im Hintergrund neu.
+  await waitForScan()
+  const afterChange = await api('GET', '/mods?lang=IT')
+  assert.equal(afterChange.status, 200)
 
-  // Zurück auf DE, FR (Zustand vor diesem Test) und neu scannen.
+  // Zurück auf DE, FR (Zustand vor diesem Test) — ebenfalls automatisch gescannt.
   const reset = await api('POST', '/config', {
     gameRoot,
     workshopDir,
@@ -530,8 +531,6 @@ test('POST /api/config — targetLangs-Änderung verwirft den Scan-Cache', async
     activeLang: 'DE'
   })
   assert.equal(reset.status, 200)
-  const scan = await api('POST', '/scan')
-  assert.equal(scan.status, 202)
   await waitForScan()
   const afterReset = await api('GET', '/mods')
   assert.equal(afterReset.status, 200)
