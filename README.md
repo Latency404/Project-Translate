@@ -92,5 +92,4 @@ PT_FAKE=1 npm run dev
 | Tests | `npm test` |
 
 See [CLAUDE.md](CLAUDE.md) for the project's internal contracts (entry ID format,
-API routes, layout rules) and [PLAN.md](PLAN.md) for what's done and what's still
-open.
+API routes, layout rules).

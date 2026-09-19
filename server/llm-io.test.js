@@ -93,8 +93,8 @@ after(() => {
 })
 
 test('exportLlmBundle: EINE Datei mit allen ausgewählten Mods, korrektes Format', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
-  const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
+  const belt = mods.find((m) => m.id === '3000000003/Equipment Belt')
   const { text, filename, modCount, entryCount, targetLangs } = exportLlmBundle([coffee, belt], 'EN', ['DE'])
   assert.equal(modCount, 2)
   assert.equal(filename, 'llm-translation.json')
@@ -107,7 +107,7 @@ test('exportLlmBundle: EINE Datei mit allen ausgewählten Mods, korrektes Format
   assert.ok(Array.isArray(doc.mods) && doc.mods.length === 2)
   const coffeeDoc = doc.mods.find((d) => d.modId === coffee.id)
   assert.ok(coffeeDoc)
-  assert.equal(coffeeDoc.mod, 'Coffee Machines Fix')
+  assert.equal(coffeeDoc.mod, 'Coffee Corner')
   // Datei-Keys tragen das Versions-Segment; nur die neueste Version (42.20)
   const keys = Object.keys(coffeeDoc.files)
   assert.ok(keys.includes('42.20/ContextMenu.json'))
@@ -117,7 +117,7 @@ test('exportLlmBundle: EINE Datei mit allen ausgewählten Mods, korrektes Format
 })
 
 test('exportLlmBundle: mehrere Zielsprachen → translations-Gerüst mit beiden Sprachen', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const { text, targetLangs } = exportLlmBundle([coffee], 'EN', ['de', 'fr'])
   assert.deepEqual(targetLangs, ['DE', 'FR']) // normalisiert: großgeschrieben
   const doc = JSON.parse(text)
@@ -128,7 +128,7 @@ test('exportLlmBundle: mehrere Zielsprachen → translations-Gerüst mit beiden 
 })
 
 test('exportLlmBundle: keine Zielsprache → leeres targetLangs/translations, Note bittet LLM um eigene Sprachwahl', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const { targetLangs } = exportLlmBundle([coffee])
   assert.deepEqual(targetLangs, [])
   const doc = JSON.parse(exportLlmBundle([coffee]).text)
@@ -138,7 +138,7 @@ test('exportLlmBundle: keine Zielsprache → leeres targetLangs/translations, No
 })
 
 test('Roundtrip (neues Format): exportiertes Bundle ausgefüllt → normalizeImportInput → Preview matched', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const { text, entryCount } = exportLlmBundle([coffee], 'EN', ['DE'])
   const doc = JSON.parse(text)
   // Das LLM würde hier "translations.DE.<modId>.<fileKey>.<key>" befüllen —
@@ -158,8 +158,8 @@ test('Roundtrip (neues Format): exportiertes Bundle ausgefüllt → normalizeImp
 })
 
 test('Import (neues Format): translations mit zwei Sprachen → matches mit korrektem lang, perLang-Zähler', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
-  const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
+  const belt = mods.find((m) => m.id === '3000000003/Equipment Belt')
   const bundle = {
     targetLangs: ['DE', 'FR'],
     note: 'irrelevant',
@@ -176,7 +176,7 @@ test('Import (neues Format): translations mit zwei Sprachen → matches mit korr
       FR: {
         [belt.id]: {
           '42.20/ItemName.json': {
-            'ExpandedBelt.ExpandedBelt': 'Nouvelle ceinture' // matched
+            'EquipmentBelt.EquipmentBelt': 'Nouvelle ceinture' // matched
           }
         }
       }
@@ -195,11 +195,11 @@ test('Import (neues Format): translations mit zwei Sprachen → matches mit korr
   assert.equal(deMatch.translation, 'Kaffeemaschine')
   const frMatch = preview.matches.find((m) => m.modId === belt.id)
   assert.equal(frMatch.lang, 'FR')
-  assert.equal(frMatch.entryId, '42.20/media/lua/shared/Translate/EN/ItemName.json::ExpandedBelt.ExpandedBelt')
+  assert.equal(frMatch.entryId, '42.20/media/lua/shared/Translate/EN/ItemName.json::EquipmentBelt.EquipmentBelt')
 })
 
 test('normalizeImportInput: translations gewinnt, wenn mods.files zusätzlich befüllt ist', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const bundle = {
     targetLangs: ['DE'],
     mods: [
@@ -219,7 +219,7 @@ test('normalizeImportInput: translations gewinnt, wenn mods.files zusätzlich be
 })
 
 test('importPreview (altes Format, Einzel-Mod-Datei): matched + unmatched zählen', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const doc = {
     mod: coffee.name,
     modId: coffee.id,
@@ -248,7 +248,7 @@ test('importPreview (altes Format, Einzel-Mod-Datei): matched + unmatched zähle
 })
 
 test('importPreview (altes Bundle-Format mit targetLang): matches liefert entryId + lang, saveBatch schreibt die DE-Datei', () => {
-  const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
+  const belt = mods.find((m) => m.id === '3000000003/Equipment Belt')
   const doc = {
     targetLang: 'DE',
     mods: [{
@@ -256,7 +256,7 @@ test('importPreview (altes Bundle-Format mit targetLang): matches liefert entryI
       modId: belt.id,
       files: {
         '42.20/ItemName.json': {
-          'ExpandedBelt.ExpandedBelt': 'Neuer Gürtel' // matched → wird geschrieben
+          'EquipmentBelt.EquipmentBelt': 'Neuer Gürtel' // matched → wird geschrieben
         },
         '42.20/KeineDatei.json': {
           X: 'Y' // unmatched → wird verworfen
@@ -271,7 +271,7 @@ test('importPreview (altes Bundle-Format mit targetLang): matches liefert entryI
   assert.equal(preview.matches.length, 1)
   assert.deepEqual(preview.matches[0], {
     modId: belt.id,
-    entryId: '42.20/media/lua/shared/Translate/EN/ItemName.json::ExpandedBelt.ExpandedBelt',
+    entryId: '42.20/media/lua/shared/Translate/EN/ItemName.json::EquipmentBelt.EquipmentBelt',
     translation: 'Neuer Gürtel',
     lang: 'DE'
   })
@@ -284,15 +284,15 @@ test('importPreview (altes Bundle-Format mit targetLang): matches liefert entryI
   )
   assert.equal(result.saved, 1)
   const tgt = path.join(
-    fakeRoot, 'workshop', '3411213493', 'mods', 'Expanded Belt', '42.20',
+    fakeRoot, 'workshop', '3000000003', 'mods', 'Equipment Belt', '42.20',
     'media', 'lua', 'shared', 'Translate', 'DE', 'ItemName.json'
   )
   const written = JSON.parse(readFileSync(tgt, 'utf8'))
-  assert.equal(written['ExpandedBelt.ExpandedBelt'], 'Neuer Gürtel')
+  assert.equal(written['EquipmentBelt.EquipmentBelt'], 'Neuer Gürtel')
   // Ungültige Datei wurde nicht angelegt
   assert.ok(
     !existsSync(
-      path.join(fakeRoot, 'workshop', '3411213493', 'mods', 'Expanded Belt', '42.20',
+      path.join(fakeRoot, 'workshop', '3000000003', 'mods', 'Equipment Belt', '42.20',
         'media', 'lua', 'shared', 'Translate', 'DE', 'KeineDatei.json')
     )
   )
@@ -301,7 +301,7 @@ test('importPreview (altes Bundle-Format mit targetLang): matches liefert entryI
 })
 
 test('importPreview (altes Format ohne targetLang): leerer Sprach-Key wird auf fallbackLang abgebildet', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const doc = {
     mod: coffee.name,
     modId: coffee.id,
@@ -322,7 +322,7 @@ test('importPreview: leere Datei → Fehlermeldung', () => {
 })
 
 test('normalizeImportInput: BOM- und Trailing-Comma-Toleranz, kaputtes JSON → Fehler', () => {
-  const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
+  const belt = mods.find((m) => m.id === '3000000003/Equipment Belt')
   const doc = { mod: belt.name, modId: belt.id, files: {} }
   // BOM am Anfang
   const withBom = '﻿' + JSON.stringify(doc)
@@ -336,7 +336,7 @@ test('normalizeImportInput: BOM- und Trailing-Comma-Toleranz, kaputtes JSON → 
 })
 
 test('normalizeImportInput: Array-Form und altes Bundle-Format beide akzeptiert', () => {
-  const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
+  const belt = mods.find((m) => m.id === '3000000003/Equipment Belt')
   const single = { mod: belt.name, modId: belt.id, files: {} }
   // Array
   const arr = normalizeImportInput(JSON.stringify([single]))

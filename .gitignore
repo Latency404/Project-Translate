@@ -1,7 +1,6 @@
-node_modules/
-dist/
-export/
-config.json
-.obsidian/
-Resources/
-Workshop/
+/node_modules/
+/dist/
+/export/
+/config.json
+/Resources/
+/Workshop/

@@ -5,7 +5,7 @@
 // sich nicht ändern — nur die dahinterliegende Wurzel.
 //
 // modId ist in der URL ein einzelner, encodeURIComponent-ierter Segment:
-// Base Game "BASE", Workshop-Mod "2688538916/Coffee%20Machines%20Fix".
+// Base Game "BASE", Workshop-Mod "2000000002/Coffee%20Corner".
 // Die Frontend (src/api.js) kodiert das; hier wird es von Express dekodiert.
 //
 // Mehrsprachigkeit: der Scan-Cache hält ALLE zuletzt gescannten Zielsprachen

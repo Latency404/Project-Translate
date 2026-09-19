@@ -43,10 +43,10 @@ after(() => {
 })
 
 test('exportMod: mod.info im festen Versionsordner "42", nur die neueste Version wird übersetzt', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const targetDir = path.join(workdir, 'export')
   const { targetPath, written, targetLangs } = exportMod(coffee, 'DE', targetDir)
-  const outRoot = path.join(targetDir, 'Coffee Machines Fix-DE')
+  const outRoot = path.join(targetDir, 'Coffee Corner-DE')
   // targetPath ist POSIX-Style (Projekt-Konvention)
   assert.equal(targetPath, outRoot.replace(/\\/g, '/'))
   // Ein-Sprachen-Fall: targetLangs normalisiert einen einzelnen String zum Array.
@@ -57,19 +57,19 @@ test('exportMod: mod.info im festen Versionsordner "42", nur die neueste Version
   const infoPath = path.join(outRoot, '42', 'mod.info')
   assert.ok(existsSync(infoPath))
   const info = readFileSync(infoPath, 'utf8')
-  assert.match(info, /^id=pt_2688538916_Coffee_Machines_Fix_DE$/m)
-  assert.match(info, /^name=Coffee Machines Fix Translation \(DE\)$/m)
+  assert.match(info, /^id=pt_2000000002_Coffee_Corner_DE$/m)
+  assert.match(info, /^name=Coffee Corner Translation \(DE\)$/m)
   assert.match(info, /^author=Project Translate$/m)
-  assert.match(info, /^description=.+Coffee Machines Fix.+DE.*$/m)
+  assert.match(info, /^description=.+Coffee Corner.+DE.*$/m)
   // Kein versionMin/versionMax nötig — "42" ist bereits ein gültiger,
   // versionsunabhängiger Versionsordner.
   assert.ok(!info.includes('versionMin'))
   assert.ok(!info.includes('versionMax'))
   assert.ok(!info.includes('game_version'))
   // loadModAfter= nennt die mod.info-id des Quell-Mods (aus dessen mod.info
-  // am Mod-Root, da Coffee Machines Fix weder in common/ noch im
+  // am Mod-Root, da Coffee Corner weder in common/ noch im
   // Versionsordner eine eigene mod.info hat).
-  assert.match(info, /^loadModAfter=CoffeeMachinesFix$/m)
+  assert.match(info, /^loadModAfter=CoffeeCorner$/m)
 
   // Übersetzte Einträge landen unter common/, nicht unter dem Versionsordner
   // der Quelle (42.20) — B42 lädt common/ immer, egal welche Version gewählt wird.
@@ -87,10 +87,10 @@ test('exportMod: mod.info im festen Versionsordner "42", nur die neueste Version
 })
 
 test('exportMod: icon.png liegt neben der EINEN mod.info und ist dort deklariert', () => {
-  const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
+  const belt = mods.find((m) => m.id === '3000000003/Equipment Belt')
   const targetDir = path.join(workdir, 'export2')
   const { written } = exportMod(belt, 'DE', targetDir)
-  const outRoot = path.join(targetDir, 'Expanded Belt-DE')
+  const outRoot = path.join(targetDir, 'Equipment Belt-DE')
   assert.ok(existsSync(path.join(outRoot, '42', 'icon.png')))
   assert.ok(!existsSync(path.join(outRoot, 'icon.png')))
   assert.ok(written.includes('42/icon.png'))
@@ -201,7 +201,7 @@ test('exportMod: dual-Layout (common + Version) — beide Quellen mergen in EINE
 })
 
 test('id-Determinismus: derselbe Mod + dieselbe Sprache → dieselbe id (Re-Export ersetzt statt dupliziert)', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const id1 = singleModInfoId(coffee, 'DE')
   const id2 = singleModInfoId(coffee, 'DE')
   assert.equal(id1, id2)
@@ -220,15 +220,15 @@ test('id-Determinismus: derselbe Mod + dieselbe Sprache → dieselbe id (Re-Expo
 })
 
 test('sanitizeFolderName: unzulässige Zeichen raus, Länge begrenzt', () => {
-  assert.equal(sanitizeFolderName('Coffee Machines Fix'), 'Coffee Machines Fix')
+  assert.equal(sanitizeFolderName('Coffee Corner'), 'Coffee Corner')
   assert.equal(sanitizeFolderName('Mod: "Evil" / Twin\\Path*?<>|'), 'Mod_ _Evil_ _ Twin_Path_____')
   assert.equal(sanitizeFolderName('trailing dot.'), 'trailing dot')
   assert.equal(sanitizeFolderName('a'.repeat(300)).length, 100)
 })
 
 test('exportModsBundle: zwei Mods → EINE Mod, Key-Vereinigung pro Datei, loadModAfter nennt beide Quell-ids', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
-  const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
+  const belt = mods.find((m) => m.id === '3000000003/Equipment Belt')
   const targetDir = path.join(workdir, 'exportBundle')
   const { targetPath, written } = exportModsBundle([coffee, belt], 'DE', targetDir)
   // C4: ab mehreren Mods ein fester Ordnername + Anzahl (nicht die verketteten Namen).
@@ -246,15 +246,15 @@ test('exportModsBundle: zwei Mods → EINE Mod, Key-Vereinigung pro Datei, loadM
   assert.ok(!info.includes('versionMax'))
   assert.ok(!info.includes('game_version'))
   // loadModAfter= nennt beide Quell-Mod-ids in Auswahlreihenfolge.
-  assert.match(info, /^loadModAfter=CoffeeMachinesFix,ExpandedBelt$/m)
+  assert.match(info, /^loadModAfter=CoffeeCorner,EquipmentBelt$/m)
 
   // IG_UI.json: beide Mods haben eine 42.20-Übersetzung → EINE Datei unter
   // common/, Key-Vereinigung.
   const igUi = JSON.parse(readFileSync(
     path.join(outRoot, 'common', 'media', 'lua', 'shared', 'Translate', 'DE', 'IG_UI.json'), 'utf8'
   ))
-  assert.equal(igUi.IGUI_CraftingWindow_CoffeeMachine, 'X-presso')
-  assert.equal(igUi.IGUI_ExpandedBelt_Left, 'Linkes Erweiterungsfach')
+  assert.equal(igUi.IGUI_CraftingWindow_CoffeeMachine, 'Brewmaster')
+  assert.equal(igUi.IGUI_EquipmentBelt_Left, 'Linkes Erweiterungsfach')
   assert.equal(Object.keys(igUi).length, 8)
   const ctx = JSON.parse(readFileSync(
     path.join(outRoot, 'common', 'media', 'lua', 'shared', 'Translate', 'DE', 'ContextMenu.json'), 'utf8'
@@ -267,7 +267,7 @@ test('exportModsBundle: zwei Mods → EINE Mod, Key-Vereinigung pro Datei, loadM
   const item = JSON.parse(readFileSync(
     path.join(outRoot, 'common', 'media', 'lua', 'shared', 'Translate', 'DE', 'ItemName.json'), 'utf8'
   ))
-  assert.equal(item['ExpandedBelt.ExpandedBelt'], 'Erweiterter Gürtel')
+  assert.equal(item['EquipmentBelt.EquipmentBelt'], 'Erweiterter Gürtel')
   // icon.png: erstes Poster (Coffee), neben der EINEN mod.info.
   assert.ok(existsSync(path.join(outRoot, '42', 'icon.png')))
   assert.deepEqual(written, [
@@ -281,24 +281,24 @@ test('exportModsBundle: zwei Mods → EINE Mod, Key-Vereinigung pro Datei, loadM
 })
 
 test('exportModsBundle: ein Mod → exakt wie exportMod', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const solo = path.join(workdir, 'exportBundleSolo')
   const bundle = exportModsBundle([coffee], 'DE', solo)
   const single = path.join(workdir, 'exportBundleSingle')
   const ref = exportMod(coffee, 'DE', single)
   // Gleicher Ordnername (ein Mod → sein Name, kein "Translation Bundle").
   assert.equal(path.basename(bundle.targetPath), path.basename(ref.targetPath))
-  assert.equal(path.basename(bundle.targetPath), 'Coffee Machines Fix-DE')
+  assert.equal(path.basename(bundle.targetPath), 'Coffee Corner-DE')
   assert.deepEqual([...bundle.written].sort(), [...ref.written].sort())
   // gleiche id wie ein Solo-exportMod desselben Mods.
   const info = readFileSync(
-    path.join(solo, 'Coffee Machines Fix-DE', '42', 'mod.info'), 'utf8'
+    path.join(solo, 'Coffee Corner-DE', '42', 'mod.info'), 'utf8'
   )
   const refInfo = readFileSync(
-    path.join(single, 'Coffee Machines Fix-DE', '42', 'mod.info'), 'utf8'
+    path.join(single, 'Coffee Corner-DE', '42', 'mod.info'), 'utf8'
   )
   assert.equal(info, refInfo)
-  assert.match(info, /^name=Coffee Machines Fix Translation \(DE\)$/m)
+  assert.match(info, /^name=Coffee Corner Translation \(DE\)$/m)
 })
 
 test('exportModsBundle: Key-Kollision → späterer Mod gewinnt', () => {
@@ -374,8 +374,8 @@ test('C4: Bundle aus vielen Mods mit langen/unzulässigen Namen legt einen gült
 })
 
 test('Nachbesserung 1: name= wächst nicht mit der Mod-Anzahl (kurze zählende Form statt Namenskette)', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
-  const belt = mods.find((m) => m.id === '3411213493/Expanded Belt')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
+  const belt = mods.find((m) => m.id === '3000000003/Equipment Belt')
   const base = mods.find((m) => m.id === 'BASE')
   const targetDir = path.join(workdir, 'exportBundleManyNames')
   const { targetPath } = exportModsBundle([coffee, belt, base], 'DE', targetDir)
@@ -389,7 +389,7 @@ test('Nachbesserung 1: name= wächst nicht mit der Mod-Anzahl (kurze zählende F
   const soloDir = path.join(workdir, 'exportSoloName')
   const solo = exportModsBundle([coffee], 'DE', soloDir)
   const soloInfo = readFileSync(path.join(solo.targetPath, '42', 'mod.info'), 'utf8')
-  assert.match(soloInfo, /^name=Coffee Machines Fix Translation \(DE\)$/m)
+  assert.match(soloInfo, /^name=Coffee Corner Translation \(DE\)$/m)
 })
 
 test('exportMod: zwei Sprachen in einem Mod — eigene Sprachordner unter common/, mod.info nennt beide', () => {
@@ -482,15 +482,15 @@ test('exportModsBundle: zwei Mods, zwei Sprachen — Merge nur innerhalb derselb
 })
 
 test('4+ Sprachen: Ordnername/id werden zu "multi", Anzeigename nennt trotzdem alle Sprachen', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const targetDir = path.join(workdir, 'exportManyLangs')
   const { targetPath, written, targetLangs } = exportMod(coffee, ['FR', 'DE', 'IT', 'ES'], targetDir)
   assert.deepEqual(targetLangs, ['DE', 'ES', 'FR', 'IT'])
-  const outRoot = path.join(targetDir, 'Coffee Machines Fix-multi')
+  const outRoot = path.join(targetDir, 'Coffee Corner-multi')
   assert.equal(targetPath, outRoot.replace(/\\/g, '/'))
   const info = readFileSync(path.join(outRoot, '42', 'mod.info'), 'utf8')
-  assert.match(info, /^id=pt_2688538916_Coffee_Machines_Fix_multi$/m)
-  assert.match(info, /^name=Coffee Machines Fix Translation \(DE, ES, FR, IT\)$/m)
+  assert.match(info, /^id=pt_2000000002_Coffee_Corner_multi$/m)
+  assert.match(info, /^name=Coffee Corner Translation \(DE, ES, FR, IT\)$/m)
   // Nur DE hat in der Fixture eine Übersetzung — für die anderen Sprachen wird
   // nichts geschrieben (kein leerer Ordner), das Sprachsegment im Namen bleibt
   // trotzdem "multi" (hängt nur an der Anzahl der ANGEFRAGTEN Sprachen).
@@ -500,7 +500,7 @@ test('4+ Sprachen: Ordnername/id werden zu "multi", Anzeigename nennt trotzdem a
 })
 
 test('unbekannte Sprache wird abgelehnt (400)', () => {
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const targetDir = path.join(workdir, 'exportUnknownLang')
   assert.throws(
     () => exportMod(coffee, 'XX', targetDir),

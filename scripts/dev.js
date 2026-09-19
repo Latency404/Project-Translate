@@ -4,8 +4,9 @@
 // server/ neu gestartet (fs.watch, rekursiv), damit eine Code-Änderung sofort
 // in der Preview wirkt — ohne extra Watch-Paket.
 //
-// Beenden: Hermes `kill()` beendet den npm-Vorgang hart, bevor Node die
-// SIGTERM-Handler (die killAll() aufrufen) ausführen dürfen. Die Enkel
+// Beenden: Ein hartes kill() von außen (z. B. durch die Preview) beendet den
+// npm-Vorgang, bevor Node die SIGTERM-Handler (die killAll() aufrufen)
+// ausführen dürfen. Die Enkel
 // (Vite detached + API) würden sonst verwaist am Port hängen. Deshalb räumt
 // killChild zusätzlich per `taskkill /T /F` (Windows) ab, der die ganze
 // Prozessgruppe trifft. Fallback: c.kill().

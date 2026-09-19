@@ -166,7 +166,7 @@ test('Scan: 5 Mods mit entryCount, Basisspiel dabei, translatedCount je Sprache'
   assert.equal(mods.length, 5)
   const names = mods.map((m) => m.name)
   assert.ok(names.includes('Project Zomboid (Base Game)'))
-  assert.ok(names.includes('More Traits'))
+  assert.ok(names.includes('Mixed Traits'))
   for (const m of mods) assert.ok(m.entryCount > 0, `entryCount für ${m.name}`)
   for (const m of mods) assert.ok(m.filesCount > 0, `filesCount für ${m.name}`)
 
@@ -178,14 +178,14 @@ test('Scan: 5 Mods mit entryCount, Basisspiel dabei, translatedCount je Sprache'
   assert.equal(base.translatedCount, 8)
   assert.equal(base.translatedCounts, undefined, 'translatedCounts (Objekt) wird nicht nach außen gegeben')
 
-  const coffee = mods.find((m) => m.id === '2688538916/Coffee Machines Fix')
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   assert.ok(coffee)
   assert.deepEqual(coffee.versions, ['42.20']) // nur die neueste Version
   assert.equal(coffee.entryCount, 11) // 42.20 (ContextMenu 5 + IG_UI 6)
   assert.equal(coffee.translatedCount, 11) // 42.20 DE (5 + 6)
   assert.equal(coffee.filesCount, 2) // ContextMenu.json + IG_UI.json
 
-  const traits = mods.find((m) => m.id === '1299328280/More Traits')
+  const traits = mods.find((m) => m.id === '1000000001/Mixed Traits')
   assert.ok(traits)
   assert.deepEqual(traits.versions, ['42.20'])
   assert.equal(traits.entryCount, 3)
@@ -242,13 +242,13 @@ test('POST /api/active-lang — wechselt ohne Rescan, lehnt unkonfigurierte Spra
 })
 
 test('GET /api/mods/:modId/entries — Pagination + Suche + id-Format', async () => {
-  const pid = encodeURIComponent('2688538916/Coffee Machines Fix')
+  const pid = encodeURIComponent('2000000002/Coffee Corner')
   const first = await api('GET', `/mods/${pid}/entries?page=1&pageSize=5`)
   assert.equal(first.status, 200)
   assert.equal(first.json.total, 11)
   assert.equal(first.json.entries.length, 5)
   const e = first.json.entries[0]
-  assert.equal(e.modId, '2688538916/Coffee Machines Fix')
+  assert.equal(e.modId, '2000000002/Coffee Corner')
   assert.equal(e.version, '42.20')
   assert.equal(e.file, 'media/lua/shared/Translate/EN/ContextMenu.json')
   assert.match(e.id, /^42\.20\/media\/lua\/shared\/Translate\/EN\/ContextMenu\.json::ContextMenu_.+/)
@@ -282,7 +282,7 @@ test('GET /api/mods/:modId/entries — Pagination + Suche + id-Format', async ()
 })
 
 test('PUT /api/mods/:modId/entries — speichern (activeLang DE) + Backup + Ziel-Datei', async () => {
-  const pid = encodeURIComponent('3554514861/Fuel Bowser')
+  const pid = encodeURIComponent('3500000004/Fuel Trailer')
   const before = await api('GET', `/mods/${pid}/entries`)
   const miss = before.json.entries.find((e) => e.translation === null)
   assert.ok(miss)
@@ -294,7 +294,7 @@ test('PUT /api/mods/:modId/entries — speichern (activeLang DE) + Backup + Ziel
 
   // Die DE-Datei in der Fake-Kopie enthält jetzt den neuen Wert.
   const tgt = path.join(
-    fakeRoot, 'workshop', '3554514861', 'mods', 'Fuel Bowser', '42.20',
+    fakeRoot, 'workshop', '3500000004', 'mods', 'Fuel Trailer', '42.20',
     'media', 'lua', 'shared', 'Translate', 'DE', 'ContextMenu.json'
   )
   const written = JSON.parse(readFileSync(tgt, 'utf8'))
@@ -307,7 +307,7 @@ test('PUT /api/mods/:modId/entries — speichern (activeLang DE) + Backup + Ziel
   let found = false
   for (const d of batchDirs) {
     for (const sub of readDir(path.join(backups, d))) {
-      if (sub.includes('Fuel Bowser') && sub.endsWith('__DE') && readDir(path.join(backups, d, sub)).includes('ContextMenu.json')) {
+      if (sub.includes('Fuel Trailer') && sub.endsWith('__DE') && readDir(path.join(backups, d, sub)).includes('ContextMenu.json')) {
         found = true
       }
     }
@@ -316,7 +316,7 @@ test('PUT /api/mods/:modId/entries — speichern (activeLang DE) + Backup + Ziel
 })
 
 test('PUT /api/mods/:modId/entries — mit lang schreibt in die richtige Sprachdatei (FR)', async () => {
-  const pid = encodeURIComponent('2688538916/Coffee Machines Fix')
+  const pid = encodeURIComponent('2000000002/Coffee Corner')
   const entries = await api('GET', `/mods/${pid}/entries?lang=FR`)
   const target = entries.json.entries[0]
   const put = await api('PUT', `/mods/${pid}/entries`, {
@@ -327,7 +327,7 @@ test('PUT /api/mods/:modId/entries — mit lang schreibt in die richtige Sprachd
   assert.equal(put.json.saved, 1)
 
   const tgt = path.join(
-    fakeRoot, 'workshop', '2688538916', 'mods', 'Coffee Machines Fix', '42.20',
+    fakeRoot, 'workshop', '2000000002', 'mods', 'Coffee Corner', '42.20',
     'media', 'lua', 'shared', 'Translate', 'FR', 'ContextMenu.json'
   )
   assert.ok(existsSync(tgt), 'FR-Zieldatei wurde nicht angelegt')
@@ -341,7 +341,7 @@ test('PUT /api/mods/:modId/entries — mit lang schreibt in die richtige Sprachd
 })
 
 test('PUT /api/mods/:modId/entries — nicht konfigurierte Sprache → 400', async () => {
-  const pid = encodeURIComponent('2688538916/Coffee Machines Fix')
+  const pid = encodeURIComponent('2000000002/Coffee Corner')
   const entries = await api('GET', `/mods/${pid}/entries`)
   const target = entries.json.entries[0]
   const res = await api('PUT', `/mods/${pid}/entries`, {
@@ -356,7 +356,7 @@ test('POST /api/export/llm + POST /api/import/llm/preview → Roundtrip über di
   // Export: alle ausgewählten Mods in EINE Datei (JSON-String), keine Disk-Datei;
   // ohne targetLangs im Body gilt die Konfiguration (DE, FR).
   const exp = await api('POST', '/export/llm', {
-    modIds: ['2688538916/Coffee Machines Fix']
+    modIds: ['2000000002/Coffee Corner']
   })
   assert.equal(exp.status, 200)
   assert.ok(typeof exp.json.text === 'string' && exp.json.text.length > 0)
@@ -369,14 +369,14 @@ test('POST /api/export/llm + POST /api/import/llm/preview → Roundtrip über di
   assert.deepEqual(doc.translations, { DE: {}, FR: {} })
 
   // Das "LLM" befüllt translations.DE 1:1 aus den Originaltexten (mods).
-  const coffeeDoc = doc.mods.find((d) => d.modId === '2688538916/Coffee Machines Fix')
+  const coffeeDoc = doc.mods.find((d) => d.modId === '2000000002/Coffee Corner')
   doc.translations.DE[coffeeDoc.modId] = coffeeDoc.files
 
   const pv = await api('POST', '/import/llm/preview', { text: JSON.stringify(doc) })
   assert.equal(pv.status, 200)
   assert.equal(pv.json.matched, exp.json.entryCount)
   assert.equal(pv.json.unmatched, 0)
-  assert.ok(Object.keys(pv.json.perMod).includes('2688538916/Coffee Machines Fix'))
+  assert.ok(Object.keys(pv.json.perMod).includes('2000000002/Coffee Corner'))
   assert.deepEqual(pv.json.detectedTargetLangs, ['DE', 'FR'])
   assert.deepEqual(pv.json.unknownLangs, [])
 
@@ -388,11 +388,11 @@ test('POST /api/export/llm + POST /api/import/llm/preview → Roundtrip über di
 
 test('POST /api/import/llm/preview — nicht konfigurierte Sprache landet in unknownLangs, nicht in matches', async () => {
   const exp = await api('POST', '/export/llm', {
-    modIds: ['2688538916/Coffee Machines Fix'],
+    modIds: ['2000000002/Coffee Corner'],
     targetLangs: ['DE']
   })
   const doc = JSON.parse(exp.json.text)
-  const coffeeDoc = doc.mods.find((d) => d.modId === '2688538916/Coffee Machines Fix')
+  const coffeeDoc = doc.mods.find((d) => d.modId === '2000000002/Coffee Corner')
   // "ES" ist nicht Teil der konfigurierten targetLangs (DE, FR).
   const bundle = {
     targetLangs: ['ES'],
@@ -434,7 +434,7 @@ test('POST /api/config — nicht existierender workshopDir → 400', async () =>
 test('POST /api/config — Datei statt Verzeichnis wird abgelehnt', async () => {
   // Es genügt irgendeine existierende Datei (kein Verzeichnis); wir nutzen
   // eine bekannte Fixture-Datei relativ zu fakeRoot.
-  const existingFile = path.join(fakeRoot, 'workshop', '3554514861', 'mods', 'Fuel Bowser', 'mod.info')
+  const existingFile = path.join(fakeRoot, 'workshop', '3500000004', 'mods', 'Fuel Trailer', 'mod.info')
   assert.ok(existsSync(existingFile), 'Fixture-Datei fehlt: ' + existingFile)
   const res = await api('POST', '/config', {
     gameRoot: existingFile,
@@ -568,7 +568,7 @@ test('POST /api/config — reiner activeLang-Wechsel behält den Scan-Cache', as
 test('POST /api/export/mod — legt eine installierbare Mod mit mod.info an (eine Sprache)', async () => {
   const targetDir = path.join(workdir, 'mod-export-route')
   const res = await api('POST', '/export/mod', {
-    modIds: ['2688538916/Coffee Machines Fix'],
+    modIds: ['2000000002/Coffee Corner'],
     targetLangs: ['DE'],
     targetDir
   })
@@ -585,7 +585,7 @@ test('POST /api/export/mod — legt eine installierbare Mod mit mod.info an (ein
 test('POST /api/export/mod — zwei Sprachen liefern einen Mod mit beiden Sprachordnern', async () => {
   const targetDir = path.join(workdir, 'mod-export-route-multi')
   const res = await api('POST', '/export/mod', {
-    modIds: ['2688538916/Coffee Machines Fix'],
+    modIds: ['2000000002/Coffee Corner'],
     targetLangs: ['de', 'fr'],
     targetDir
   })
@@ -604,7 +604,7 @@ test('POST /api/export/mod — zwei Sprachen liefern einen Mod mit beiden Sprach
 test('POST /api/export/mod — Rückwärtskompatibilität: einzelnes targetLang (String)', async () => {
   const targetDir = path.join(workdir, 'mod-export-route-legacy')
   const res = await api('POST', '/export/mod', {
-    modIds: ['2688538916/Coffee Machines Fix'],
+    modIds: ['2000000002/Coffee Corner'],
     targetLang: 'DE',
     targetDir
   })
@@ -623,7 +623,7 @@ test('POST /api/export/mod — leere Mod-Auswahl → 400', async () => {
 // (server/langs.js → isKnownLang), noch vor der Mod-Auswahl-Prüfung.
 test('POST /api/export/mod — unbekannte Zielsprache → 400', async () => {
   const res = await api('POST', '/export/mod', {
-    modIds: ['2688538916/Coffee Machines Fix'],
+    modIds: ['2000000002/Coffee Corner'],
     targetLangs: ['ZZ']
   })
   assert.equal(res.status, 400)
@@ -632,7 +632,7 @@ test('POST /api/export/mod — unbekannte Zielsprache → 400', async () => {
 
 test('POST /api/export/llm — unbekannte Zielsprache → 400', async () => {
   const res = await api('POST', '/export/llm', {
-    modIds: ['2688538916/Coffee Machines Fix'],
+    modIds: ['2000000002/Coffee Corner'],
     targetLangs: ['ZZ']
   })
   assert.equal(res.status, 400)
@@ -641,7 +641,7 @@ test('POST /api/export/llm — unbekannte Zielsprache → 400', async () => {
 
 test('POST /api/export/mod/zip — unbekannte Zielsprache → 400', async () => {
   const res = await api('POST', '/export/mod/zip', {
-    modIds: ['2688538916/Coffee Machines Fix'],
+    modIds: ['2000000002/Coffee Corner'],
     targetLangs: ['ZZ']
   })
   assert.equal(res.status, 400)
@@ -657,7 +657,7 @@ test('POST /api/export/mod/zip — ZIP-Download enthält beide Sprachordner', as
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      modIds: ['2688538916/Coffee Machines Fix'],
+      modIds: ['2000000002/Coffee Corner'],
       targetLangs: ['DE', 'FR']
     })
   })
@@ -674,16 +674,16 @@ test('POST /api/export/mod/zip — ZIP-Download enthält beide Sprachordner', as
 
 test('POST /api/import/llm/preview — liefert matches (entryId + Uebersetzung + lang), schreibt nichts', async () => {
   const exp = await api('POST', '/export/llm', {
-    modIds: ['1299328280/More Traits'],
+    modIds: ['1000000001/Mixed Traits'],
     targetLangs: ['DE']
   })
   assert.equal(exp.status, 200)
   const doc = JSON.parse(exp.json.text)
-  const traitsDoc = doc.mods.find((d) => d.modId === '1299328280/More Traits')
+  const traitsDoc = doc.mods.find((d) => d.modId === '1000000001/Mixed Traits')
   doc.translations.DE[traitsDoc.modId] = traitsDoc.files
 
   const before = await api('GET', '/mods?lang=DE')
-  const traitsBefore = before.json.mods.find((m) => m.id === '1299328280/More Traits')
+  const traitsBefore = before.json.mods.find((m) => m.id === '1000000001/Mixed Traits')
 
   const preview = await api('POST', '/import/llm/preview', { text: JSON.stringify(doc) })
   assert.equal(preview.status, 200)
@@ -691,7 +691,7 @@ test('POST /api/import/llm/preview — liefert matches (entryId + Uebersetzung +
   assert.ok(Array.isArray(preview.json.matches))
   assert.equal(preview.json.matches.length, preview.json.matched)
   for (const m of preview.json.matches) {
-    assert.equal(m.modId, '1299328280/More Traits')
+    assert.equal(m.modId, '1000000001/Mixed Traits')
     assert.match(m.entryId, /^[^/]+\/media\/lua\/shared\/Translate\/EN\/.+::.+$/)
     assert.equal(typeof m.translation, 'string')
     assert.equal(m.lang, 'DE')
@@ -699,7 +699,7 @@ test('POST /api/import/llm/preview — liefert matches (entryId + Uebersetzung +
 
   // Die Route schreibt nichts — /api/mods bleibt unveraendert.
   const after = await api('GET', '/mods?lang=DE')
-  const traitsAfter = after.json.mods.find((m) => m.id === '1299328280/More Traits')
+  const traitsAfter = after.json.mods.find((m) => m.id === '1000000001/Mixed Traits')
   assert.equal(traitsAfter.translatedCount, traitsBefore.translatedCount)
 })
 
@@ -710,8 +710,8 @@ test('POST /api/import/llm/preview — leerer Text → 400', async () => {
 })
 
 test('POST /api/reset-translations — stellt Baseline wieder her, verschont nie von der App geschriebene Dateien', async () => {
-  const pid = encodeURIComponent('3554514861/Fuel Bowser')
-  const vdir = path.join(fakeRoot, 'workshop', '3554514861', 'mods', 'Fuel Bowser', '42.20')
+  const pid = encodeURIComponent('3500000004/Fuel Trailer')
+  const vdir = path.join(fakeRoot, 'workshop', '3500000004', 'mods', 'Fuel Trailer', '42.20')
   const enContextMenuPath = path.join(vdir, 'media', 'lua', 'shared', 'Translate', 'EN', 'ContextMenu.json')
   const deIgUiPath = path.join(vdir, 'media', 'lua', 'shared', 'Translate', 'DE', 'IG_UI.json')
   const enBefore = readFileSync(enContextMenuPath, 'utf8')
@@ -731,7 +731,7 @@ test('POST /api/reset-translations — stellt Baseline wieder her, verschont nie
     lang: 'DE'
   })
   assert.equal(overwrite.status, 200)
-  assert.equal(JSON.parse(readFileSync(deIgUiPath, 'utf8')).IGUI_VehicleNameFuelBowserTrailer, 'Vom User geaendert')
+  assert.equal(JSON.parse(readFileSync(deIgUiPath, 'utf8')).IGUI_VehicleNameFuelTrailer, 'Vom User geaendert')
 
   // ContextMenu.json (DE) wurde schon vom fruehreren PUT-Test beschrieben
   // (Baseline = leeres {} aus der Fixture) und traegt seither "Testübersetzung".
@@ -746,7 +746,7 @@ test('POST /api/reset-translations — stellt Baseline wieder her, verschont nie
   // IG_UI.json ist auf die mitgelieferte Fixture-Uebersetzung zurueck — NICHT
   // leer — weil das die Baseline dieser Datei ist.
   assert.equal(
-    JSON.parse(readFileSync(deIgUiPath, 'utf8')).IGUI_VehicleNameFuelBowserTrailer,
+    JSON.parse(readFileSync(deIgUiPath, 'utf8')).IGUI_VehicleNameFuelTrailer,
     'Treibstofftankzug'
   )
 
@@ -757,10 +757,10 @@ test('POST /api/reset-translations — stellt Baseline wieder her, verschont nie
   assert.ok(contextMenuAfter.every((e) => e.translation === null), 'ContextMenu.json sollte wieder leer sein')
 
   // Eine Datei, die die App NIE geschrieben hat, bleibt von einem Reset
-  // unberuehrt: More Traits' DE-Datei behaelt ihren Fixture-Zustand.
-  const traitsPid = encodeURIComponent('1299328280/More Traits')
+  // unberuehrt: Mixed Traits' DE-Datei behaelt ihren Fixture-Zustand.
+  const traitsPid = encodeURIComponent('1000000001/Mixed Traits')
   const traitsBefore = await api('GET', `/mods/${traitsPid}/entries?lang=DE`)
-  assert.ok(traitsBefore.json.entries.some((e) => e.translation !== null), 'More Traits sollte weiterhin Uebersetzungen haben')
+  assert.ok(traitsBefore.json.entries.some((e) => e.translation !== null), 'Mixed Traits sollte weiterhin Uebersetzungen haben')
 
   // Backup der ueberschriebenen Dateien liegt vor.
   const backups = path.join(exportRoot, 'backups')
@@ -768,7 +768,7 @@ test('POST /api/reset-translations — stellt Baseline wieder her, verschont nie
   let found = false
   for (const d of batchDirs) {
     for (const sub of readDir(path.join(backups, d))) {
-      if (sub.includes('Fuel Bowser') && sub.endsWith('__DE') && readDir(path.join(backups, d, sub)).includes('IG_UI.json')) {
+      if (sub.includes('Fuel Trailer') && sub.endsWith('__DE') && readDir(path.join(backups, d, sub)).includes('IG_UI.json')) {
         found = true
       }
     }
@@ -777,7 +777,7 @@ test('POST /api/reset-translations — stellt Baseline wieder her, verschont nie
 })
 
 test('POST /api/reset-translations — Default (kein langs) betrifft ALLE targetLangs', async () => {
-  const pid = encodeURIComponent('2688538916/Coffee Machines Fix')
+  const pid = encodeURIComponent('2000000002/Coffee Corner')
   // FR wurde in einem frueheren Test per PUT beschrieben.
   const before = await api('GET', `/mods/${pid}/entries?lang=FR`)
   assert.ok(before.json.entries.some((e) => e.translation !== null), 'FR sollte vor dem Reset eine Uebersetzung haben')
@@ -808,11 +808,11 @@ test('GET /api/backups — listet Punkte mit Metadaten, der Reset hat einen eige
   assert.equal(newest.restorable, true)
   assert.ok(newest.createdAt && !Number.isNaN(Date.parse(newest.createdAt)))
   assert.ok(newest.langs.includes('FR'))
-  assert.ok(newest.mods.some((m) => m.name === 'Coffee Machines Fix'))
+  assert.ok(newest.mods.some((m) => m.name === 'Coffee Corner'))
 })
 
 test('POST /api/backups/:id/restore — macht den Reset rückgängig', async () => {
-  const pid = encodeURIComponent('2688538916/Coffee Machines Fix')
+  const pid = encodeURIComponent('2000000002/Coffee Corner')
   const before = await api('GET', `/mods/${pid}/entries?lang=FR`)
   assert.ok(before.json.entries.every((e) => e.translation === null), 'FR ist nach dem Reset leer')
 

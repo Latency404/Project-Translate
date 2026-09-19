@@ -6,10 +6,6 @@ zeigt alle übersetzbaren Einträge in einem Editor, exportiert sie als eine Dat
 ein LLM, nimmt die Übersetzung zurück und baut daraus einen installierbaren
 Übersetzungs-Mod.
 
-Der aktuelle Funktionsumfang ist gewollt. Arbeit an diesem Projekt heißt: bestehendes
-Verhalten stabiler und runder machen, nicht neu entwerfen. Was ansteht, steht in
-[PLAN.md](PLAN.md).
-
 ## Stack und Befehle
 
 React 19 + Vite 8 + Tailwind 4 im Frontend, Node + Express 5 im Backend, JavaScript
