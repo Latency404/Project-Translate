@@ -1,82 +1,44 @@
-// Lesen/Schreiben von Übersetzungs-Einträgen + Backup.
+// Speichern/Zurücksetzen von Übersetzungs-Einträgen + Backup.
 //
-// B42 lädt Übersetzungen AUSSCHLIESSLICH aus <LANG>/<Kategorie>.json (s.
-// scanner.js) — ein Eintrag schreibt deshalb IMMER die JSON-Zieldatei, egal ob
-// seine EN-Quelle JSON oder (B41-Altlast) TXT ist:
-//   EN-Quelle: <versionDir>/media/lua/shared/Translate/EN/<Kategorie>.json|<Name>_EN.txt
-//   TGT:       <versionDir>/media/lua/shared/Translate/<targetLang>/<Kategorie>.json
-// Existiert noch keine JSON-Zieldatei, wird der Startbestand aus der alten
-// <Kategorie>_<LANG>.txt gelesen, falls die (Rückfall) existiert (readTargetMap
-// in scanner.js) — sonst gingen Übersetzungen, die bisher nur über den
-// TXT-Rückfall sichtbar waren, beim ersten Speichern verloren. TXT-Zieldateien
-// werden von der App nicht mehr geschrieben. Ziel ist eine flache key →
+// Game- und Workshop-Ordner werden NIE beschrieben (s. guard.js). Ein Eintrag
+// landet im Arbeitsordner der App (export/work/, Layout s. scanner.workLangDir):
+//   EN-Quelle: <versionDir>/media/lua/shared/Translate/EN/<Kategorie>.json|<Name>_EN.txt  (nur gelesen)
+//   Arbeit:    <workRoot>/<modId>/<version>/media/lua/shared/Translate/<LANG>/<Kategorie>.json
+// Die Arbeitsdatei ist der komplette Stand der Zieldatei: beim ersten Speichern
+// wird sie aus der Übersetzung im Spiel/Workshop gesät (readTargetMap, inkl. der
+// alten <Kategorie>_<LANG>.txt), danach überlagert sie diese vollständig. Der
+// Mod-Export (mod-export.js) liest den Arbeitsstand. Ziel ist eine flache key →
 // string-Map; bestehende Keys bleiben erhalten (nur der neue Key wird
 // gesetzt/gelöscht).
 //
-// Backup: Vor jedem Überschreiben einer targetLang-Datei wird die alte Datei
+// Reset (resetToGame): löscht die Arbeitsdatei — danach gilt wieder der Stand
+// im Spiel/Workshop.
+//
+// Backup: Vor jedem Überschreiben/Löschen einer Arbeitsdatei wird die alte Datei
 // kopiert nach
 // export/backups/<YYYY-MM-DD_HH-mm>/<modId>__<version>__<file>__<LANG>/<Zieldateiname>.
 // Ein Ordner pro Speicher-Batch (= Speicherpunkt, mit meta.json, s. backupFile),
 // Backups werden nie automatisch gelöscht. Zurückspielen: server/backups.js.
-// Ein Speicherpunkt kann für dieselbe (modId/version/file/lang)-Kombination
-// mehrere Zieldateien enthalten (z. B. Reset einer Alt-Baseline, die noch eine
-// legacy-TXT-Datei UND die neue JSON-Datei betrifft) — dedupe erfolgt deshalb
-// über den exakten Zielpfad, nicht über den Ordnernamen.
-//
-// Baseline (für "Reset Translations", Settings): der allererste App-
-// Schreibzugriff auf eine targetLang-Datei sichert deren Zustand VOR diesem
-// Schreiben nach export/baseline/<modId>__<version>__<file>__<LANG>/ —
-// entweder als Kopie der Datei (unter ihrem Zieldateinamen), oder als leere
-// Markerdatei "<Zieldateiname>.absent", falls die Datei noch gar nicht
-// existierte. Eine Baseline wird PRO Zieldateiname im Ordner geführt (s.
-// hasBaselineFor()): ein Ordner kann sowohl eine Alt-Baseline der früheren
-// TXT-Zieldatei als auch — sobald erstmals mit dieser Version gespeichert wird
-// — eine Baseline der neuen JSON-Zieldatei enthalten. Ein Reset stellt jeden
-// dort erfassten Zielnamen wieder her (oder löscht ihn bei ".absent") statt
-// einfach alles zu leeren — vorhandene Übersetzungen, die schon vor der
-// App-Nutzung da waren, bleiben so erhalten. Einmal aufgenommen, wird eine
-// Baseline nie überschrieben.
-//
-// Sprach-Suffix (Multi-Language-Umbau): der Ordnername war früher
-// sprachunabhängig (<modId>__<version>__<file>) — sobald zwei Zielsprachen
-// dieselbe Quelldatei betreffen, hätten sie sich sonst gegenseitig die
-// Baseline überschrieben bzw. verwechselt. Neu geschriebene Baselines tragen
-// deshalb IMMER das Sprach-Suffix. Beim Lesen einer Baseline gilt: gibt es
-// den Ordner mit Suffix, zählt der; sonst, falls ein alter Ordner OHNE Suffix
-// existiert (vor diesem Umbau angelegt), gilt der als Baseline der
-// angefragten Sprache — so geht kein Alt-Bestand verloren
-// (s. resolveBaselineDirForRead()). Alt-Baselines (vor dieser Funktion, s. o.)
-// kennen nur einen nackten ".absent"-Marker statt eines dateinamen-genauen —
-// der bezog sich auf den DAMALS einzigen Zielnamen (bei JSON-Quellen identisch
-// mit dem heutigen, bei TXT-Quellen der alte <Kategorie>_<LANG>.txt-Name) und
-// wird beim Lesen entsprechend zugeordnet (s. hasBaselineFor()).
 const fs = require('node:fs')
 const path = require('node:path')
 const {
   versionDirOf,
   toPosix,
   readFlatMap,
-  readTxtMap,
   targetFileName,
-  legacyTargetFileName,
-  readTargetMap
+  readTargetMap,
+  translateDir,
+  workLangDir
 } = require('./scanner')
+const { assertWritable } = require('./guard')
 
 // <modId>__<version>__<file>__<LANG> — Slashes und Sonderzeichen im Namen
-// abtragen. lang macht Backup-/Baseline-Ordner sprachspezifisch, damit zwei
+// abtragen. lang macht Backup-Ordner sprachspezifisch, damit zwei
 // Zielsprachen, die dieselbe Quelldatei betreffen, sich nicht gegenseitig
 // überschreiben/verwechseln.
 function backupName(modId, version, file, lang) {
   const clean = (s) => String(s).replace(/[\\/:*?"<>|]/g, '_')
   return `${clean(modId)}__${clean(version)}__${clean(file)}__${clean(lang)}`
-}
-
-// Alter, sprachunabhängiger Ordnername von vor dem Multi-Sprachen-Umbau —
-// wird nur noch beim LESEN bestehender Baselines gebraucht (Migration),
-// s. resolveBaselineDirForRead().
-function legacyBackupName(modId, version, file) {
-  const clean = (s) => String(s).replace(/[\\/:*?"<>|]/g, '_')
-  return `${clean(modId)}__${clean(version)}__${clean(file)}`
 }
 
 // Speicherpunkt-Ordner: minutengenau, damit ein Klick auf "Save" (der Editor
@@ -90,10 +52,9 @@ function timestampDir(withSeconds = false) {
 }
 
 // Metadaten eines Speicherpunkts: export/backups/<stamp>/meta.json.
-// Grundlage für "Restore Backup" in Settings — ohne sie wäre ein Punkt nicht
-// sicher zurückzuspielen: der Ordnername eines Datei-Backups verstümmelt
-// modId/Pfad (s. backupName) und kennt bei JSON-Dateien die Sprache nicht.
-// Deshalb steht hier je Datei der EXAKTE Zielpfad.
+// Grundlage für "Restore Backup" in Settings — der Ordnername eines Datei-Backups
+// verstümmelt modId/Pfad (s. backupName), deshalb steht hier je Datei der
+// EXAKTE Zielpfad (immer eine Arbeitsdatei).
 //   { version: 1, createdAt, updatedAt, kinds: ["save"|"reset"|"restore"],
 //     files: [{ dir, fileName, targetPath, modId, modName, version, file,
 //               lang, absent }] }
@@ -123,10 +84,7 @@ function backupFile(backupRoot, stamp, kind, { modId, modName, version, file, la
     const meta = readMeta(pointDir) || { version: 1, createdAt: now, updatedAt: now, kinds: [], files: [] }
     if (!meta.kinds.includes(kind)) meta.kinds.push(kind)
     meta.updatedAt = now
-    // Dedupe über den exakten Zielpfad, nicht den Ordnernamen: derselbe `dir`
-    // (modId/version/file/lang) kann bei TXT-Quellen zwei Zieldateien treffen
-    // (legacy TXT + neue JSON) — beide müssen im selben Speicherpunkt Platz
-    // haben, sonst würde "erste Sicherung gewinnt" die zweite Datei verwerfen.
+    // Dedupe über den exakten Zielpfad, nicht den Ordnernamen.
     const tgtPathPosix = toPosix(tgtPath)
     if (!meta.files.some((f) => f.targetPath === tgtPathPosix)) {
       const absent = !fs.existsSync(tgtPath)
@@ -137,7 +95,7 @@ function backupFile(backupRoot, stamp, kind, { modId, modName, version, file, la
       meta.files.push({
         dir,
         fileName: tgtFileName,
-        targetPath: toPosix(tgtPath),
+        targetPath: tgtPathPosix,
         modId,
         modName,
         version,
@@ -153,11 +111,12 @@ function backupFile(backupRoot, stamp, kind, { modId, modName, version, file, la
 }
 
 function writeJson(filePath, obj) {
+  assertWritable(filePath)
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
   fs.writeFileSync(filePath, JSON.stringify(obj, null, 4) + '\n', 'utf8')
 }
 
-// fs-Fehler in eine menschenlesbare, deutsche Nachricht übersetzen.
+// fs-Fehler in eine menschenlesbare Nachricht übersetzen.
 // Der Error wird (über .message) nicht ersetzt — Status bleibt erhalten.
 // Idempotent: wer zuerst klassifiziert (saveBatch kennt den exakten
 // Zielpfad), liefert die präzisere Meldung — der spätere Aufruf in der
@@ -174,7 +133,7 @@ function classifyFsError(err, filePath) {
     err.message = `Target folder not writable: ${p}. Missing write permission (path is read-only). Check permissions and try again.`
     if (!err.status) err.status = 403
   } else if (causes.includes('ENOENT')) {
-    err.message = `Folder not found: ${p}. The mod path no longer exists (mod removed or moved?).`
+    err.message = `Folder not found: ${p}. The path no longer exists.`
     if (!err.status) err.status = 404
   } else if (causes.includes('ENOTDIR')) {
     err.message = `Unexpected directory layout: ${p}`
@@ -188,64 +147,6 @@ function safeWriteError(err, filePath) {
   return classifyFsError(err, filePath)
 }
 
-// Ziel-Ordnername für NEU geschriebene Baselines — immer mit Sprach-Suffix.
-function baselineDirFor(baselineRoot, modId, version, file, lang) {
-  return path.join(baselineRoot, backupName(modId, version, file, lang))
-}
-
-// Baseline-Ordner zum LESEN auflösen (Migration): existiert der Ordner mit
-// Sprach-Suffix, gilt der. Sonst, falls der alte Ordner ohne Suffix (vor
-// diesem Umbau angelegt) existiert, gilt er als Baseline der angefragten
-// Sprache. Existiert keiner von beiden, wird trotzdem der neue (mit Suffix)
-// Pfad zurückgegeben — der Aufrufer prüft selbst per existsSync, ob eine
-// Baseline überhaupt vorliegt.
-function resolveBaselineDirForRead(baselineRoot, modId, version, file, lang) {
-  const withSuffix = baselineDirFor(baselineRoot, modId, version, file, lang)
-  if (fs.existsSync(withSuffix)) return withSuffix
-  const legacy = path.join(baselineRoot, legacyBackupName(modId, version, file))
-  if (fs.existsSync(legacy)) return legacy
-  return withSuffix
-}
-
-// Alter, sprachunabhängiger Zielname von vor diesem JSON-Only-Umbau: bei
-// TXT-Quellen war das die <Kategorie>_<LANG>.txt, bei JSON-Quellen ist er
-// identisch mit dem heutigen Namen. Ein nackter ".absent"-Marker (Alt-
-// Baseline, s. hasBaselineFor()) bezieht sich immer auf DIESEN Namen.
-function oldTargetFileNameOf(srcFileName, lang) {
-  return legacyTargetFileName(srcFileName, lang) || targetFileName(srcFileName, lang)
-}
-
-// Ob in `bdir` bereits eine Baseline für genau die Zieldatei `tgtFileName`
-// aufgenommen ist: eine Kopie `bdir/<tgtFileName>`, ein dateinamen-genauer
-// Marker `bdir/<tgtFileName>.absent`, oder — Alt-Baselines von vor der
-// Aufteilung je Zieldateiname — ein nackter `bdir/.absent`, sofern
-// `tgtFileName` der damals einzige Zielname war (oldTgtFileName).
-function hasBaselineFor(bdir, tgtFileName, oldTgtFileName) {
-  if (fs.existsSync(path.join(bdir, tgtFileName))) return true
-  if (fs.existsSync(path.join(bdir, `${tgtFileName}.absent`))) return true
-  return tgtFileName === oldTgtFileName && fs.existsSync(path.join(bdir, '.absent'))
-}
-
-// Einmalig (idempotent) den Vor-App-Zustand EINER Zieldatei sichern — wird vor
-// jedem Überschreiben in saveBatch aufgerufen; eine bereits vorhandene
-// Baseline für genau diesen Zieldateinamen (s. hasBaselineFor) bleibt
-// unberührt. Der Ordner selbst folgt der Migrationsregel (neu mit
-// Sprach-Suffix, alt ohne, s. resolveBaselineDirForRead) — ein bestehender
-// Alt-Ordner (z. B. mit einer Baseline der früheren TXT-Zieldatei) bekommt den
-// neuen JSON-Zielnamen einfach hinzugefügt, statt einen zweiten Ordner
-// anzulegen.
-function ensureBaseline(baselineRoot, modId, version, file, tgtPath, tgtFileName, lang) {
-  const bdir = resolveBaselineDirForRead(baselineRoot, modId, version, file, lang)
-  const oldTgtFileName = oldTargetFileNameOf(path.basename(file), lang)
-  if (hasBaselineFor(bdir, tgtFileName, oldTgtFileName)) return
-  fs.mkdirSync(bdir, { recursive: true })
-  if (fs.existsSync(tgtPath)) {
-    fs.copyFileSync(tgtPath, path.join(bdir, tgtFileName))
-  } else {
-    fs.writeFileSync(path.join(bdir, `${tgtFileName}.absent`), '')
-  }
-}
-
 // Anzahl Keys, in denen sich zwei flache Maps unterscheiden (fürs Reporting).
 function diffCount(a, b) {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)])
@@ -254,81 +155,44 @@ function diffCount(a, b) {
   return n
 }
 
-// Eine targetLang-Datei auf ihre Baseline(n) zurücksetzen (s. Kommentar oben).
-// Kein Baseline-Ordner vorhanden → die App hat diese Datei nie geschrieben,
-// es gibt nichts zurückzusetzen (sie ist bereits im Originalzustand). Sonst
-// wird JEDER in diesem Ordner erfasste Zielname geprüft: der aktuelle
-// JSON-Zielname (den saveBatch schreibt) und — nur bei TXT-Quellen, als
-// Rückfall auf Alt-Baselines von vor diesem Umbau — der frühere
-// <Kategorie>_<LANG>.txt-Name; die App selbst schreibt diesen nicht mehr
-// (s. saveBatch), ein Reset muss eine dort noch vorhandene Alt-Baseline aber
-// weiter zurückspielen können. Rückgabe: Anzahl der tatsächlich geänderten
-// Keys, summiert über alle betroffenen Zieldateien (0 = keine Änderung nötig,
-// dann wird auch nicht geschrieben/gesichert).
+// Übersetzungsdatei im Spiel/Workshop (nur lesen): dort liegt der Stand, auf
+// den ein Reset zurückfällt.
+function gameLangDirOf(mod, version, targetLang) {
+  return translateDir(versionDirOf(mod, version), targetLang)
+}
+
+// Eine Arbeitsdatei auf den Stand im Spiel/Workshop zurücksetzen (= löschen).
+// Gibt es keine Arbeitsdatei, ist nichts zu tun. Rückgabe: Anzahl der Keys, in
+// denen die Arbeitsdatei vom Stand im Spiel abwich (0 = keine Änderung; dann
+// wird nichts gesichert, ein überflüssiger Rest wird still entfernt).
 // `stamp`: der Speicherpunkt, in den die Sicherung geht. Die Reset-Route gibt
 // einen eigenen, frischen Punkt für den ganzen Reset vor (backups.freshStamp) —
-// so lässt sich genau der Reset rückgängig machen, ohne ein Speichern aus
-// derselben Minute mitzunehmen.
-function restoreBaseline(mod, version, file, targetLang, backupRoot, baselineRoot, stamp = timestampDir()) {
-  const vdir = versionDirOf(mod, version)
-  const tDir = path.join(vdir, 'media', 'lua', 'shared', 'Translate', targetLang)
+// so lässt sich genau der Reset rückgängig machen.
+function resetToGame(mod, version, file, targetLang, backupRoot, workRoot, stamp = timestampDir()) {
   const srcBase = path.basename(file)
   const tgtFileName = targetFileName(srcBase, targetLang)
-  const bdir = resolveBaselineDirForRead(baselineRoot, mod.id, version, file, targetLang)
-  if (!fs.existsSync(bdir)) return 0
+  const tgtPath = path.join(workLangDir(workRoot, mod, version, targetLang), tgtFileName)
+  if (!fs.existsSync(tgtPath)) return 0
 
-  const legacyName = legacyTargetFileName(srcBase, targetLang) // null bei JSON-Quellen
-  const oldTgtFileName = legacyName || tgtFileName
-  // Kandidaten in diesem Ordner: der aktuelle JSON-Zielname, dazu bei
-  // TXT-Quellen zusätzlich der alte TXT-Zielname (nur relevant, wenn eine
-  // Alt-Baseline ihn noch führt).
-  const candidates = [{ name: tgtFileName, tPath: path.join(tDir, tgtFileName), isTxt: false }]
-  if (legacyName && legacyName !== tgtFileName) {
-    candidates.push({ name: legacyName, tPath: path.join(tDir, legacyName), isTxt: true })
-  }
-
-  const actions = []
-  let changed = 0
-  for (const c of candidates) {
-    const copyPath = path.join(bdir, c.name)
-    const hasCopy = fs.existsSync(copyPath)
-    if (!hasBaselineFor(bdir, c.name, oldTgtFileName)) continue // kein Eintrag für dieses Ziel
-
-    const wasAbsent = !hasCopy
-    const current = (c.isTxt ? readTxtMap(c.tPath) : readFlatMap(c.tPath)) || {}
-    const baseline = wasAbsent ? {} : (c.isTxt ? readTxtMap(copyPath) : readFlatMap(copyPath)) || {}
-    const n = diffCount(current, baseline)
-    if (n === 0) continue
-    changed += n
-    actions.push({ ...c, wasAbsent, copyPath })
-  }
-
-  if (changed === 0) return 0
-
-  for (const { tPath, name, isTxt, wasAbsent, copyPath } of actions) {
-    backupFile(backupRoot, stamp, 'reset', {
-      modId: mod.id,
-      modName: mod.name,
-      version,
-      file,
-      lang: targetLang,
-      tgtPath: tPath,
-      tgtFileName: name
-    })
-    try {
-      if (wasAbsent) {
-        fs.rmSync(tPath, { force: true })
-      } else if (isTxt) {
-        // Alt-Baseline byte-für-byte zurückkopieren — kein Reparse/Rewrite
-        // mehr nötig, die App schreibt dieses Format nicht mehr.
-        fs.mkdirSync(path.dirname(tPath), { recursive: true })
-        fs.copyFileSync(copyPath, tPath)
-      } else {
-        writeJson(tPath, readFlatMap(copyPath) || {})
-      }
-    } catch (e) {
-      throw safeWriteError(e, tPath)
+  const work = readFlatMap(tgtPath) || {}
+  const game = readTargetMap(gameLangDirOf(mod, version, targetLang), srcBase, targetLang) || {}
+  const changed = diffCount(work, game)
+  try {
+    if (changed > 0) {
+      backupFile(backupRoot, stamp, 'reset', {
+        modId: mod.id,
+        modName: mod.name,
+        version,
+        file,
+        lang: targetLang,
+        tgtPath,
+        tgtFileName
+      })
     }
+    assertWritable(tgtPath)
+    fs.rmSync(tgtPath, { force: true })
+  } catch (e) {
+    throw safeWriteError(e, tgtPath)
   }
   return changed
 }
@@ -338,8 +202,9 @@ function restoreBaseline(mod, version, file, targetLang, backupRoot, baselineRoo
 // (immer der EN-Pfad). translation = "" löscht den Key (leere Übersetzung),
 // null wird wie "" behandelt. Rückgabe: { saved: Zahl }.
 // Fehler werden als { error: "Mensch lesbarer Text" } geworfen (HTTP 4xx/5xx).
-function saveBatch(mod, entries, targetLang, backupRoot, baselineRoot) {
+function saveBatch(mod, entries, targetLang, backupRoot, workRoot) {
   if (!Array.isArray(entries)) throw Object.assign(new Error('entries missing'), { status: 400 })
+  if (!workRoot) throw Object.assign(new Error('No work folder configured.'), { status: 500 })
   const byFile = new Map()
   for (const e of entries) {
     const sep = e.entryId.lastIndexOf('::')
@@ -366,26 +231,30 @@ function saveBatch(mod, entries, targetLang, backupRoot, baselineRoot) {
     const vdir = versionDirOf(mod, version)
     const enPath = path.join(vdir, file)
     const srcBase = path.basename(file)
-    // Zielpfad: Translate/<targetLang>/<Kategorie>.json — IMMER JSON, auch für
-    // eine TXT-Quelle (targetFileName, s. scanner.js: B42 lädt nur noch JSON).
-    // Nur der Basisname — der EN-Pfad liegt ja schon unter Translate/EN/.
+    // Zielpfad in der Arbeitsdatei: immer <Kategorie>.json (targetFileName, s.
+    // scanner.js: B42 lädt nur noch JSON), auch für eine TXT-Quelle.
     const tgtFileName = targetFileName(srcBase, targetLang)
-    const tgtDir = path.join(vdir, 'media', 'lua', 'shared', 'Translate', targetLang)
-    const tgtPath = path.join(tgtDir, tgtFileName)
-    // EN-Datei muss existieren, sonst ist der Key erfunden (unmatched). Bei
-    // einer TXT-Quelle bleibt das die TXT-Datei selbst — sie wird nie
-    // angefasst, auch nicht wenn daneben inzwischen eine <Kategorie>.json
-    // liegt (z. B. weil Zielsprache EN schon einmal gespeichert wurde).
+    const tgtPath = path.join(workLangDir(workRoot, mod, version, targetLang), tgtFileName)
+    // EN-Datei muss existieren, sonst ist der Key erfunden (unmatched). Sie
+    // wird nur gelesen, nie geschrieben.
     if (!fs.existsSync(enPath)) {
       throw Object.assign(new Error(`EN file not found: ${toPosix(enPath)}`), { status: 404 })
     }
-    // Baseline VOR dieser Änderung sichern (No-op ab dem zweiten Schreiben).
-    if (baselineRoot) {
-      try {
-        ensureBaseline(baselineRoot, mod.id, version, file, tgtPath, tgtFileName, targetLang)
-      } catch (e) {
-        throw safeWriteError(e, path.join(baselineRoot, backupName(mod.id, version, file, targetLang)))
+    // Startbestand: die Arbeitsdatei, falls es sie schon gibt (tolerant gelesen:
+    // Trailing Comma / Lua-Style-Keys); eine vorhandene, aber unlesbare Datei
+    // bricht ab statt sie zu überschreiben. Sonst — erstes Speichern — der
+    // Stand im Spiel/Workshop (inkl. altem TXT-Rückfall), damit dort vorhandene
+    // Übersetzungen nicht verschwinden.
+    let obj
+    if (fs.existsSync(tgtPath)) {
+      obj = readFlatMap(tgtPath)
+      if (!obj) {
+        throw Object.assign(new Error(`Work file is not readable: ${toPosix(tgtPath)}. Fix or remove it first.`), {
+          status: 409
+        })
       }
+    } else {
+      obj = readTargetMap(gameLangDirOf(mod, version, targetLang), srcBase, targetLang) || {}
     }
     backupFile(backupRoot, stamp, 'save', {
       modId: mod.id,
@@ -396,14 +265,6 @@ function saveBatch(mod, entries, targetLang, backupRoot, baselineRoot) {
       tgtPath,
       tgtFileName
     })
-    // Startbestand: die JSON-Zieldatei, falls sie schon existiert (tolerant:
-    // Trailing Comma / Lua-Style-Keys — eine handgeschriebene Zieldatei wird
-    // beim Speichern nicht plattgemacht); sonst, beim allerersten Speichern
-    // über einer TXT-Quelle, die alte <Kategorie>_<LANG>.txt als Startbestand
-    // (readTargetMap-Rückfall) — sonst verschwänden Übersetzungen, die vorher
-    // nur über den TXT-Rückfall sichtbar waren.
-    const existing = readTargetMap(tgtDir, srcBase, targetLang)
-    const obj = existing || {}
     for (const { key, translation } of items) {
       if (translation === '') delete obj[key]
       else obj[key] = translation
@@ -420,7 +281,7 @@ function saveBatch(mod, entries, targetLang, backupRoot, baselineRoot) {
 
 module.exports = {
   saveBatch,
-  restoreBaseline,
+  resetToGame,
   backupName,
   backupFile,
   readMeta,

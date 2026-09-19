@@ -38,6 +38,10 @@
 // unbekannt). Lädt die Übersetzung nach dem Quell-Mod, damit dessen eigene
 // (evtl. veraltete) Übersetzung für dieselbe Sprache nicht gewinnt.
 //
+// Quelle der Übersetzungen ist der Arbeitsstand (export/work/, s. scanner.js):
+// eine Arbeitsdatei geht vor der Datei im Spiel/Workshop. Der Zielordner darf
+// nie in Spiel/Workshop liegen (guard.assertWritable).
+//
 // Es werden nur übersetzte Einträge exportiert (non-empty String-Value, der
 // auch in der Quelldatei existiert). Ausgabe ist IMMER JSON — auch für
 // TXT-Quellen (Lua-Translate liest B42 nicht mehr, s. o.). Leere Dateien
@@ -51,10 +55,11 @@ const {
   toPosix,
   sourceFileNames,
   readSourceMap,
-  readTargetMap,
+  readTargetMapWithWork,
   targetFileName
 } = require('./scanner')
 const { SOURCE_LANG, isKnownLang } = require('./langs')
+const { assertWritable } = require('./guard')
 
 // Fester Versionsordner für die mod.info (s. Kopfkommentar) — kein aus den
 // Quellen abgeleiteter Wert.
@@ -232,14 +237,14 @@ function writeModInfoFile(outRoot, { id, name, author, description, iconSrc, loa
 // { "<Kategorie>.json": { key: value } } — nur übersetzte, in der Quelle
 // vorhandene Keys (unmatched/leer verwerfen). Ausgabe-Dateiname immer
 // targetFileName() (also immer .json, auch für TXT-Quellen).
-function readLocationTranslations(vdir, targetLang, sourceLang = SOURCE_LANG) {
+function readLocationTranslations(vdir, targetLang, sourceLang = SOURCE_LANG, work = null) {
   const out = {}
   const enDir = translateDir(vdir, sourceLang)
   const tgtDir = translateDir(vdir, targetLang)
   for (const f of sourceFileNames(enDir, sourceLang)) {
     const enMap = readSourceMap(enDir, f)
     if (!enMap) continue
-    const tgtMap = readTargetMap(tgtDir, f, targetLang, sourceLang)
+    const tgtMap = readTargetMapWithWork(tgtDir, f, targetLang, sourceLang, work)
     if (!tgtMap) continue
     const fileName = targetFileName(f, targetLang, sourceLang)
     const filtered = {}
@@ -262,9 +267,10 @@ function readLocationTranslations(vdir, targetLang, sourceLang = SOURCE_LANG) {
 // mehrere, siehe bundleFolderBaseName/bundleDisplayName. `written` ist ein Set
 // in Einfüge-Reihenfolge (mod.info/icon zuerst, dann je Sprache die Dateien in
 // Verarbeitungsreihenfolge) — ob/wie sortiert wird, entscheidet der Aufrufer.
-function buildExport(mods, targetLangs, targetDir, sourceLang = SOURCE_LANG) {
+function buildExport(mods, targetLangs, targetDir, sourceLang = SOURCE_LANG, workRoot = null) {
   const langs = normalizeLangs(targetLangs)
   const outRoot = path.join(targetDir, `${bundleFolderBaseName(mods)}-${langSuffix(langs, '-')}`)
+  assertWritable(outRoot)
   fs.mkdirSync(outRoot, { recursive: true })
 
   const id = mods.length === 1 ? singleModInfoId(mods[0], langs) : bundleModInfoId(mods, langs)
@@ -293,9 +299,9 @@ function buildExport(mods, targetLangs, targetDir, sourceLang = SOURCE_LANG) {
   // dann neueste Version) — spätere Quelle gewinnt bei Key-Kollision.
   const perLang = new Map(langs.map((lang) => [lang, new Map()]))
   for (const mod of mods) {
-    for (const { vdir } of layoutLocations(mod, sourceLang)) {
+    for (const { rel, vdir } of layoutLocations(mod, sourceLang)) {
       for (const lang of langs) {
-        const files = readLocationTranslations(vdir, lang, sourceLang)
+        const files = readLocationTranslations(vdir, lang, sourceLang, { workRoot, mod, version: rel })
         const acc = perLang.get(lang)
         for (const [fileName, obj] of Object.entries(files)) {
           if (!acc.has(fileName)) acc.set(fileName, {})
@@ -327,8 +333,8 @@ function buildExport(mods, targetLangs, targetDir, sourceLang = SOURCE_LANG) {
 // getestete Verhalten dieser Funktion und unterscheidet sich damit von
 // exportModsBundle, das sortiert. Bei genau einer Sprache ist das Ergebnis
 // bit-identisch zum bisherigen Einzelsprachen-Export (Ordnername/id/Name).
-function exportMod(mod, targetLangs, targetDir, sourceLang = SOURCE_LANG) {
-  const { modId, targetPath, written, targetLangs: langs } = buildExport([mod], targetLangs, targetDir, sourceLang)
+function exportMod(mod, targetLangs, targetDir, sourceLang = SOURCE_LANG, workRoot = null) {
+  const { modId, targetPath, written, targetLangs: langs } = buildExport([mod], targetLangs, targetDir, sourceLang, workRoot)
   return { modId, targetPath, written: [...written], targetLangs: langs }
 }
 
@@ -351,8 +357,8 @@ function exportMod(mod, targetLangs, targetDir, sourceLang = SOURCE_LANG) {
 // Ein einzelner Mod mit genau einer Sprache erzeugt exakt dasselbe Ergebnis wie
 // exportMod(), bis auf die Reihenfolge von `written` (hier alphabetisch
 // sortiert, s. buildExport).
-function exportModsBundle(mods, targetLangs, targetDir, sourceLang = SOURCE_LANG) {
-  const { modId, targetPath, written, targetLangs: langs } = buildExport(mods, targetLangs, targetDir, sourceLang)
+function exportModsBundle(mods, targetLangs, targetDir, sourceLang = SOURCE_LANG, workRoot = null) {
+  const { modId, targetPath, written, targetLangs: langs } = buildExport(mods, targetLangs, targetDir, sourceLang, workRoot)
   return { modId, targetPath, written: [...written].sort(), targetLangs: langs }
 }
 

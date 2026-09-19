@@ -11,7 +11,7 @@ const {
 } = require('node:fs')
 const { tmpdir } = require('node:os')
 const path = require('node:path')
-const { scan } = require('./scanner')
+const { scan, workLangDir } = require('./scanner')
 const { saveBatch } = require('./entries')
 const {
   exportLlmBundle, normalizeImportInput, importPreview
@@ -247,7 +247,7 @@ test('importPreview (altes Format, Einzel-Mod-Datei): matched + unmatched zähle
   assert.ok(!Object.values(preview.perMod).some((p) => p.mod !== coffee.name))
 })
 
-test('importPreview (altes Bundle-Format mit targetLang): matches liefert entryId + lang, saveBatch schreibt die DE-Datei', () => {
+test('importPreview (altes Bundle-Format mit targetLang): matches liefert entryId + lang, saveBatch schreibt die DE-Arbeitsdatei', () => {
   const belt = mods.find((m) => m.id === '3000000003/Equipment Belt')
   const doc = {
     targetLang: 'DE',
@@ -276,27 +276,27 @@ test('importPreview (altes Bundle-Format mit targetLang): matches liefert entryI
     lang: 'DE'
   })
   const backupRoot = path.join(workdir, 'backups')
+  const workRoot = path.join(workdir, 'work')
   const result = saveBatch(
     belt,
     preview.matches.map(({ entryId, translation }) => ({ entryId, translation })),
     'DE',
-    backupRoot
+    backupRoot,
+    workRoot
   )
   assert.equal(result.saved, 1)
-  const tgt = path.join(
-    fakeRoot, 'workshop', '3000000003', 'mods', 'Equipment Belt', '42.20',
-    'media', 'lua', 'shared', 'Translate', 'DE', 'ItemName.json'
-  )
+  const tgt = path.join(workLangDir(workRoot, belt, '42.20', 'DE'), 'ItemName.json')
   const written = JSON.parse(readFileSync(tgt, 'utf8'))
   assert.equal(written['EquipmentBelt.EquipmentBelt'], 'Neuer Gürtel')
-  // Ungültige Datei wurde nicht angelegt
+  // Ungültige Datei wurde nicht angelegt, der Workshop-Ordner nicht angefasst
+  assert.ok(!existsSync(path.join(workLangDir(workRoot, belt, '42.20', 'DE'), 'KeineDatei.json')))
   assert.ok(
     !existsSync(
       path.join(fakeRoot, 'workshop', '3000000003', 'mods', 'Equipment Belt', '42.20',
         'media', 'lua', 'shared', 'Translate', 'DE', 'KeineDatei.json')
     )
   )
-  // Backup der alten DE-Datei
+  // Speicherpunkt der Arbeitsdatei
   assert.ok(existsSync(backupRoot))
 })
 
@@ -375,7 +375,7 @@ test('exportLlmBundle: TXT-Mod → Datei-Key common/<Datei>, EN-Werte', () => {
   assert.equal(fieldDoc.files['common/Sandbox_EN.txt'].Sandbox_FieldNotes_HowTo, 'How to use the field notes')
 })
 
-test('importPreview (TXT, neues Format): matches → saveBatch schreibt die JSON-Zieldatei (B42 lädt kein TXT mehr), bestehende Legacy-Keys bleiben, Backup', () => {
+test('importPreview (TXT, neues Format): matches → saveBatch schreibt die JSON-Arbeitsdatei (B42 lädt kein TXT mehr), bestehende Legacy-Keys bleiben, Backup', () => {
   const field = mods.find((m) => m.id === '9999000001/Field Notes')
   const bundle = {
     targetLangs: ['DE'],
@@ -397,30 +397,29 @@ test('importPreview (TXT, neues Format): matches → saveBatch schreibt die JSON
   const preview = importPreview(docsByLang, mods, 'DE')
   assert.equal(preview.matches.length, 1)
   const backupRoot = path.join(workdir, 'backups-txt')
+  const workRoot = path.join(workdir, 'work-txt')
   const result = saveBatch(
     field,
     preview.matches.map(({ entryId, translation }) => ({ entryId, translation })),
     'DE',
-    backupRoot
+    backupRoot,
+    workRoot
   )
   assert.equal(result.saved, 1)
-  // Ziel ist IMMER JSON, auch für eine TXT-Quelle: common/media/lua/shared/Translate/DE/Sandbox.json
-  const tgt = path.join(
-    fakeRoot, 'workshop', '9999000001', 'mods', 'Field Notes', 'common',
-    'media', 'lua', 'shared', 'Translate', 'DE', 'Sandbox.json'
-  )
+  // Ziel ist IMMER JSON, auch für eine TXT-Quelle: <work>/.../common/.../DE/Sandbox.json
+  const tgt = path.join(workLangDir(workRoot, field, 'common', 'DE'), 'Sandbox.json')
   assert.ok(existsSync(tgt))
   const written = JSON.parse(readFileSync(tgt, 'utf8'))
   assert.equal(written.Sandbox_FieldNotes_HowTo, 'So benutzt man die Feldnotizen')
   // Aus der alten Sandbox_DE.txt übernommener Bestand bleibt erhalten (Seed).
   assert.equal(written.Sandbox_FieldNotes, 'Feldnotizen')
-  // Die alte TXT-Zieldatei selbst wird nicht mehr geschrieben.
-  const legacyTxt = path.join(
+  // Im Workshop-Ordner entsteht keine JSON, die alte TXT bleibt unverändert.
+  const commonDe = path.join(
     fakeRoot, 'workshop', '9999000001', 'mods', 'Field Notes', 'common',
-    'media', 'lua', 'shared', 'Translate', 'DE', 'Sandbox_DE.txt'
+    'media', 'lua', 'shared', 'Translate', 'DE'
   )
-  assert.match(readFileSync(legacyTxt, 'utf8'), /Sandbox_FieldNotes\s*=\s*"Feldnotizen"/)
-  // Backup der (neuen) JSON-Zieldatei
+  assert.equal(existsSync(path.join(commonDe, 'Sandbox.json')), false)
+  assert.match(readFileSync(path.join(commonDe, 'Sandbox_DE.txt'), 'utf8'), /Sandbox_FieldNotes\s*=\s*"Feldnotizen"/)
   assert.ok(existsSync(backupRoot))
 })
 

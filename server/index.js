@@ -23,7 +23,8 @@ const config = require('./config')
 const langs = require('./langs')
 const fake = require('./fake-api')
 const { scan } = require('./scanner')
-const { saveBatch, restoreBaseline, classifyFsError } = require('./entries')
+const { saveBatch, resetToGame, classifyFsError } = require('./entries')
+const guard = require('./guard')
 const { listBackups, restoreBackup, freshStamp } = require('./backups')
 const llm = require('./llm-io')
 const { exportModsBundle } = require('./mod-export')
@@ -39,7 +40,9 @@ const PROJECT_ROOT = path.join(__dirname, '..')
 // erlaubt einen anderen Ort (Tests).
 const EXPORT_ROOT = process.env.PT_EXPORT_ROOT || path.join(PROJECT_ROOT, 'export')
 const BACKUP_ROOT = path.join(EXPORT_ROOT, 'backups')
-const BASELINE_ROOT = path.join(EXPORT_ROOT, 'baseline')
+// Arbeitsordner: hier landen alle Übersetzungen des Nutzers. Game- und
+// Workshop-Ordner werden von der App nur gelesen (s. guard.js).
+const WORK_ROOT = path.join(EXPORT_ROOT, 'work')
 const MOD_EXPORT_DEFAULT = path.join(EXPORT_ROOT, 'mods')
 
 // Fake-Mode: auch für Scan und Save die Fixture-Wurzel verwenden —
@@ -79,6 +82,12 @@ function sameLangSet(a, b) {
   const setA = new Set(a)
   return b.every((x) => setA.has(x))
 }
+
+// Zweites Netz: jedes Schreiben in Spiel/Workshop bricht mit 403 ab (guard.js).
+guard.setProtectedRoots(() => {
+  const r = roots()
+  return [r.gameRoot, r.workshopDir]
+})
 
 function fail(res, status, message) {
   return res.status(status).json({ error: message })
@@ -122,7 +131,7 @@ function rescan() {
   const r = roots()
   const cfg = config.load()
   rescanning = true
-  return scan(r.gameRoot, r.workshopDir, cfg.targetLangs, config.SOURCE_LANG)
+  return scan(r.gameRoot, r.workshopDir, cfg.targetLangs, config.SOURCE_LANG, { workRoot: WORK_ROOT })
     .then((result) => {
       cache = { ...result, langs: [...cfg.targetLangs] }
     })
@@ -165,6 +174,7 @@ function startScan() {
   scanError = null
   scanProgress = { done: 0, total: 0, current: '' }
   scan(r.gameRoot, r.workshopDir, cfg.targetLangs, config.SOURCE_LANG, {
+    workRoot: WORK_ROOT,
     onProgress: (p) => {
       scanProgress = p
     }
@@ -309,12 +319,11 @@ app.post('/api/active-lang', (req, res) => {
   res.json({ activeLang: saved.activeLang })
 })
 
-// Alle Übersetzungen (je Sprache, global über jeden gescannten Mod) auf ihre
-// Baseline zurücksetzen — den Zustand vor dem allerersten App-Schreibzugriff
-// je Sprache+Datei (s. Kommentar bei restoreBaseline in entries.js). Eine
-// Datei, die die App nie geschrieben hat, bleibt unberührt — Übersetzungen,
-// die schon vor der App-Nutzung vorlagen, gehen so NICHT verloren. Die
-// EN-Originaldateien fasst saveBatch/restoreBaseline ohnehin nie an.
+// Alle Übersetzungen (je Sprache, global über jeden gescannten Mod) auf den
+// Stand im Spiel/Workshop zurücksetzen: die Arbeitsdateien werden gelöscht
+// (s. resetToGame in entries.js). Übersetzungen, die schon im Spiel/Workshop
+// liegen, bleiben dabei erhalten; Spiel und Workshop selbst werden nie
+// angefasst.
 app.post('/api/reset-translations', (req, res) => {
   if (!cache) return fail(res, 404, 'No scan yet. Search for mods in Settings first.')
   const cfg = config.load()
@@ -347,7 +356,7 @@ app.post('/api/reset-translations', (req, res) => {
       let modChanged = false
       for (const { version, file } of files.values()) {
         for (const lang of langs) {
-          const changed = restoreBaseline(mod, version, file, lang, BACKUP_ROOT, BASELINE_ROOT, resetStamp)
+          const changed = resetToGame(mod, version, file, lang, BACKUP_ROOT, WORK_ROOT, resetStamp)
           if (changed > 0) {
             resetCount += changed
             modChanged = true
@@ -357,7 +366,7 @@ app.post('/api/reset-translations', (req, res) => {
       if (modChanged) modCount += 1
     }
   } catch (err) {
-    return fail(res, err.status || 500, classifyFsError(err, BASELINE_ROOT).message)
+    return fail(res, err.status || 500, classifyFsError(err, WORK_ROOT).message)
   }
   rescan()
     .then(() => (wasRescanning ? rescan() : undefined))
@@ -366,21 +375,19 @@ app.post('/api/reset-translations', (req, res) => {
 })
 
 // --- Speicherpunkte ("Restore Backup" in Settings) ---
-// Liste neueste zuerst. Punkte ohne meta.json (vor dieser Funktion angelegt)
-// werden gegen die gescannten Mods aufgelöst — ohne Scan sind sie nicht
-// wiederherstellbar (s. server/backups.js).
+// Liste neueste zuerst. Alte Punkte aus der Zeit, als die App noch in
+// Spiel/Workshop schrieb, sind nicht wiederherstellbar (s. server/backups.js).
 app.get('/api/backups', (req, res) => {
-  res.json({ backups: listBackups(BACKUP_ROOT, cache ? cache.mods : []) })
+  res.json({ backups: listBackups(BACKUP_ROOT, WORK_ROOT) })
 })
 
-// Spielt einen Punkt zurück. Punkte mit meta.json brauchen keinen Scan (sie
-// kennen die exakten Zielpfade), Alt-Punkte schon. Gibt es einen Cache,
-// spiegelt ein Rescan danach die Disk wie nach jedem PUT.
+// Spielt einen Punkt zurück — nur in den Arbeitsordner (s. backups.js). Gibt es
+// einen Cache, spiegelt ein Rescan danach die Disk wie nach jedem PUT.
 app.post('/api/backups/:id/restore', (req, res) => {
   const wasRescanning = rescanning
   let result
   try {
-    result = restoreBackup(BACKUP_ROOT, req.params.id, cache ? cache.mods : [])
+    result = restoreBackup(BACKUP_ROOT, req.params.id, WORK_ROOT)
   } catch (err) {
     return fail(res, err.status || 500, classifyFsError(err, BACKUP_ROOT).message)
   }
@@ -401,9 +408,9 @@ app.put('/api/mods/:modId/entries', (req, res) => {
   const wasRescanning = rescanning
   let result
   try {
-    result = saveBatch(mod, body.entries, lang, BACKUP_ROOT, BASELINE_ROOT)
+    result = saveBatch(mod, body.entries, lang, BACKUP_ROOT, WORK_ROOT)
   } catch (err) {
-    return fail(res, err.status || 500, classifyFsError(err, mod.rootPath).message)
+    return fail(res, err.status || 500, classifyFsError(err, WORK_ROOT).message)
   }
   // rescan spiegelt die Disk in den Cache — wird GEMACHT, damit der Client
   // den frischen Cache direkt nach dem Speichern liest (vorher: Rescan lief
@@ -527,7 +534,7 @@ app.post('/api/export/mod', (req, res) => {
   const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
   if (!mods.length) return fail(res, 400, 'No valid mod selection.')
   try {
-    const result = exportModsBundle(mods, targetLangs, targetDir, config.SOURCE_LANG)
+    const result = exportModsBundle(mods, targetLangs, targetDir, config.SOURCE_LANG, WORK_ROOT)
     res.json({ targetLangs: result.targetLangs, targetDir: config.toPosix(targetDir), results: [result] })
   } catch (err) {
     fail(res, err.status || 500, err.message || 'Mod export failed.')
@@ -553,7 +560,7 @@ app.post('/api/export/mod/zip', (req, res) => {
 
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-export-'))
   try {
-    const { targetPath } = exportModsBundle(mods, targetLangs, tmpRoot, config.SOURCE_LANG)
+    const { targetPath } = exportModsBundle(mods, targetLangs, tmpRoot, config.SOURCE_LANG, WORK_ROOT)
     const files = collectFiles(targetPath, tmpRoot)
     const zipBuffer = buildZip(files)
     const zipName = path.basename(targetPath) + '.zip'
@@ -614,8 +621,7 @@ app.use('/api', (err, req, res, next) => {
 // ohne diese Prüfung stünde "API auf ..." im Log, obwohl nichts lauscht.
 //
 // Ausdrücklich 127.0.0.1 statt des Default (alle Interfaces, "::"): sonst
-// kann jeder im selben LAN in die Spiel-Ordner schreiben, Backups
-// zurückspielen oder über /api/export/mod einen beliebigen targetDir
+// kann jeder im selben LAN Backups zurückspielen, Übersetzungen ändern oder über /api/export/mod einen beliebigen targetDir
 // beschreiben lassen. Auf Node 17+ löst "localhost" u. U. zuerst zu ::1 auf —
 // deshalb binden wir auf die Adresse, nicht auf den Namen.
 app.listen(PORT, '127.0.0.1', (err) => {

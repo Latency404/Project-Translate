@@ -120,7 +120,7 @@ function RestoreBackupCard() {
       const res = await api.restoreBackup(selected);
       setOpen(false);
       const skipped =
-        res.skipped > 0 ? ` ${res.skipped} file(s) skipped because their mod could not be found.` : "";
+        res.skipped > 0 ? ` ${res.skipped} file(s) skipped.` : "";
       if (res.restored === 0) {
         toast("info", `Nothing to restore. The files already match this backup.${skipped}`);
       } else {
@@ -385,7 +385,7 @@ export default function Settings({ onOpenMods, onLangsChanged, activeLang: activ
       toast(
         "success",
         result.resetCount > 0
-          ? `Reset ${result.resetCount} translation(s) across ${result.modCount} mod(s), including unsaved edits. Translations that shipped with a mod were kept. A backup of every overwritten file was kept.`
+          ? `Reset ${result.resetCount} translation(s) across ${result.modCount} mod(s), including unsaved edits. Translations that shipped with a mod were kept. A backup of every reset file was kept.`
           : "Nothing to reset. No translations were made through this app.",
       );
     } catch (err) {
@@ -550,12 +550,13 @@ export default function Settings({ onOpenMods, onLangsChanged, activeLang: activ
             value={targetLangs}
             onChange={setTargetLangs}
           />
-          {/* EN ist Quelle UND Ziel zugleich: Speichern überschreibt die
-              Originaltexte der Mod (mit Backup). Das muss man vorher wissen. */}
+          {/* EN ist Quelle UND Ziel zugleich: die Änderungen liegen im
+              Arbeitsordner, die Originaltexte der Mod bleiben unverändert. */}
           {targetLangs.includes("EN") && (
             <p className="text-xs text-warning">
-              Editing English overwrites the original English texts of the mods. A
-              backup of every changed file is kept in export/backups/.
+              English is the source language too. Your English edits are kept
+              separately and go into the exported mod. The original texts of the
+              mods stay unchanged.
             </p>
           )}
           {targetLangs.length > 1 && (
@@ -624,7 +625,7 @@ export default function Settings({ onOpenMods, onLangsChanged, activeLang: activ
           <div>
             <h2 className="text-sm font-semibold text-text">Reset Translations</h2>
             <p className="mt-1.5 text-xs text-muted">
-              Undo every translation you made, across every scanned mod and target language.
+              Undo every translation you made, across every scanned mod.
             </p>
           </div>
           <Button

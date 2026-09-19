@@ -28,6 +28,11 @@ function readDir(p) {
   }
 }
 
+// Arbeitsdatei einer Übersetzung: <export>/work/<modId, "/"→"_">/<version>/media/lua/shared/Translate/<LANG>/<Datei>.
+function workFile(modId, version, lang, fileName) {
+  return path.join(exportRoot, 'work', modId.replace(/[\\/:*?"<>|]/g, '_'), version, 'media', 'lua', 'shared', 'Translate', lang, fileName)
+}
+
 before(async () => {
   workdir = mkdtempSync(path.join(tmpdir(), 'pt-test-'))
   fakeRoot = path.join(workdir, 'fixtures')
@@ -281,41 +286,44 @@ test('GET /api/mods/:modId/entries — Pagination + Suche + id-Format', async ()
   assert.equal(badLang.status, 400)
 })
 
-test('PUT /api/mods/:modId/entries — speichern (activeLang DE) + Backup + Ziel-Datei', async () => {
+test('PUT /api/mods/:modId/entries — speichert in den Arbeitsordner (Workshop-Kopie bleibt unverändert) + Backup', async () => {
   const pid = encodeURIComponent('3500000004/Fuel Trailer')
   const before = await api('GET', `/mods/${pid}/entries`)
   const miss = before.json.entries.find((e) => e.translation === null)
   assert.ok(miss)
+  const gameFile = path.join(
+    fakeRoot, 'workshop', '3500000004', 'mods', 'Fuel Trailer', '42.20',
+    'media', 'lua', 'shared', 'Translate', 'DE', 'ContextMenu.json'
+  )
+  const gameFileBefore = readFileSync(gameFile, 'utf8')
   const put = await api('PUT', `/mods/${pid}/entries`, {
     entries: [{ entryId: miss.id, translation: 'Testübersetzung' }]
   })
   assert.equal(put.status, 200)
   assert.equal(put.json.saved, 1)
 
-  // Die DE-Datei in der Fake-Kopie enthält jetzt den neuen Wert.
-  const tgt = path.join(
-    fakeRoot, 'workshop', '3500000004', 'mods', 'Fuel Trailer', '42.20',
-    'media', 'lua', 'shared', 'Translate', 'DE', 'ContextMenu.json'
-  )
-  const written = JSON.parse(readFileSync(tgt, 'utf8'))
+  // Der neue Wert liegt in der Arbeitsdatei ...
+  const written = JSON.parse(readFileSync(workFile('3500000004/Fuel Trailer', '42.20', 'DE', 'ContextMenu.json'), 'utf8'))
   assert.equal(written[miss.key], 'Testübersetzung')
+  // ... die Datei im (Fake-)Workshop wurde nicht angefasst.
+  assert.equal(readFileSync(gameFile, 'utf8'), gameFileBefore)
+  // Der Rescan zeigt die Übersetzung.
+  const after = await api('GET', `/mods/${pid}/entries`)
+  assert.equal(after.json.entries.find((e) => e.id === miss.id).translation, 'Testübersetzung')
 
-  // Backup liegt unter export/backups/<stempel>/<modId>__<version>__<file>__<LANG>/
+  // Ein Speicherpunkt mit meta.json liegt unter export/backups/<stempel>/; sein
+  // Zielpfad ist die Arbeitsdatei.
   const backups = path.join(exportRoot, 'backups')
   const batchDirs = readDir(backups)
   assert.ok(batchDirs.length >= 1)
-  let found = false
-  for (const d of batchDirs) {
-    for (const sub of readDir(path.join(backups, d))) {
-      if (sub.includes('Fuel Trailer') && sub.endsWith('__DE') && readDir(path.join(backups, d, sub)).includes('ContextMenu.json')) {
-        found = true
-      }
-    }
-  }
-  assert.ok(found, 'Backup der alten DE-Datei fehlt')
+  const metas = batchDirs.map((d) => JSON.parse(readFileSync(path.join(backups, d, 'meta.json'), 'utf8')))
+  assert.ok(
+    metas.some((m) => m.files.some((f) => f.modName === 'Fuel Trailer' && f.lang === 'DE' && f.targetPath.includes('/export/work/'))),
+    'Speicherpunkt der Arbeitsdatei fehlt'
+  )
 })
 
-test('PUT /api/mods/:modId/entries — mit lang schreibt in die richtige Sprachdatei (FR)', async () => {
+test('PUT /api/mods/:modId/entries — mit lang schreibt in die richtige Arbeitsdatei (FR)', async () => {
   const pid = encodeURIComponent('2000000002/Coffee Corner')
   const entries = await api('GET', `/mods/${pid}/entries?lang=FR`)
   const target = entries.json.entries[0]
@@ -326,11 +334,8 @@ test('PUT /api/mods/:modId/entries — mit lang schreibt in die richtige Sprachd
   assert.equal(put.status, 200)
   assert.equal(put.json.saved, 1)
 
-  const tgt = path.join(
-    fakeRoot, 'workshop', '2000000002', 'mods', 'Coffee Corner', '42.20',
-    'media', 'lua', 'shared', 'Translate', 'FR', 'ContextMenu.json'
-  )
-  assert.ok(existsSync(tgt), 'FR-Zieldatei wurde nicht angelegt')
+  const tgt = workFile('2000000002/Coffee Corner', '42.20', 'FR', 'ContextMenu.json')
+  assert.ok(existsSync(tgt), 'FR-Arbeitsdatei wurde nicht angelegt')
   const written = JSON.parse(readFileSync(tgt, 'utf8'))
   assert.equal(written[target.key], 'Traduction de test')
 
@@ -338,6 +343,31 @@ test('PUT /api/mods/:modId/entries — mit lang schreibt in die richtige Sprachd
   const de = await api('GET', `/mods/${pid}/entries?lang=DE`)
   const deTarget = de.json.entries.find((e) => e.id === target.id)
   assert.notEqual(deTarget.translation, 'Traduction de test')
+})
+
+test('POST /api/export/mod — nimmt den Arbeitsstand (gespeicherte Übersetzungen) in die Mod', async () => {
+  const targetDir = path.join(workdir, 'mod-export-work')
+  const res = await api('POST', '/export/mod', {
+    modIds: ['3500000004/Fuel Trailer'],
+    targetLangs: ['DE'],
+    targetDir
+  })
+  assert.equal(res.status, 200)
+  const [result] = res.json.results
+  const file = path.join(result.targetPath, 'common', 'media', 'lua', 'shared', 'Translate', 'DE', 'ContextMenu.json')
+  assert.ok(Object.values(JSON.parse(readFileSync(file, 'utf8'))).includes('Testübersetzung'))
+})
+
+test('POST /api/export/mod — Zielordner im Spiel/Workshop wird mit 403 abgelehnt, nichts wird geschrieben', async () => {
+  const targetDir = path.join(fakeRoot, 'workshop', 'export-hier-nicht')
+  const res = await api('POST', '/export/mod', {
+    modIds: ['3500000004/Fuel Trailer'],
+    targetLangs: ['DE'],
+    targetDir
+  })
+  assert.equal(res.status, 403)
+  assert.match(res.json.error, /Refusing to write/)
+  assert.equal(existsSync(targetDir), false)
 })
 
 test('PUT /api/mods/:modId/entries — nicht konfigurierte Sprache → 400', async () => {
@@ -709,18 +739,17 @@ test('POST /api/import/llm/preview — leerer Text → 400', async () => {
   assert.ok(typeof res.json.error === 'string')
 })
 
-test('POST /api/reset-translations — stellt Baseline wieder her, verschont nie von der App geschriebene Dateien', async () => {
+test('POST /api/reset-translations — zurück auf den Stand im Workshop, Workshop-Dateien bleiben unverändert', async () => {
   const pid = encodeURIComponent('3500000004/Fuel Trailer')
   const vdir = path.join(fakeRoot, 'workshop', '3500000004', 'mods', 'Fuel Trailer', '42.20')
   const enContextMenuPath = path.join(vdir, 'media', 'lua', 'shared', 'Translate', 'EN', 'ContextMenu.json')
   const deIgUiPath = path.join(vdir, 'media', 'lua', 'shared', 'Translate', 'DE', 'IG_UI.json')
   const enBefore = readFileSync(enContextMenuPath, 'utf8')
+  const deIgUiBefore = readFileSync(deIgUiPath, 'utf8')
 
-  // IG_UI.json (DE) hat eine mit der Fixture ausgelieferte Uebersetzung, die
-  // die App bisher nie geschrieben hat (kein PUT/Import hat diese Datei
-  // angefasst) — sie hat also KEINE Baseline. Wir ueberschreiben ihren
-  // einzigen Key einmal ueber die API, damit die Baseline (= der Fixture-
-  // Zustand VOR diesem Schreiben) jetzt aufgenommen wird.
+  // IG_UI.json (DE) hat eine mit der Fixture ausgelieferte Übersetzung im
+  // Workshop-Ordner. Wir überschreiben ihren einzigen Key über die API — das
+  // legt nur eine Arbeitsdatei an.
   const before = await api('GET', `/mods/${pid}/entries?lang=DE`)
   const igUiEntry = before.json.entries.find((e) => e.file.endsWith('IG_UI.json'))
   assert.ok(igUiEntry)
@@ -731,49 +760,40 @@ test('POST /api/reset-translations — stellt Baseline wieder her, verschont nie
     lang: 'DE'
   })
   assert.equal(overwrite.status, 200)
-  assert.equal(JSON.parse(readFileSync(deIgUiPath, 'utf8')).IGUI_VehicleNameFuelTrailer, 'Vom User geaendert')
+  const workIgUi = workFile('3500000004/Fuel Trailer', '42.20', 'DE', 'IG_UI.json')
+  assert.equal(JSON.parse(readFileSync(workIgUi, 'utf8')).IGUI_VehicleNameFuelTrailer, 'Vom User geaendert')
+  assert.equal(readFileSync(deIgUiPath, 'utf8'), deIgUiBefore, 'Workshop-Datei nach dem Speichern unverändert')
 
-  // ContextMenu.json (DE) wurde schon vom fruehreren PUT-Test beschrieben
-  // (Baseline = leeres {} aus der Fixture) und traegt seither "Testübersetzung".
+  // ContextMenu.json (DE) wurde schon vom früheren PUT-Test beschrieben (Arbeitsdatei).
   const res = await api('POST', '/reset-translations', { langs: ['DE'] })
   assert.equal(res.status, 200)
   assert.ok(res.json.resetCount > 0)
   assert.ok(res.json.modCount > 0)
 
-  // EN-Datei (Original) ist unveraendert geblieben.
+  // Originale im Workshop-Ordner unverändert, die Arbeitsdatei ist weg.
   assert.equal(readFileSync(enContextMenuPath, 'utf8'), enBefore)
+  assert.equal(readFileSync(deIgUiPath, 'utf8'), deIgUiBefore)
+  assert.equal(existsSync(workIgUi), false)
 
-  // IG_UI.json ist auf die mitgelieferte Fixture-Uebersetzung zurueck — NICHT
-  // leer — weil das die Baseline dieser Datei ist.
-  assert.equal(
-    JSON.parse(readFileSync(deIgUiPath, 'utf8')).IGUI_VehicleNameFuelTrailer,
-    'Treibstofftankzug'
-  )
-
+  // Die Übersetzung aus dem Workshop-Ordner gilt wieder — NICHT leer.
   const afterEntries = await api('GET', `/mods/${pid}/entries?lang=DE`)
   const igUiAfter = afterEntries.json.entries.find((e) => e.file.endsWith('IG_UI.json'))
   assert.equal(igUiAfter.translation, 'Treibstofftankzug')
   const contextMenuAfter = afterEntries.json.entries.filter((e) => e.file.endsWith('ContextMenu.json'))
   assert.ok(contextMenuAfter.every((e) => e.translation === null), 'ContextMenu.json sollte wieder leer sein')
 
-  // Eine Datei, die die App NIE geschrieben hat, bleibt von einem Reset
-  // unberuehrt: Mixed Traits' DE-Datei behaelt ihren Fixture-Zustand.
+  // Ein Mod ohne Arbeitsdatei behält seine Übersetzungen aus dem Workshop.
   const traitsPid = encodeURIComponent('1000000001/Mixed Traits')
   const traitsBefore = await api('GET', `/mods/${traitsPid}/entries?lang=DE`)
-  assert.ok(traitsBefore.json.entries.some((e) => e.translation !== null), 'Mixed Traits sollte weiterhin Uebersetzungen haben')
+  assert.ok(traitsBefore.json.entries.some((e) => e.translation !== null), 'Mixed Traits sollte weiterhin Übersetzungen haben')
 
-  // Backup der ueberschriebenen Dateien liegt vor.
+  // Die Arbeitsdatei wurde vor dem Löschen gesichert (Speicherpunkt "reset").
   const backups = path.join(exportRoot, 'backups')
-  const batchDirs = readDir(backups)
-  let found = false
-  for (const d of batchDirs) {
-    for (const sub of readDir(path.join(backups, d))) {
-      if (sub.includes('Fuel Trailer') && sub.endsWith('__DE') && readDir(path.join(backups, d, sub)).includes('IG_UI.json')) {
-        found = true
-      }
-    }
-  }
-  assert.ok(found, 'Backup der ueberschriebenen DE-Datei (IG_UI.json) fehlt')
+  const metas = readDir(backups).map((d) => JSON.parse(readFileSync(path.join(backups, d, 'meta.json'), 'utf8')))
+  assert.ok(
+    metas.some((m) => m.kinds.includes('reset') && m.files.some((f) => f.modName === 'Fuel Trailer' && f.fileName === 'IG_UI.json' && f.lang === 'DE')),
+    'Backup der Arbeitsdatei (IG_UI.json) fehlt'
+  )
 })
 
 test('POST /api/reset-translations — Default (kein langs) betrifft ALLE targetLangs', async () => {

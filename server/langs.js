@@ -4,9 +4,8 @@
 //
 // EN ist die Quellsprache (fest, nicht konfigurierbar) und steht TROTZDEM in
 // TARGET_LANGS: wer die englische Fassung selbst umformulieren will, wählt sie
-// als Ziel. Quelle und Ziel sind dann dieselbe Datei — das Speichern überschreibt
-// also die Originaltexte der Mod (mit Backup + Baseline wie bei jeder anderen
-// Sprache). Die Oberfläche weist beim Auswählen darauf hin.
+// als Ziel. Die Änderungen landen wie bei jeder Sprache im Arbeitsordner; die
+// Originaltexte der Mod bleiben unverändert (Spiel/Workshop sind schreibgeschützt).
 //
 // Achtung: ES_CL/ES_MX sind 5 Zeichen lang; jede Längenprüfung für Sprachcodes
 // muss 2..5 zulassen (config.validate).

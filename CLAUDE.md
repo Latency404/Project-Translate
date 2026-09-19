@@ -34,9 +34,11 @@ server/              Express-API (CommonJS)
   config.js          config.json lesen/schreiben, Standardpfade, Validierung
   langs.js           Die 28 Sprachen von PZ (inkl. EN) + SOURCE_LANG ('EN', fest)
   scanner.js         Steam-Wurzeln → { mods, entriesByModId }; JSON- und Lua-TXT-Parser
-  entries.js         Einträge speichern + Backup (Speicherpunkte mit meta.json),
-                     fs-Fehler klassifizieren
-  backups.js         Speicherpunkte auflisten und zurückspielen ("Restore Backup")
+  entries.js         Einträge in den Arbeitsordner speichern, Reset, Backup
+                     (Speicherpunkte mit meta.json), fs-Fehler klassifizieren
+  backups.js         Speicherpunkte auflisten und in den Arbeitsordner zurückspielen
+                     ("Restore Backup")
+  guard.js           Schreibschutz: jedes Schreiben in Spiel-/Workshop-Ordner → 403
   llm-io.js          LLM-Export-Bundle, Import-Vorschau (inkl. matches)
   mod-export.js      Installierbaren Übersetzungs-Mod erzeugen
   zip.js             Minimaler ZIP-Writer (kein externes Paket) für den Export-Mod-Download
@@ -46,7 +48,8 @@ server/              Express-API (CommonJS)
 src/
   App.jsx            View-Umschaltung per State (kein Router-Paket); globaler
                      "Export Mod"-Button (Popover, baut die installierbare Mod);
-                     Sprachumschalter (ab 2 Zielsprachen)
+                     Sprachumschalter (ab 2 Zielsprachen; bei einer
+                     Zielsprache eine feste Pille mit dem Sprachcode)
   api.js             Einziger Zugriffspunkt auf die API
   langs.js           Spiegel von server/langs.js (Codes + Namen) fürs Frontend
   reviewStore.js     Geteilter Session-State für dirty Editor-Einträge je Sprache
@@ -57,12 +60,12 @@ src/
   styles/theme.css   Design-Tokens (CSS-Variablen)
   views/             Settings, Mods, Editor
 Resources/           Sample-Mods, Logos, Figma-Mockups/Icons (git-ignoriert)
-export/              Laufzeit-Ausgabe: mods/, backups/ (git-ignoriert)
+export/              Laufzeit-Ausgabe: work/ (Übersetzungen), mods/, backups/ (git-ignoriert)
 config.json          Laufzeit (git-ignoriert)
 ```
 
-Navigation: Mods | Editor | Settings, plus Sprachumschalter (nur bei mehreren
-Zielsprachen) und globaler "Export Mod"-Button (baut die installierbare Mod aus
+Navigation: Mods | Editor | Settings, plus Sprachumschalter (bei mehreren Zielsprachen
+umschaltbar, bei einer nur als Anzeige) und globaler "Export Mod"-Button (baut die installierbare Mod aus
 der aktuellen Mods-Auswahl, unabhängig von der gerade offenen Seite).
 
 ## Verträge, die nicht brechen dürfen
@@ -70,6 +73,11 @@ der aktuellen Mods-Auswahl, unabhängig von der gerade offenen Seite).
 Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet — eine
 Änderung an einer Stelle bricht die anderen.
 
+- **Mod-Anzeigename und Poster**: `mod.name` ist der `name=` aus der `mod.info` (Suche: neuester
+  Versionsordner, `common`, Mod-Wurzel; Rückfall: Ordnername). `mod.id` bleibt der Ordnername
+  (steckt in jeder entryId). Das Poster kommt aus `poster=` derselben `mod.info` (relativ zu
+  deren Ordner, darf nach `../common/` zeigen, nie aus dem Mod-Ordner heraus), sonst
+  `poster.png`/`generic.png`/`icon.png` in diesen Ordnern.
 - **entryId**: `<version>/<Quellsprachen-Pfad relativ zum Version-Ordner>::<key>`, z. B.
   `42.20/media/lua/shared/Translate/EN/ContextMenu.json::Key`. Das `version`-Segment ist
   entweder eine Versionsnummer, `common`, `root` oder `base`. Die Quellsprache ist
@@ -85,9 +93,8 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   die Project Zomboid kennt. Achtung: Codes sind **2 bis 5** Zeichen lang
   (`ES_CL`, `ES_MX`).
   **EN ist auch als Ziel wählbar** (die englische Fassung selbst umschreiben).
-  Quelle und Ziel sind dann dieselbe Datei: Speichern überschreibt die
-  Originaltexte der Mod (mit Backup + Baseline), und danach zeigt auch die
-  Original-Spalte den neuen Text. Settings warnt beim Auswählen davor.
+  Die Änderungen liegen wie bei jeder Sprache im Arbeitsordner; die Originaltexte
+  der Mod (und damit die Original-Spalte) bleiben unverändert.
   Der Scan-Cache hält alle Zielsprachen gleichzeitig: entries tragen
   `translations: { LANG: wert|null }` und `preFilled: { LANG: bool }`, Mods tragen
   `translatedCounts: { LANG: n }`. Nach außen **projiziert** `index.js` das auf die
@@ -159,10 +166,24 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   (`scanner.legacyTargetFileName()`) wird nur noch als Rückfall **gelesen**,
   solange die JSON-Zieldatei nicht existiert; das erste Speichern sät die JSON
   daraus. EN als Zielsprache mit TXT-Quelle: Speichern erzeugt eine vollständige
-  `<Kategorie>.json` in EN (konvertierte Kopie + Änderungen). Baselines/Backups
-  hängen am jeweiligen **Zielpfad** — ein Baseline-Ordner kann sowohl die alte
-  TXT- als auch die neue JSON-Zieldatei enthalten; Speicherpunkte deduplizieren
-  über den exakten Zielpfad.
+  `<Kategorie>.json` in EN (konvertierte Kopie + Änderungen) im Arbeitsordner.
+  Backups hängen am jeweiligen **Zielpfad** (immer eine Arbeitsdatei);
+  Speicherpunkte deduplizieren über den exakten Zielpfad.
+- **Spiel- und Workshop-Ordner sind schreibgeschützt.** Die App liest dort nur
+  (Originale und vorhandene Übersetzungen). Alles, was der Nutzer übersetzt,
+  liegt im **Arbeitsordner** `export/work/<modId, "/" → "_">/<version>/media/lua/shared/Translate/<LANG>/<Kategorie>.json`
+  (`scanner.workLangDir`). Eine Arbeitsdatei ist der **komplette** Stand der Zieldatei:
+  das erste Speichern sät sie aus der Übersetzung im Spiel/Workshop, danach
+  überlagert sie diese vollständig (`scanner.readTargetMapWithWork`; Scan und
+  Mod-Export lesen so). Eine unlesbare Arbeitsdatei bricht das Speichern ab (409),
+  statt sie zu überschreiben. **Reset** löscht die Arbeitsdateien (= zurück auf
+  den Stand im Spiel/Workshop); es gibt keine Baselines mehr. Ausgabe an das
+  Spiel läuft ausschließlich über den Mod-Export — der Nutzer installiert die
+  Mod selbst. `server/guard.js` (`assertWritable`) ist das zweite Netz: jedes
+  Schreiben (Speichern, Reset, Restore, Mod-Export-Zielordner) in `gameRoot`/
+  `workshopDir` bricht mit 403 ab. **Neue Schreibpfade müssen `assertWritable`
+  aufrufen.** Hintergrund: ein früherer Bug hat die DE-Sprachdateien des
+  Basisspiels geleert.
 - **Mod-Export bündelt alle gewählten Mods UND Sprachen in EINE Mod**: ein
   Ordner `<Name>-<LANGS>/` mit `42/mod.info` (+ `42/icon.png`, falls ein Poster
   vorhanden ist) und **allen** Übersetzungen aller gewählten Mods gemergt nach
@@ -173,25 +194,25 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   `loadModAfter=` mit den `mod.info`-IDs der Quell-Mods, damit die Übersetzung
   eine eigene Übersetzung des Quell-Mods überlagert. Ordnername/`mod.info`-ID:
   bis zu 3 Sprachen `<base>-DE-FR` / `pt_<slug>_DE_FR`, ab 4 Sprachen `-multi`
-  (unverändert). Unbekannte Sprachcodes werden mit 400 abgelehnt.
-- **Backup vor jedem Überschreiben** nach
+  (unverändert). Unbekannte Sprachcodes werden mit 400 abgelehnt. Die Übersetzungen
+  kommen aus dem Arbeitsstand (Arbeitsdatei vor Spiel/Workshop). Ein Zielordner
+  in Spiel/Workshop wird mit 403 abgelehnt.
+- **Backup vor jedem Überschreiben/Löschen einer Arbeitsdatei** nach
   `export/backups/<YYYY-MM-DD_HH-mm>/<modId>__<version>__<file>__<LANG>/`. Ein Ordner
   pro Speicher-Batch (= Speicherpunkt), wird nie automatisch gelöscht. Jeder Punkt
   hat eine `meta.json` (Datum/Uhrzeit, Art `save`/`reset`/`restore`, je Datei der
-  **exakte Zielpfad**, Mod, Sprache und `absent`, falls es die Datei vorher nicht
-  gab) — nur damit ist ein Punkt über "Restore Backup" sicher zurückzuspielen; der
-  Ordnername allein verstümmelt modId/Pfad. **Erste Sicherung gewinnt**: mehrmals
-  in derselben Minute gespeichert, bleibt der Stand vor dem ersten Speichern.
-  Reset und Restore bekommen je einen **eigenen**, sekundengenauen Punkt
-  (`<YYYY-MM-DD_HH-mm-ss>`, bei Kollision `_N`), damit sie sich gezielt rückgängig
-  machen lassen. Restore sichert vorher den aktuellen Stand. Punkte ohne
-  `meta.json` (vor dieser Funktion angelegt) werden gegen die **gescannten**
-  Mods aufgelöst (ohne Scan nicht wiederherstellbar); ihre Sprache belegen die
-  TXT-Dateinamen (`Sandbox_DE.txt`), für JSON gilt die Sprache, die die
-  Alt-Punkte eindeutig belegen — sonst bleibt die Datei ausgelassen. Der Sprachanteil ist Pflicht:
-  ohne ihn teilen sich zwei Zielsprachen denselben Baseline-Ordner und ein Reset
-  spielt die falsche Fassung zurück. Baselines ohne Suffix (vor der
-  Mehrsprachigkeit angelegt) werden beim Lesen weiterhin gefunden.
+  **exakte Zielpfad** (Arbeitsdatei), Mod, Sprache und `absent`, falls es die Datei
+  vorher nicht gab) — nur damit ist ein Punkt über "Restore Backup" sicher
+  zurückzuspielen; der Ordnername allein verstümmelt modId/Pfad. **Erste Sicherung
+  gewinnt**: mehrmals in derselben Minute gespeichert, bleibt der Stand vor dem
+  ersten Speichern. Reset und Restore bekommen je einen **eigenen**,
+  sekundengenauen Punkt (`<YYYY-MM-DD_HH-mm-ss>`, bei Kollision `_N`), damit sie
+  sich gezielt rückgängig machen lassen. Restore sichert vorher den aktuellen
+  Stand. **Restore schreibt nur in den Arbeitsordner**: Punkte aus der Zeit, als
+  die App noch in Spiel/Workshop schrieb (ohne `meta.json` oder mit Zielpfaden
+  außerhalb von `export/work/`), bleiben auf der Platte, gelten aber als nicht
+  wiederherstellbar (`legacy`, ausgegraut). Der Sprachanteil im Ordnernamen ist
+  Pflicht, damit sich zwei Zielsprachen nie denselben Ordner teilen.
 - **sessionStorage-Keys**: `pt_library_selected` (die Mods-Auswahl — nur die
   Mods-Seite schreibt sie, Editor und der globale Export-Mod-Button lesen sie),
   `pt_library_locked`, `pt_editor_active_mod` (der EINE aktuell im Editor
@@ -202,7 +223,7 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   mehreren Sprachen gleichzeitig offen sein kann; Einträge aus älteren Sessions
   ohne Präfix werden beim Laden auf die aktive Sprache migriert.
 - **Disk ist die Quelle der Wahrheit**: PUT löst einen Rescan aus, bevor es
-  antwortet. Ausnahme bewusst: ein LLM-Import schreibt NICHT direkt — er füllt
+  antwortet (der Scan liest Spiel/Workshop plus Arbeitsordner). Ausnahme bewusst: ein LLM-Import schreibt NICHT direkt — er füllt
   nur `pt_editor_dirty` (`origin: "import"`), bis der Nutzer die Einträge im
   Editor Mod für Mod prüft und speichert (dann wie jeder andere Save via PUT).
 - **"Zu Prüfen"-Status**: eine Mod gilt als "Zu Prüfen" (statt Open/Translated),
@@ -232,8 +253,8 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
 
 ## Umgebung
 
-Windows 11. Schreiben in `C:\Program Files (x86)\...` (Spiel und Workshop) braucht
-Administratorrechte — ohne sie meldet die API einen 403 mit lesbarem Text.
+Windows 11. Die App liest `C:\Program Files (x86)\...` (Spiel und Workshop) nur; sie
+schreibt dort nie und braucht deshalb keine Administratorrechte.
 
 Node **≥ 22.2** (`package.json` → `engines`): der ZIP-Export (`server/zip.js`)
 nutzt `zlib.crc32`, das erst ab dieser Version existiert.

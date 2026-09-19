@@ -48,8 +48,19 @@ function FloatingPanel({ anchorRef, panelRef, className, children }) {
 // serverseitig nur ein Feld (POST /api/active-lang), kein Rescan. Erscheint
 // nur, wenn mehr als eine Zielsprache konfiguriert ist. Bis zu drei Sprachen
 // als Pillen-Reihe im Look der View-Tabs, darüber als kompaktes Dropdown.
+// Bei genau einer Zielsprache zeigt eine nicht klickbare Pille die aktive Sprache.
 function LangSwitcher({ targetLangs, activeLang, onChange }) {
-  if (targetLangs.length <= 1) return null;
+  if (targetLangs.length === 0) return null;
+  if (targetLangs.length === 1) {
+    return (
+      <span
+        title={langName(targetLangs[0])}
+        className="rounded-full bg-raised px-3 py-1.5 text-ui font-semibold text-text"
+      >
+        {targetLangs[0]}
+      </span>
+    );
+  }
 
   if (targetLangs.length <= 3) {
     return (

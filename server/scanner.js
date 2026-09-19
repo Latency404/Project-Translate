@@ -26,6 +26,9 @@
 // TXT-Dateien sind Lua-Translate (Sandbox_EN.txt etc.) mit Key=Value-Paaren —
 // Quelle nur, wenn es keine JSON derselben Kategorie gibt; geschrieben wird
 // immer JSON (s. targetFileName / sourceFileNames).
+// Spiel- und Workshop-Ordner werden nur GELESEN. Eigene Übersetzungen liegen im
+// Arbeitsordner (export/work/) und überlagern dort die Dateien der Mods (s.
+// workLangDir / readTargetMapWithWork).
 // Mods ohne übersetzbare Einträge werden nicht gelistet.
 // Einträge in JSON-/TXT-Datei-Reihenfolge (Insertion Order), Dateien alphabetisch.
 // Pfade immer POSIX-Style.
@@ -72,20 +75,19 @@ function versionDirOf(mod, version) {
   return path.join(mod.rootPath, version)
 }
 
-// Name des Posters aus mod.info (Zeile `poster=<file>`). PZ-Mods deklarieren
-// dort fast immer `poster=preview.png`. Werte können quoted sein; fehlt das
-// Feld oder die Datei, liefert sie null.
-function posterNameFromInfo(modDir) {
-  const infoPath = path.join(modDir, 'mod.info')
-  if (!fs.existsSync(infoPath)) return null
+// Wert einer Zeile `<key>=<wert>` aus <dir>/mod.info (Groß-/Kleinschreibung des
+// Keys egal, Werte dürfen quoted sein, BOM am Dateianfang wird ignoriert).
+// null, wenn es die Datei oder den Key nicht gibt oder der Wert leer ist.
+function modInfoValueIn(dir, key) {
   let raw
   try {
-    raw = fs.readFileSync(infoPath, 'utf8')
+    raw = fs.readFileSync(path.join(dir, 'mod.info'), 'utf8')
   } catch {
     return null
   }
-  for (const line of raw.split(/\r?\n/)) {
-    const m = /^poster\s*=\s*(.+)$/i.exec(line.trim())
+  const re = new RegExp(`^${key}\\s*=\\s*(.+)$`, 'i')
+  for (const line of raw.replace(/^﻿/, '').split(/\r?\n/)) {
+    const m = re.exec(line.trim())
     if (!m) continue
     let v = m[1].trim()
     if (v.length >= 2 && ((v[0] === "'" && v[v.length - 1] === "'") || (v[0] === '"' && v[v.length - 1] === '"'))) {
@@ -96,15 +98,37 @@ function posterNameFromInfo(modDir) {
   return null
 }
 
-function posterFor(modDir) {
-  const candidates = [posterNameFromInfo(modDir), 'poster.png', 'generic.png']
-  for (const name of candidates) {
-    if (!name) continue
-    // Nur einfache PNG-Dateinamen: mod.info ist Mod-Inhalt (keine Pfade, kein
-    // ..), und die /mod-poster-Route dient ausschließlich *.png.
-    if (name.includes('/') || name.includes('\\') || name.includes('..')) continue
-    if (!name.toLowerCase().endsWith('.png')) continue
-    const p = path.join(modDir, name)
+// Ordner, in denen B42 die mod.info eines Mods führt, in Vorrang-Reihenfolge:
+// neuester Versionsordner, common, Mod-Wurzel (B41).
+function modInfoDirs(modDir, versionNames) {
+  return [versionNames[0] ? path.join(modDir, versionNames[0]) : null, path.join(modDir, 'common'), modDir].filter(
+    Boolean
+  )
+}
+
+// Poster eines Mods. Die mod.info liegt bei B42-Mods im Versionsordner oder in
+// common (nicht in der Mod-Wurzel), und das deklarierte Bild liegt neben ihr.
+// Reihenfolge: das in einer mod.info deklarierte `poster=` (relativ zu deren
+// Ordner), dann poster.png / generic.png / icon.png in einem der Ordner.
+function posterFor(modDir, versionNames = []) {
+  const dirs = modInfoDirs(modDir, versionNames)
+  const candidates = []
+  for (const dir of dirs) {
+    const declared = modInfoValueIn(dir, 'poster')
+    if (declared) candidates.push([dir, declared])
+  }
+  for (const name of ['poster.png', 'generic.png', 'icon.png']) {
+    for (const dir of dirs) candidates.push([dir, name])
+  }
+  for (const [dir, name] of candidates) {
+    // Nur PNG-Dateien innerhalb des Mod-Ordners: mod.info ist Mod-Inhalt, und
+    // die /mod-poster-Route dient ausschließlich *.png. Relative Pfade wie
+    // "../common/poster.png" sind üblich (mod.info im Versionsordner, Bild in
+    // common), dürfen den Mod-Ordner aber nie verlassen.
+    if (path.isAbsolute(name) || !name.toLowerCase().endsWith('.png')) continue
+    const p = path.resolve(dir, name)
+    const rel = path.relative(modDir, p)
+    if (rel.startsWith('..') || path.isAbsolute(rel)) continue
     if (fs.existsSync(p)) return toPosix(p)
   }
   return null
@@ -333,19 +357,35 @@ function readTargetMap(tgtDir, srcFileName, targetLang, sourceLang = SOURCE_LANG
   return legacy ? readTxtMap(path.join(tgtDir, legacy)) : null
 }
 
+// --- Arbeitsordner (export/work/) ---
+// Game- und Workshop-Ordner werden von der App NUR gelesen. Alles, was der
+// Nutzer übersetzt, liegt im Arbeitsordner, im selben Layout wie im Mod:
+//   <workRoot>/<modId, "/" → "_">/<version>/media/lua/shared/Translate/<LANG>/<Kategorie>.json
+// Eine Arbeitsdatei ist der KOMPLETTE Stand der Zieldatei (beim ersten Speichern
+// aus der Datei im Spiel gesät) und überlagert sie vollständig. Fehlt sie, gilt
+// die Datei im Spiel/Workshop.
+function workVersionDir(workRoot, mod, version) {
+  return path.join(workRoot, String(mod.id).replace(/[\\/:*?"<>|]/g, '_'), String(version))
+}
+
+function workLangDir(workRoot, mod, version, lang) {
+  return translateDir(workVersionDir(workRoot, mod, version), lang)
+}
+
+// Wie readTargetMap(), aber mit Vorrang der Arbeitsdatei. work = { workRoot,
+// mod, version } oder null (dann nur Spiel/Workshop, wie bisher).
+function readTargetMapWithWork(gameLangDir, srcFileName, targetLang, sourceLang, work) {
+  if (work && work.workRoot) {
+    const dir = workLangDir(work.workRoot, work.mod, work.version, targetLang)
+    const own = readFlatMap(path.join(dir, targetFileName(srcFileName, targetLang, sourceLang)))
+    if (own) return own
+  }
+  return readTargetMap(gameLangDir, srcFileName, targetLang, sourceLang)
+}
+
 // id= aus einer mod.info (für loadModAfter= im Export). null, wenn keine.
 function modInfoIdIn(dir) {
-  let raw
-  try {
-    raw = fs.readFileSync(path.join(dir, 'mod.info'), 'utf8')
-  } catch {
-    return null
-  }
-  for (const line of raw.split(/\r?\n/)) {
-    const t = line.trim()
-    if (t.startsWith('id=')) return t.slice(3).trim() || null
-  }
-  return null
+  return modInfoValueIn(dir, 'id')
 }
 
 // Einträge eines Quellordners lesen: die effektiven Quelldateien
@@ -354,7 +394,7 @@ function modInfoIdIn(dir) {
 // Zielordner (path.join(path.dirname(enDir), lang)).
 // version: das "version"-Segment der entryId (z. B. "42.20", "common", "root").
 // modRoot: Bezugsordner für den Datei-Pfad der entryId.
-function scanEntriesForDir(mod, version, enDir, targetLangs, modRoot, sourceLang = SOURCE_LANG) {
+function scanEntriesForDir(mod, version, enDir, targetLangs, modRoot, sourceLang = SOURCE_LANG, workRoot = null) {
   const entries = []
   const langsBaseDir = path.dirname(enDir)
   for (const f of sourceFileNames(enDir, sourceLang)) {
@@ -365,7 +405,7 @@ function scanEntriesForDir(mod, version, enDir, targetLangs, modRoot, sourceLang
     // 450+ Mods und mehreren Zielsprachen.
     const targetMaps = {}
     for (const lang of targetLangs) {
-      targetMaps[lang] = readTargetMap(path.join(langsBaseDir, lang), f, lang, sourceLang)
+      targetMaps[lang] = readTargetMapWithWork(path.join(langsBaseDir, lang), f, lang, sourceLang, { workRoot, mod, version })
     }
     for (const [key, value] of Object.entries(enMap)) {
       if (typeof value !== 'string') continue
@@ -415,7 +455,7 @@ function summarize(mod, entries, targetLangs) {
 // ein Wechsel macht bestehende entryIds ungültig. Async, damit der Event Loop
 // während des Scans Fortschritt (POST /api/scan → GET /api/status) weiter
 // bedienen kann.
-async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG, { onProgress } = {}) {
+async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG, { onProgress, workRoot = null } = {}) {
   const langs = Array.isArray(targetLangs) ? targetLangs : [targetLangs]
   const mods = []
   const entriesByModId = {}
@@ -437,7 +477,7 @@ async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG
     translatedCounts: {}
   }
   if (fs.existsSync(baseEnDir)) {
-    const entries = summarize(baseMod, scanEntriesForDir(baseMod, 'base', baseEnDir, langs, baseMod.rootPath, sourceLang), langs)
+    const entries = summarize(baseMod, scanEntriesForDir(baseMod, 'base', baseEnDir, langs, baseMod.rootPath, sourceLang, workRoot), langs)
     if (entries.length) {
       mods.push(baseMod)
       entriesByModId[BASE_ID] = entries
@@ -487,19 +527,26 @@ async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG
       }
 
       // Mod-Objekt anlegen (vor dem Scan, damit es referenziert werden kann)
+      const infoDirs = modInfoDirs(modDir, versionNames)
+      const firstInfo = (key) => {
+        for (const dir of infoDirs) {
+          const v = modInfoValueIn(dir, key)
+          if (v) return v
+        }
+        return null
+      }
       const mod = {
+        // Die id bleibt der Ordnername (stabil, steckt in jeder entryId); der
+        // Anzeigename ist der `name=` aus der mod.info — wie im Spiel.
         id: `${pid}/${name}`,
-        name,
+        name: firstInfo('name') || name,
         isBaseGame: false,
         versions: versionNames.slice(0, 1),
         rootPath: toPosix(modDir),
-        poster: posterFor(modDir),
+        poster: posterFor(modDir, versionNames),
         // mod.info-id des Quell-Mods (B42: im Versionsordner, sonst common/
         // oder Mod-Wurzel) — der Export setzt damit loadModAfter=.
-        modInfoId:
-          (versionNames[0] && modInfoIdIn(path.join(modDir, versionNames[0]))) ||
-          modInfoIdIn(path.join(modDir, 'common')) ||
-          modInfoIdIn(modDir),
+        modInfoId: firstInfo('id'),
         entryCount: 0,
         translatedCounts: {}
       }
@@ -512,7 +559,7 @@ async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG
       // common-Layout prüfen
       const commonEnDir = path.join(modDir, 'common', 'media', 'lua', 'shared', 'Translate', sourceLang)
       if (fs.existsSync(commonEnDir)) {
-        const commonEntries = scanEntriesForDir(mod, 'common', commonEnDir, langs, path.join(modDir, 'common'), sourceLang)
+        const commonEntries = scanEntriesForDir(mod, 'common', commonEnDir, langs, path.join(modDir, 'common'), sourceLang, workRoot)
         entries.push(...commonEntries)
       }
 
@@ -523,7 +570,7 @@ async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG
       if (!fs.existsSync(commonEnDir) && !(newestEnDir && fs.existsSync(newestEnDir))) {
         const rootEnDir = path.join(modDir, 'media', 'lua', 'shared', 'Translate', sourceLang)
         if (fs.existsSync(rootEnDir)) {
-          const rootEntries = scanEntriesForDir(mod, 'root', rootEnDir, langs, modDir, sourceLang)
+          const rootEntries = scanEntriesForDir(mod, 'root', rootEnDir, langs, modDir, sourceLang, workRoot)
           entries.push(...rootEntries)
         }
       }
@@ -531,7 +578,7 @@ async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG
       // Version-Ordner scannen
       for (const version of versionNames.slice(0, 1)) {
         const enDir = translateDir(path.join(modDir, version), sourceLang)
-        entries.push(...scanEntriesForDir(mod, version, enDir, langs, path.join(modDir, version), sourceLang))
+        entries.push(...scanEntriesForDir(mod, version, enDir, langs, path.join(modDir, version), sourceLang, workRoot))
       }
 
       // Mods ohne übersetzbare Einträge (kein Translate-Ordner o. ä.) gar nicht
@@ -558,7 +605,11 @@ module.exports = {
   sourceFileNames,
   readSourceMap,
   readTargetMap,
+  readTargetMapWithWork,
+  workVersionDir,
+  workLangDir,
   modInfoIdIn,
+  modInfoValueIn,
   versionDirOf,
   translateDir,
   toPosix,
