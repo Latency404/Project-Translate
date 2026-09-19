@@ -33,10 +33,14 @@ Laufzeit-/Test-Overrides: `PT_FAKE`, `PT_FAKE_ROOT`, `PT_FAKE_SERVE`, `PT_EXPORT
 
 ```
 server/              Express-API (CommonJS)
-  index.js           API-Routen, Scan-Cache, dient dist/ in Production
-  config.js          config.json lesen/schreiben, Standardpfade
+  index.js           API-Routen, Scan-Cache, dient dist/ in Production;
+                     projiziert den mehrsprachigen Cache flach je ?lang=
+  config.js          config.json lesen/schreiben, Standardpfade, Validierung
+  langs.js           Die 28 Sprachen von PZ (inkl. EN) + SOURCE_LANG ('EN', fest)
   scanner.js         Steam-Wurzeln → { mods, entriesByModId }; JSON- und Lua-TXT-Parser
-  entries.js         Einträge speichern + Backup, fs-Fehler klassifizieren
+  entries.js         Einträge speichern + Backup (Speicherpunkte mit meta.json),
+                     fs-Fehler klassifizieren
+  backups.js         Speicherpunkte auflisten und zurückspielen ("Restore Backup")
   llm-io.js          LLM-Export-Bundle, Import-Vorschau (inkl. matches)
   mod-export.js      Installierbaren Übersetzungs-Mod erzeugen
   zip.js             Minimaler ZIP-Writer (kein externes Paket) für den Export-Mod-Download
@@ -45,21 +49,25 @@ server/              Express-API (CommonJS)
   fixtures-inject.js Synthetische Layout-Fixtures für tmp-Kopien in Tests
 src/
   App.jsx            View-Umschaltung per State (kein Router-Paket); globaler
-                     "Export Mod"-Button (Popover, baut die installierbare Mod)
+                     "Export Mod"-Button (Popover, baut die installierbare Mod);
+                     Sprachumschalter (ab 2 Zielsprachen)
   api.js             Einziger Zugriffspunkt auf die API
-  reviewStore.js     Geteilter Session-State für dirty Editor-Einträge
+  langs.js           Spiegel von server/langs.js (Codes + Namen) fürs Frontend
+  reviewStore.js     Geteilter Session-State für dirty Editor-Einträge je Sprache
                      (Mods-Seite + Editor) — Basis für den "Zu Prüfen"-Status
-  components/        Button, Card, Input, Modal, ProgressBar, Tag
+  components/        Button, Card, Input, Modal, ProgressBar, Tag, Toast, Icons
+                     (Figma-SVGs), LangSelect (eine Sprache),
+                     LangMultiSelect (mehrere, mit Suche)
   styles/theme.css   Design-Tokens (CSS-Variablen)
-  views/             Settings, Mods, Editor, Showcase (= "Design")
+  views/             Settings, Mods, Editor
 Resources/           Sample-Mods, Logos, Figma-Mockups/Icons (git-ignoriert)
 export/              Laufzeit-Ausgabe: mods/, backups/ (git-ignoriert)
 config.json          Laufzeit (git-ignoriert)
 ```
 
-Navigation: Mods | Editor | Settings | Design, plus globaler "Export Mod"-Button
-(baut die installierbare Mod aus der aktuellen Mods-Auswahl, unabhängig von der
-gerade offenen Seite).
+Navigation: Mods | Editor | Settings, plus Sprachumschalter (nur bei mehreren
+Zielsprachen) und globaler "Export Mod"-Button (baut die installierbare Mod aus
+der aktuellen Mods-Auswahl, unabhängig von der gerade offenen Seite).
 
 ## Verträge, die nicht brechen dürfen
 
@@ -69,20 +77,57 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
 - **entryId**: `<version>/<Quellsprachen-Pfad relativ zum Version-Ordner>::<key>`, z. B.
   `42.20/media/lua/shared/Translate/EN/ContextMenu.json::Key`. Das `version`-Segment ist
   entweder eine Versionsnummer, `common`, `root` oder `base`. Die Quellsprache ist
-  konfigurierbar (`config.sourceLang`, Default `EN`, `scanner.js` Parameter `sourceLang`)
-  und steckt im Pfad-Segment — ein Wechsel ändert alle entryIds. `POST /api/config`
-  verwirft deshalb den Scan-Cache, wenn sich `sourceLang`, `gameRoot` oder
-  `workshopDir` ändert (`index.js`); die Mods-Seite scannt danach automatisch neu.
+  **fest `EN`** (`server/langs.js` → `SOURCE_LANG`) und nicht konfigurierbar — eine
+  entryId ändert sich dadurch nie durch Konfiguration. `POST /api/config` verwirft den
+  Scan-Cache, wenn sich `targetLangs`, `gameRoot` oder `workshopDir` ändern
+  (`index.js`). Es gibt **keinen** automatischen Rescan danach — Mods und Editor
+  zeigen den verworfenen Stand als „noch nicht gescannt" und verweisen auf Settings;
+  erst ein erneutes **Search Mods** dort löst den nächsten Scan aus.
+- **Mehrere Zielsprachen**: `config.targetLangs` (Liste, nie leer) und
+  `config.activeLang` (eine davon, die im Editor bearbeitete). Die möglichen Codes
+  stehen in `server/langs.js` und gespiegelt in `src/langs.js` — die 28 Sprachen,
+  die Project Zomboid kennt. Achtung: Codes sind **2 bis 5** Zeichen lang
+  (`ES_CL`, `ES_MX`).
+  **EN ist auch als Ziel wählbar** (die englische Fassung selbst umschreiben).
+  Quelle und Ziel sind dann dieselbe Datei: Speichern überschreibt die
+  Originaltexte der Mod (mit Backup + Baseline), und danach zeigt auch die
+  Original-Spalte den neuen Text. Settings warnt beim Auswählen davor.
+  Der Scan-Cache hält alle Zielsprachen gleichzeitig: entries tragen
+  `translations: { LANG: wert|null }` und `preFilled: { LANG: bool }`, Mods tragen
+  `translatedCounts: { LANG: n }`. Nach außen **projiziert** `index.js` das auf die
+  flachen Felder `translation` / `preFilled` / `translatedCount` für genau die
+  angefragte Sprache (`?lang=`, Default `activeLang`) — deshalb ändert sich für das
+  Frontend am Aufbau der Einträge nichts. Ein Sprachwechsel ist damit nur ein
+  Re-Fetch (`POST /api/active-lang`) und braucht **keinen** neuen Scan.
 - **LLM-Datei-Keys** sind die Kurzform `<version>/<Dateiname>` (z. B. `42.20/UI.json`);
-  `llm-io.js` rekonstruiert daraus die entryId.
+  `llm-io.js` rekonstruiert daraus die entryId. Die exportierte Datei trägt
+  `targetLangs`, die Originaltexte unter `mods` und ein leeres Gerüst
+  `translations: { "<LANG>": {} }`, das das LLM füllt:
+  `translations[LANG][modId][fileKey][key] = "Übersetzung"`. Das alte
+  einsprachige Format (`{ targetLang, mods }`, blankes Array, einzelnes Mod-Doc)
+  wird beim Import weiterhin gelesen.
 - **API-Routenform** (`server/index.js`): `GET /api/status`, `POST /api/scan`,
-  `GET|POST /api/config`, `GET /api/mods`, `GET|PUT /api/mods/:modId/entries`,
+  `GET|POST /api/config`, `POST /api/active-lang`, `GET /api/mods`,
+  `GET|PUT /api/mods/:modId/entries`, `POST /api/reset-translations`,
+  `GET /api/backups`, `POST /api/backups/:id/restore`,
   `POST /api/export/llm`, `POST /api/import/llm/preview`, `POST /api/export/mod`,
-  `POST /api/export/mod/zip`. Fehler immer als `{ error: "<lesbarer Text>" }` +
-  4xx/5xx. Es gibt bewusst **keine** `/api/import/llm/apply`-Route: Import
+  `POST /api/export/mod/zip`. Fehler immer als `{ error: "<lesbarer Text>" }` (auch
+  bei internen Fehlern — englischer Text) + 4xx/5xx. Sprachbezogene Routen nehmen
+  `?lang=` bzw. `lang`/`targetLangs` im Body (Default: die Konfiguration); ein
+  einzelnes `targetLang` wird weiterhin akzeptiert; die Export-Routen lehnen
+  unbekannte Sprachcodes mit 400 ab.
+  `POST /api/active-lang` setzt NUR die aktive Sprache: kein Rescan, keine
+  Pfadprüfung, Cache bleibt stehen.
+  Der Server hört nur auf `127.0.0.1` (kein Netzwerkzugriff von außen). Als
+  CSRF-Schutz verlangen alle mutierenden `/api`-Routen `Content-Type:
+  application/json`, sonst 415.
+  Es gibt bewusst **keine** `/api/import/llm/apply`-Route: Import
   schreibt nichts auf die Platte (s. Import-Review-Status unten) —
-  `POST /api/import/llm/preview` liefert neben den Zähl-Feldern auch
-  `matches: [{ modId, entryId, translation }]`.
+  `POST /api/import/llm/preview` liefert neben den Zähl-Feldern (`perMod`,
+  `perLang`) auch `matches: [{ modId, entryId, translation, lang }]`, dazu
+  `detectedTargetLangs` und `unknownLangs`. Sprachen, die nicht in `targetLangs`
+  stehen, landen in `unknownLangs` und **nie** in `matches` — der Editor könnte sie
+  weder anzeigen noch speichern.
 - **`POST /api/export/mod/zip`**: für den globalen "Export Mod"-Button — baut
   die Mod wie `/api/export/mod` (in einen frischen, danach gelöschten
   Temp-Ordner), packt sie serverseitig in eine ZIP (`server/zip.js`, kein
@@ -94,21 +139,72 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   Web-Seite bekommt aus einem Datei-Dialog nie einen echten OS-Pfad (File
   System Access API liefert nur ein sandboxed Handle) — der Nutzer entpackt
   die ZIP danach selbst in seinen PZ-Mods-Ordner.
+- **B42 lädt Übersetzungen ausschließlich aus**
+  `<Ort>/media/lua/shared/Translate/<LANG>/<Kategorie>.json` (gegen
+  `projectzomboid.jar`/`Translator.tryFillMapFromFile` verifiziert) — TXT-Dateien
+  liest das Spiel nicht mehr. Ein Mod wird nur über `common/mod.info` oder
+  `<versionDir>/mod.info` erkannt; geladen werden `common/` + genau ein
+  Versionsordner (höchste Version ≤ Spielversion); die Mod-Wurzel selbst
+  (`media/` direkt im Mod-Ordner) lädt B42 nie.
 - **Layout-Regeln** (identisch in `scanner.js`, `llm-io.js`, `mod-export.js`):
-  `common` schließt `root` aus; zusätzlich immer nur die **neueste** Versionsnummer.
-  Basisspiel hat einen Ort mit Version `base`.
-- **Dateinamen-Ableitung EN → Zielsprache**: JSON bleibt gleich, TXT wird
-  `<Name>_<LANG>.txt` (`Sandbox_EN.txt` → `Sandbox_DE.txt`). Siehe
-  `scanner.targetFileName()`.
+  Workshop-Mod = `common` (falls vorhanden) + der **neueste** Versionsordner,
+  beide gleichzeitig — `common` schließt den Versionsordner also **nicht** aus.
+  `root` (B41-Layout, Mod-Wurzel) wird nur gescannt, wenn weder `common` noch der
+  neueste Versionsordner einen `Translate/EN`-Ordner haben. Basisspiel hat einen
+  Ort mit Version `base`. Mods ohne übersetzbare Einträge werden gar nicht gelistet.
+- **Quellen**: alle `.json` im EN-Ordner; eine `<Kategorie>_EN.txt` nur, wenn im
+  selben Ordner **keine** `<Kategorie>.json` liegt (B41-Altlast); andere `.txt`
+  (`README.txt`, `language.txt`, …) sind nie Quelle. Die entryId bleibt dabei wie
+  gehabt `<version>/<Pfad der Quelldatei>::<key>` — bei TXT-Quellen also
+  `.../EN/Sandbox_EN.txt::Key`.
+- **Dateinamen-Ableitung EN → Zielsprache**: Ziel ist **immer** `<Kategorie>.json`
+  (`scanner.targetFileName()`) — auch für TXT-Quellen (`Sandbox_EN.txt` →
+  `Sandbox.json`). Die alte Zieldatei `<Kategorie>_<LANG>.txt`
+  (`scanner.legacyTargetFileName()`) wird nur noch als Rückfall **gelesen**,
+  solange die JSON-Zieldatei nicht existiert; das erste Speichern sät die JSON
+  daraus. EN als Zielsprache mit TXT-Quelle: Speichern erzeugt eine vollständige
+  `<Kategorie>.json` in EN (konvertierte Kopie + Änderungen). Baselines/Backups
+  hängen am jeweiligen **Zielpfad** — ein Baseline-Ordner kann sowohl die alte
+  TXT- als auch die neue JSON-Zieldatei enthalten; Speicherpunkte deduplizieren
+  über den exakten Zielpfad.
+- **Mod-Export bündelt alle gewählten Mods UND Sprachen in EINE Mod**: ein
+  Ordner `<Name>-<LANGS>/` mit `42/mod.info` (+ `42/icon.png`, falls ein Poster
+  vorhanden ist) und **allen** Übersetzungen aller gewählten Mods gemergt nach
+  `common/media/lua/shared/Translate/<LANG>/<Kategorie>.json` — Merge-Reihenfolge:
+  Mods in Auswahlreihenfolge, je Mod `common` → `root` → neuester Versionsordner,
+  bei Schlüsselkollision gewinnt der spätere. `mod.info` trägt `id`/`name`/
+  `author`/`description`, `poster=`/`icon=` falls vorhanden, sowie
+  `loadModAfter=` mit den `mod.info`-IDs der Quell-Mods, damit die Übersetzung
+  eine eigene Übersetzung des Quell-Mods überlagert. Ordnername/`mod.info`-ID:
+  bis zu 3 Sprachen `<base>-DE-FR` / `pt_<slug>_DE_FR`, ab 4 Sprachen `-multi`
+  (unverändert). Unbekannte Sprachcodes werden mit 400 abgelehnt.
 - **Backup vor jedem Überschreiben** nach
-  `export/backups/<YYYY-MM-DD_HH-mm>/<modId>__<version>__<file>/`. Ein Ordner pro
-  Speicher-Batch, wird nie automatisch gelöscht.
+  `export/backups/<YYYY-MM-DD_HH-mm>/<modId>__<version>__<file>__<LANG>/`. Ein Ordner
+  pro Speicher-Batch (= Speicherpunkt), wird nie automatisch gelöscht. Jeder Punkt
+  hat eine `meta.json` (Datum/Uhrzeit, Art `save`/`reset`/`restore`, je Datei der
+  **exakte Zielpfad**, Mod, Sprache und `absent`, falls es die Datei vorher nicht
+  gab) — nur damit ist ein Punkt über "Restore Backup" sicher zurückzuspielen; der
+  Ordnername allein verstümmelt modId/Pfad. **Erste Sicherung gewinnt**: mehrmals
+  in derselben Minute gespeichert, bleibt der Stand vor dem ersten Speichern.
+  Reset und Restore bekommen je einen **eigenen**, sekundengenauen Punkt
+  (`<YYYY-MM-DD_HH-mm-ss>`, bei Kollision `_N`), damit sie sich gezielt rückgängig
+  machen lassen. Restore sichert vorher den aktuellen Stand. Punkte ohne
+  `meta.json` (vor dieser Funktion angelegt) werden gegen die **gescannten**
+  Mods aufgelöst (ohne Scan nicht wiederherstellbar); ihre Sprache belegen die
+  TXT-Dateinamen (`Sandbox_DE.txt`), für JSON gilt die Sprache, die die
+  Alt-Punkte eindeutig belegen — sonst bleibt die Datei ausgelassen. Der Sprachanteil ist Pflicht:
+  ohne ihn teilen sich zwei Zielsprachen denselben Baseline-Ordner und ein Reset
+  spielt die falsche Fassung zurück. Baselines ohne Suffix (vor der
+  Mehrsprachigkeit angelegt) werden beim Lesen weiterhin gefunden.
 - **sessionStorage-Keys**: `pt_library_selected` (die Mods-Auswahl — nur die
   Mods-Seite schreibt sie, Editor und der globale Export-Mod-Button lesen sie),
   `pt_library_locked`, `pt_editor_active_mod` (der EINE aktuell im Editor
   geöffnete Mod — Editor-eigen, nie die Mods-Auswahl selbst), `pt_active_view`,
-  `pt_editor_dirty` (ungespeicherte Einträge, `entryId -> { modId, value, origin }`;
-  `origin` ist `"manual"` oder `"import"` — s. `src/reviewStore.js`).
+  `pt_editor_dirty` (ungespeicherte Einträge, Key ist `<lang>::<entryId>`, Wert
+  `{ modId, value, origin, lang }`; `origin` ist `"manual"` oder `"import"` —
+  s. `src/reviewStore.js`). Der Sprachpräfix ist nötig, weil dieselbe entryId in
+  mehreren Sprachen gleichzeitig offen sein kann; Einträge aus älteren Sessions
+  ohne Präfix werden beim Laden auf die aktive Sprache migriert.
 - **Disk ist die Quelle der Wahrheit**: PUT löst einen Rescan aus, bevor es
   antwortet. Ausnahme bewusst: ein LLM-Import schreibt NICHT direkt — er füllt
   nur `pt_editor_dirty` (`origin: "import"`), bis der Nutzer die Einträge im
@@ -142,3 +238,6 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
 
 Windows 11. Schreiben in `C:\Program Files (x86)\...` (Spiel und Workshop) braucht
 Administratorrechte — ohne sie meldet die API einen 403 mit lesbarem Text.
+
+Node **≥ 22.2** (`package.json` → `engines`): der ZIP-Export (`server/zip.js`)
+nutzt `zlib.crc32`, das erst ab dieser Version existiert.

@@ -4,27 +4,42 @@ Grundsatz: Der Funktionsumfang ist gewollt und funktioniert im Kern. Dieser Plan
 ihn von „läuft" auf „rund". Keine neuen Features, keine Umbauten an Architektur, Routen
 oder Theme — außer ein Punkt hier verlangt es ausdrücklich.
 
-## Ist-Zustand (Stand 2026-09-16, Nacht)
+## Ist-Zustand (Stand 2026-09-19)
 
-- `npm test`: 61 Tests grün. `npm run build`: grün.
 - Scanner läuft gegen die echte Steam-Installation und findet dort 450+ Mods
   inklusive Basisspiel.
-- Vollständig da und benutzbar: Scan mit Fortschritt, Library mit Auswahl und Lock,
-  Editor mit Suche/Sortierung/Speichern inkl. Backup, LLM-Export als eine Datei über
-  den Browser-Save-Dialog, LLM-Import mit Vorschau und Bestätigung, Mod-Export als
-  gebündelter Übersetzungs-Mod. Quellsprache ist echt konfigurierbar (D3).
+- Vollständig da und benutzbar: Scan mit Fortschritt, Mods-Seite mit Auswahl und
+  Lock, Sprachumschalter bei mehreren Zielsprachen, Editor mit Suche/Sortierung/
+  Speichern inkl. Backup, LLM-Export als eine Datei über den Browser-Save-Dialog
+  (mehrsprachig), LLM-Import mit Vorschau und Bestätigung, Mod-Export als
+  gebündelter, ZIP-verpackter Übersetzungs-Mod.
+- Quellsprache ist **fest EN** — der D3-Ausflug in eine konfigurierbare
+  Quellsprache wurde zurückgenommen, siehe „Release-Check" unten. Mehrere
+  Zielsprachen gleichzeitig sind dagegen echt (kein D3-Rückbau).
+- Der Mod-Export ist gegen das tatsächliche B42-Ladeverhalten verifiziert
+  (disassembliertes `projectzomboid.jar`, siehe „Release-Check"): Ziel ist immer
+  JSON, ein Mod bündelt alle gewählten Quell-Mods in `common/`, mit
+  `loadModAfter=`.
+- `npm test` und `npm run build` sind grün (Stand des letzten Durchlaufs vor
+  diesem Eintrag — vor dem nächsten Release erneut prüfen, siehe unten).
 
-Erledigt an diesem Tag: **A1–A3** (Datenverlust), **B1** (Editor-Nachladen), **B2**
+Erledigt bis 2026-09-16: **A1–A3** (Datenverlust), **B1** (Editor-Nachladen), **B2**
 (Library-Poster), **C1–C4** (B42-konforme mod.info), **D1** (doppelte Export-Logik),
-**D2** (Codereste), **D3** (Quellsprache), **E1** (ehrliche Fehlerzustände), **E2**
-(Config-Validierung), **E3** (Oberfläche Englisch), **E4** (Testlücken), **E6**
-(zwei Nachwehen aus Phase A), **E7** (README), **E8** (Vite-Warnung).
+**D2** (Codereste), **D3** (Quellsprache — ~~konfigurierbar~~, siehe Release-Check),
+**E1** (ehrliche Fehlerzustände), **E2** (Config-Validierung), **E3** (Oberfläche
+Englisch), **E4** (Testlücken — Route hieß damals `/api/import/llm/apply`, siehe
+Release-Check), **E6** (zwei Nachwehen aus Phase A), **E7** (README), **E8**
+(Vite-Warnung).
 
-Noch offen: **C5** (Abnahme im Spiel — nur der Nutzer kann das), **E5** (Wortlaut-
-Kopplung in Settings.jsx, niedrige Priorität, nicht dringend).
+Erledigt am 2026-09-19: siehe **Release-Check** unten.
 
-Testabdeckung: Backend solide (`POST /api/export/mod`, `POST /api/import/llm/apply`
-und ein Nicht-EN-Quellsprache-Roundtrip jetzt mit abgedeckt). Frontend weiterhin
+Noch offen: **C5** (Abnahme im Spiel — nur der Nutzer kann das, jetzt der
+wichtigste offene Punkt), **E5** (Wortlaut-Kopplung in Settings.jsx, niedrige
+Priorität, nicht dringend).
+
+Testabdeckung: Backend solide (`POST /api/export/mod` und `POST
+/api/import/llm/preview` mit abgedeckt — die frühere Route `.../apply` wurde
+entfernt, als der Import auf „Zu Prüfen“ umgestellt wurde, s. Release-Check). Frontend weiterhin
 ungetestet (kein Test-Setup für React-Komponenten vorhanden — außerhalb des
 bisherigen Scopes).
 
@@ -157,12 +172,20 @@ mehreren Mods ein fester Name plus Anzahl); ein Export aus vielen Mods legt eine
 gültigen Ordner an. Test mit einer Auswahl, deren Namen zusammen die Grenze reißen
 würden.
 
-### C5 Abnahme im Spiel
+### C5 Abnahme im Spiel [wichtigster offener Punkt, Stand 2026-09-19]
 Fertig wenn: `mod-export.test.js` deckt die neuen Pfade, Felder, die id-Determinismus-
 Regel und das Bundle ab, `npm test` und `npm run build` sind grün, und der exportierte
 Ordner lässt sich unverändert nach `<game>/mods/` legen, im Launcher aktivieren und die
 Übersetzung erscheint im Spiel. Der letzte Schritt ist eine Prüfung durch den Nutzer,
 kein automatischer Test.
+
+Nach dem Release-Check (s. u.) ist das dringlicher als zuvor: der Mod-Export wurde
+grundlegend umgebaut (ein Mod bündelt jetzt alle Quell-Mods in `common/`, mit
+`loadModAfter=`), verifiziert bisher nur gegen die Doku und disassembliertes
+`projectzomboid.jar`, nicht im laufenden Spiel. Der Nutzer sollte mindestens
+prüfen: `42/mod.info` wird vom Launcher erkannt, die Übersetzung erscheint im
+Spiel, ausdrücklich einschließlich eines Mods, dessen Original nur als TXT
+vorlag (jetzt als JSON exportiert), sowie des Basisspiels selbst.
 
 ## Phase D – Aufräumen
 
@@ -190,7 +213,12 @@ Einzeln klein, zusammen ein Nachmittag:
 
 Fertig wenn: Alles oben erledigt, `npm test` und `npm run build` grün.
 
-### D3 Quellsprache wirklich implementieren [erledigt 2026-09-16]
+### D3 Quellsprache wirklich implementieren [erledigt 2026-09-16, überholt — siehe Release-Check 2026-09-19]
+**Überholt:** Die Quellsprache wurde danach wieder auf fest `EN` zurückgebaut —
+B42 selbst kennt nur EN als Quelle, eine konfigurierbare Quellsprache hatte keinen
+Nutzen und stand im Weg der Mehrsprachigkeit bei den Zielsprachen. Der Rest dieses
+Abschnitts ist historisch stehen gelassen.
+
 `src/views/Settings.jsx:148` bietet eine Auswahl für die Quellsprache an; der Scanner
 benutzt die Konstante `SOURCE_LANG = 'EN'` (`server/scanner.js:32`) und ignoriert den
 Wert vollständig. Entschieden (Nutzer, 2026-09-16): Die Auswahl soll echt werden.
@@ -250,8 +278,12 @@ fs-Fehlerklassifikation) und die Meldungen in `index.js` (`:92`, `:114`, `:219`,
 mitgezogen. Code-Kommentare dürfen deutsch bleiben — das betrifft nur, was der Nutzer
 sieht.
 
-### E4 Testlücken schließen [erledigt 2026-09-16]
-Fertig wenn: `POST /api/export/mod` und `POST /api/import/llm/apply` haben je einen
+### E4 Testlücken schließen [erledigt 2026-09-16, Wortlaut überholt — siehe Release-Check 2026-09-19]
+**Überholt:** `/api/import/llm/apply` existiert nicht (mehr) — der Import schreibt
+bewusst nichts direkt (s. Vertrag „Disk ist die Quelle der Wahrheit" in CLAUDE.md);
+die Route wurde später entfernt, als der Import auf „Zu Prüfen“ (dirty im Editor)
+umgestellt wurde; ihr Test lebt als Test für `POST /api/import/llm/preview` weiter.
+Fertig wenn: `POST /api/export/mod` und `POST /api/import/llm/preview` haben je einen
 Routen-Test (Fake-Modus, tmp-Kopie wie die bestehenden Tests in `index.test.js`),
 `npm test` grün.
 
@@ -292,11 +324,66 @@ Gelöst durch Umbenennen auf `vite.config.mjs`. `"type": "module"` schied aus, w
 `server/` und `scripts/dev.js` CommonJS sind. Build, Tests, `npm start` und der
 Dev-Proxy auf `:3100` sind nachgeprüft.
 
+## Release-Check [2026-09-19]
+
+Anlass: Abgleich gegen das tatsächliche B42-Ladeverhalten (disassembliertes
+`projectzomboid.jar`) vor der Abnahme im Spiel (C5) — dabei kamen mehrere
+Annahmen aus Phase A–E ans Licht, die nicht (mehr) stimmten. Alle Punkte hier
+sind erledigt.
+
+Kernbefund: B42 lädt Übersetzungen **ausschließlich** aus
+`<Ort>/media/lua/shared/Translate/<LANG>/<Kategorie>.json` (TXT wird nicht mehr
+gelesen); ein Mod wird nur über `common/mod.info` oder `<versionDir>/mod.info`
+erkannt, geladen werden `common/` + genau ein Versionsordner (höchste ≤
+Spielversion) — die Mod-Wurzel (`media/` direkt im Mod-Ordner) lädt das Spiel nie.
+
+Erledigt:
+- **Quellen/Ziel**: Quelle bleibt jedes `.json` im EN-Ordner, dazu eine
+  `<Kategorie>_EN.txt` nur ohne gleichnamige JSON. Ziel ist jetzt **immer**
+  `<Kategorie>.json` (auch für TXT-Quellen) statt `<Kategorie>_<LANG>.txt`; die
+  alte TXT-Zieldatei wird nur noch als Rückfall gelesen, solange keine JSON-Datei
+  existiert. Layout-Scan: `common` (falls vorhanden) + neuester Versionsordner
+  **gleichzeitig** statt sich gegenseitig ausschließend; `root` (B41) nur als
+  Fallback, wenn keiner von beiden einen `Translate/EN`-Ordner hat.
+  Baselines/Backups hängen jetzt am exakten Zielpfad (ein Baseline-Ordner kann
+  TXT- und JSON-Ziel gleichzeitig enthalten).
+- **Mod-Export neu gebaut**: eine ZIP mit einem Mod-Ordner `<Name>-<LANGS>/`,
+  `42/mod.info` (+ `42/icon.png`), alle gewählten Quell-Mods gemergt nach
+  `common/media/lua/shared/Translate/<LANG>/<Kategorie>.json` (Merge-Reihenfolge:
+  Auswahlreihenfolge, je Mod `common` → `root` → neuester Versionsordner, letzter
+  gewinnt bei Kollision), `mod.info` mit `id`/`name`/`author`/`description`,
+  `poster=`/`icon=` falls vorhanden und `loadModAfter=` mit den `mod.info`-IDs
+  der Quell-Mods (die Übersetzung überlagert damit eine eigene Übersetzung des
+  Quell-Mods). Ordnername/id-Regeln (≤3 Sprachen ausgeschrieben, ab 4 `-multi`)
+  unverändert.
+- **API-Härtung**: hört nur auf `127.0.0.1`; mutierende `/api`-Routen verlangen
+  `Content-Type: application/json` (sonst 415) als CSRF-Schutz; Export-Routen
+  lehnen unbekannte Sprachcodes mit 400 ab; Fehlertexte durchgehend Englisch.
+- **Frontend-Feinschliff**: Verlassen-Warnung bei ungespeicherten Editor-
+  Änderungen; Export Mod warnt, wenn ausgewählte Mods ungespeicherte/ungeprüfte
+  Einträge haben (die fehlen sonst im Export); Scan-Fehler werden als Fehler
+  angezeigt statt als leerer Zustand; Mod-Karten sind per Tastatur bedienbar.
+- **Node-Version**: `zlib.crc32` (ZIP-Export) braucht Node ≥ 22.2 —
+  `package.json` hat jetzt `engines.node` entsprechend gesetzt, README nennt die
+  Version in den Voraussetzungen.
+- **D3 zurückgebaut**: Quellsprache ist wieder fest `EN` (s. D3-Notiz oben);
+  **E4-Wortlaut aktualisiert**: `/api/import/llm/apply` wurde mit der Umstellung
+  auf „Zu Prüfen“ entfernt; abgedeckt ist jetzt `/api/import/llm/preview`.
+- README und CLAUDE.md an den oben genannten Stellen aktualisiert.
+
+Offen, nur vom Nutzer entscheidbar (nicht Teil dieses Durchlaufs):
+- **Basisspiel-Logo**: `Resources/projectzomboidlogo.jpg` ist git-ignoriert —
+  ein frischer Checkout zeigt für das Basisspiel kein Poster. Das Bild ist
+  Artwork von The Indie Stone; vor dem Ausliefern (falls „Ausliefern" über den
+  eigenen Rechner hinausgeht) muss der Nutzer eine Lizenzentscheidung treffen,
+  ob/wie es mitgeht.
+
 ## Getroffene Entscheidungen
 
 - **2026-09-16, Oberflächensprache:** durchgehend Englisch, Servermeldungen
   inbegriffen (E3).
-- **2026-09-16, Quellsprache:** wird echt implementiert statt entfernt (D3).
+- **2026-09-16, Quellsprache:** wird echt implementiert statt entfernt (D3);
+  **2026-09-19 zurückgenommen**: fest `EN`, s. Release-Check.
 - **2026-09-16, Editor bei großer Auswahl:** Nachladen beim Scrollen, keine
   Seitenblätter (B1).
 - **2026-09-16, Doku:** `AGENTS.md`, `ARCHITECTURE.md`, `IDEA.md` und `TODO.md`

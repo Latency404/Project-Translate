@@ -1,3 +1,5 @@
+import { Info, TriangleAlert } from "lucide-react";
+import { NoIcon, YesIcon } from "./Icons.jsx";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 /**
@@ -9,15 +11,24 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
  */
 const ToastContext = createContext(() => {});
 
+// Rahmen in der Tonfarbe, Icon in der Tonfarbe, Text bleibt hell — wie die
+// übrigen Karten/Pillen der App (bg-surface, border-line, text-ui).
 const TONE_CLASS = {
-  success: "border-success/40 text-success",
-  error: "border-danger/40 text-danger",
-  warning: "border-warning/40 text-warning",
-  info: "border-line text-text",
+  success: "border-success/40",
+  error: "border-danger/40",
+  warning: "border-warning/40",
+  info: "border-line",
+};
+
+const TONE_ICON = {
+  success: { Icon: YesIcon, className: "text-success" },
+  error: { Icon: NoIcon, className: "text-danger" },
+  warning: { Icon: TriangleAlert, className: "text-warning" },
+  info: { Icon: Info, className: "text-accent" },
 };
 
 // Fehler und Warnungen bleiben länger stehen als Bestätigungen.
-const DURATION = { success: 4000, info: 4000, warning: 8000, error: 8000 };
+const DURATION = { success: 5000, info: 5000, warning: 10000, error: 10000 };
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
@@ -58,17 +69,21 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[10000] flex w-80 max-w-[calc(100vw-2rem)] flex-col items-end gap-2">
-        {toasts.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => dismiss(t.id)}
-            role={t.kind === "error" ? "alert" : "status"}
-            className={`pointer-events-auto w-full cursor-pointer rounded-md border bg-raised px-4 py-2.5 text-left text-sm shadow-lg ${TONE_CLASS[t.kind]}`}
-          >
-            {t.text}
-          </button>
-        ))}
+      <div className="pointer-events-none fixed bottom-4 right-4 z-[10000] flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2">
+        {toasts.map((t) => {
+          const { Icon, className } = TONE_ICON[t.kind];
+          return (
+            <button
+              key={t.id}
+              onClick={() => dismiss(t.id)}
+              role={t.kind === "error" ? "alert" : "status"}
+              className={`pointer-events-auto flex w-fit max-w-[40rem] cursor-pointer items-center gap-3 rounded-lg border bg-surface px-4 py-3 text-left text-ui font-semibold text-text shadow-[0_8px_24px_rgba(0,0,0,0.5)] ${TONE_CLASS[t.kind]}`}
+            >
+              <Icon size={16} className={`shrink-0 ${className}`} />
+              <span>{t.text}</span>
+            </button>
+          );
+        })}
       </div>
     </ToastContext.Provider>
   );

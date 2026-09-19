@@ -23,13 +23,16 @@
 // JSON-Dateien sind flache key → string-Maps; handgeschriebene Mods dürfen
 // Trailing Commas und unquoted (Lua-Style) Keys enthalten — readFlatMap()
 // parse beide Varianten tolerant.
-// TXT-Dateien sind Lua-Translate (Sandbox_EN.txt etc.) mit Key=Value-Paaren.
+// TXT-Dateien sind Lua-Translate (Sandbox_EN.txt etc.) mit Key=Value-Paaren —
+// Quelle nur, wenn es keine JSON derselben Kategorie gibt; geschrieben wird
+// immer JSON (s. targetFileName / sourceFileNames).
+// Mods ohne übersetzbare Einträge werden nicht gelistet.
 // Einträge in JSON-/TXT-Datei-Reihenfolge (Insertion Order), Dateien alphabetisch.
 // Pfade immer POSIX-Style.
 const fs = require('node:fs')
 const path = require('node:path')
+const { SOURCE_LANG } = require('./langs')
 
-const SOURCE_LANG = 'EN'
 const BASE_ID = 'BASE'
 const BASE_NAME = 'Project Zomboid (Base Game)'
 
@@ -259,55 +262,124 @@ function readTxtMap(filePath) {
   }
 }
 
-// EN-Datei-Name → DE-Datei-Name.
-// JSON: gleich (ItemName.json → ItemName.json)
-// TXT: _EN.txt → _DE.txt (Sandbox_EN.txt → Sandbox_DE.txt)
-//     sonst: .txt → _DE.txt (Sandbox.txt → Sandbox_DE.txt)
-function targetFileName(enFileName, targetLang) {
-  const ext = path.extname(enFileName)
-  const base = enFileName.slice(0, -ext.length)
-  if (ext === '.json') return enFileName
-  // TXT: entferne optional _EN-Suffix, hänge _<targetLang>
-  const noEn = base.endsWith('_EN') ? base.slice(0, -3) : base
-  return noEn + '_' + targetLang + ext
+// B42 lädt Übersetzungen AUSSCHLIESSLICH aus
+//   <Ort>/media/lua/shared/Translate/<LANG>/<Kategorie>.json
+// (zombie/core/Translator.tryFillMapFromFile, gegen projectzomboid.jar geprüft).
+// TXT-Dateien (<Kategorie>_EN.txt, Lua-Translate aus B41) liest das Spiel nicht
+// mehr. Deshalb:
+//   - Quelle: alle .json; eine <Kategorie>_<SRC>.txt nur, wenn es KEINE
+//     <Kategorie>.json im selben Quellordner gibt (sourceFileNames).
+//   - Ziel: immer <Kategorie>.json (targetFileName) — auch für TXT-Quellen.
+//   - Alte Zieldateien <Kategorie>_<LANG>.txt (legacyTargetFileName) werden nur
+//     noch gelesen, als Rückfall, solange es die JSON-Zieldatei nicht gibt.
+// Andere .txt (README.txt, language.txt, ...) sind keine Quellen.
+
+// Quelldatei → Kategorie: "UI.json" → "UI", "Sandbox_EN.txt" → "Sandbox".
+function categoryOf(srcFileName, sourceLang = SOURCE_LANG) {
+  const ext = path.extname(srcFileName)
+  const base = srcFileName.slice(0, -ext.length)
+  if (ext.toLowerCase() === '.json') return base
+  const suffix = '_' + sourceLang
+  return base.toUpperCase().endsWith(suffix.toUpperCase()) ? base.slice(0, -suffix.length) : base
 }
 
-// Einträge einer EN-Dir lesen: alle .json + .txt Dateien (alphabetisch),
-// Key-Reihenwie in der Datei; Translation aus der targetLang-Dir.
-// Gibt Array von Entry-Objekten zurück.
-// version: das "version"-Segment der entryId (z. B. "42.20", "common", "root").
-// modRoot: der Root-Pfad des Mods (für entryId-File-Berechnung).
-// enDir: der EN-Translate-Ordner.
-// targetLang: Zielsprache-Code.
-// isVersion: true wenn version ein echter Versionsordner (nicht common/root) —
-//            bestimmt das file-Verhältnis (relativ zum Version-Ordner vs. zum Root).
-function scanEntriesForDir(mod, version, enDir, targetLang, modRoot) {
-  const entries = []
-  if (!fs.existsSync(enDir)) return entries
-  const langDir = path.join(path.dirname(enDir), targetLang)
+function isTxtSourceName(name, sourceLang = SOURCE_LANG) {
+  return name.toUpperCase().endsWith(`_${sourceLang}.TXT`.toUpperCase())
+}
+
+// Quelldatei → Zieldatei: immer <Kategorie>.json
+// (ItemName.json → ItemName.json, Sandbox_EN.txt → Sandbox.json).
+function targetFileName(srcFileName, targetLang, sourceLang = SOURCE_LANG) {
+  return categoryOf(srcFileName, sourceLang) + '.json'
+}
+
+// Alte TXT-Zieldatei einer TXT-Quelle (Sandbox_EN.txt → Sandbox_DE.txt), nur
+// noch zum LESEN (Rückfall) — für JSON-Quellen null. Bei Ziel == Quelle (EN)
+// ist das die Quelldatei selbst.
+function legacyTargetFileName(srcFileName, targetLang, sourceLang = SOURCE_LANG) {
+  if (!srcFileName.toLowerCase().endsWith('.txt')) return null
+  return `${categoryOf(srcFileName, sourceLang)}_${targetLang}.txt`
+}
+
+// Effektive Quelldateien eines Quellordners, JSON zuerst (alphabetisch), dann
+// die TXT ohne JSON-Gegenstück (alphabetisch). Fehlt der Ordner: [].
+function sourceFileNames(srcDir, sourceLang = SOURCE_LANG) {
   let names
   try {
-    names = fs.readdirSync(enDir).sort()
+    names = fs.readdirSync(srcDir).sort()
   } catch {
-    return entries
+    return []
   }
+  const json = names.filter((f) => f.toLowerCase().endsWith('.json'))
+  const jsonCats = new Set(json.map((f) => categoryOf(f, sourceLang).toLowerCase()))
+  const txt = names.filter(
+    (f) => isTxtSourceName(f, sourceLang) && !jsonCats.has(categoryOf(f, sourceLang).toLowerCase())
+  )
+  return [...json, ...txt]
+}
 
-  // Alle .json und .txt Dateien sammeln
-  const jsonNames = names.filter(f => f.endsWith('.json'))
-  const txtNames = names.filter(f => /\.txt$/i.test(f) && !f.endsWith('.json'))
+// Quelldatei lesen (JSON tolerant, TXT als Lua-Translate) → Map oder null.
+function readSourceMap(srcDir, srcFileName) {
+  const p = path.join(srcDir, srcFileName)
+  return srcFileName.toLowerCase().endsWith('.txt') ? readTxtMap(p) : readFlatMap(p)
+}
 
-  // JSON-Einträge zuerst (höhere Priorität bei Duplikaten)
-  const jsonEntries = new Map()
-  for (const f of jsonNames) {
-    const enMap = readFlatMap(path.join(enDir, f))
+// Aktuelle Übersetzung einer Quelldatei im Zielordner lesen: die JSON-Zieldatei,
+// sonst (nur TXT-Quellen) die alte <Kategorie>_<LANG>.txt. null = nichts da.
+function readTargetMap(tgtDir, srcFileName, targetLang, sourceLang = SOURCE_LANG) {
+  const json = readFlatMap(path.join(tgtDir, targetFileName(srcFileName, targetLang, sourceLang)))
+  if (json) return json
+  const legacy = legacyTargetFileName(srcFileName, targetLang, sourceLang)
+  return legacy ? readTxtMap(path.join(tgtDir, legacy)) : null
+}
+
+// id= aus einer mod.info (für loadModAfter= im Export). null, wenn keine.
+function modInfoIdIn(dir) {
+  let raw
+  try {
+    raw = fs.readFileSync(path.join(dir, 'mod.info'), 'utf8')
+  } catch {
+    return null
+  }
+  for (const line of raw.split(/\r?\n/)) {
+    const t = line.trim()
+    if (t.startsWith('id=')) return t.slice(3).trim() || null
+  }
+  return null
+}
+
+// Einträge eines Quellordners lesen: die effektiven Quelldateien
+// (sourceFileNames: JSON, dazu TXT ohne JSON-Gegenstück), Key-Reihenfolge wie
+// in der Datei; Übersetzung je Sprache über readTargetMap() aus dem passenden
+// Zielordner (path.join(path.dirname(enDir), lang)).
+// version: das "version"-Segment der entryId (z. B. "42.20", "common", "root").
+// modRoot: Bezugsordner für den Datei-Pfad der entryId.
+function scanEntriesForDir(mod, version, enDir, targetLangs, modRoot, sourceLang = SOURCE_LANG) {
+  const entries = []
+  const langsBaseDir = path.dirname(enDir)
+  for (const f of sourceFileNames(enDir, sourceLang)) {
+    const enMap = readSourceMap(enDir, f)
     if (!enMap) continue
-    const deFileName = targetFileName(f, targetLang)
-    const deMap = readFlatMap(path.join(langDir, deFileName))
-    const relPath = path.relative(modRoot, path.join(enDir, f))
-    const file = toPosix(relPath)
+    const file = toPosix(path.relative(modRoot, path.join(enDir, f)))
+    // Zieldatei pro Sprache GENAU EINMAL lesen (nicht pro Key) — wichtig bei
+    // 450+ Mods und mehreren Zielsprachen.
+    const targetMaps = {}
+    for (const lang of targetLangs) {
+      targetMaps[lang] = readTargetMap(path.join(langsBaseDir, lang), f, lang, sourceLang)
+    }
     for (const [key, value] of Object.entries(enMap)) {
       if (typeof value !== 'string') continue
-      const translation = deMap && typeof deMap[key] === 'string' ? deMap[key] : null
+      const translations = {}
+      const preFilled = {}
+      for (const lang of targetLangs) {
+        const tMap = targetMaps[lang]
+        // "" zählt als unübersetzt: das Spiel fällt dafür auf EN zurück (die
+        // offiziellen Sprachdateien des Basisspiels sind voll davon), und
+        // Speichern von "" löscht den Key ohnehin.
+        const t = tMap && typeof tMap[key] === 'string' && tMap[key] !== '' ? tMap[key] : null
+        translations[lang] = t
+        preFilled[lang] = t !== null
+      }
       entries.push({
         id: `${version}/${file}::${key}`,
         modId: mod.id,
@@ -315,72 +387,36 @@ function scanEntriesForDir(mod, version, enDir, targetLang, modRoot) {
         file,
         key,
         original: value,
-        translation,
-        preFilled: translation !== null,
-        _sourceFile: f
-      })
-      jsonEntries.set(`${version}/${file}::${key}`, true)
-    }
-  }
-
-  // TXT-Einträge danach (Überschreibt JSON nur wenn gleiche entryId — sollte selten sein)
-  for (const f of txtNames) {
-    const enMap = readTxtMap(path.join(enDir, f))
-    if (!enMap) continue
-    const deFileName = targetFileName(f, targetLang)
-    // TXT ist Lua-Translate (kein JSON) — readFlatMap würde null liefern und
-    // vorhandene targetLang-Übersetzungen (Pre-Fill) unentdeckt lassen.
-    const deMap = readTxtMap(path.join(langDir, deFileName))
-    const relPath = path.relative(modRoot, path.join(enDir, f))
-    const file = toPosix(relPath)
-    for (const [key, value] of Object.entries(enMap)) {
-      if (typeof value !== 'string') continue
-      const entryId = `${version}/${file}::${key}`
-      const translation = deMap && typeof deMap[key] === 'string' ? deMap[key] : null
-      entries.push({
-        id: entryId,
-        modId: mod.id,
-        version,
-        file,
-        key,
-        original: value,
-        translation,
-        preFilled: translation !== null,
-        _sourceFile: f
+        translations,
+        preFilled
       })
     }
   }
-
-  // Deduplizierung: gleiche entryId → JSON hat Priorität. Da JSON-Dateien vor
-  // TXT-Dateien durchlaufen werden, ist ein bereits gesehener Eintrag immer JSON —
-  // ein späterer TXT-Eintrag mit derselben entryId wird einfach übersprungen.
-  const seen = new Map()
-  for (const e of entries) {
-    if (!seen.has(e.id)) {
-      seen.set(e.id, e)
-    }
-  }
-
-  // Einträge zurückgeben, _sourceFile entfernen
-  return Array.from(seen.values()).map(e => {
-    const { _sourceFile: _, ...rest } = e
-    return rest
-  })
+  return entries
 }
 
-function summarize(mod, entries) {
+// mod.translatedCounts bekommt für JEDE Sprache aus targetLangs einen Eintrag —
+// auch 0, wenn in dieser Sprache nichts übersetzt ist (z. B. Mod ohne Einträge).
+function summarize(mod, entries, targetLangs) {
   mod.entryCount = entries.length
-  mod.translatedCount = entries.filter((e) => e.translation !== null).length
+  const translatedCounts = {}
+  for (const lang of targetLangs) {
+    translatedCounts[lang] = entries.filter((e) => e.translations[lang] !== null).length
+  }
+  mod.translatedCounts = translatedCounts
   return entries
 }
 
 // Scan: Wurzel-Dir → { mods, entriesByModId }.
-// gameRoot / workshopDir: native Pfade. sourceLang: Sprachordner, aus dem die
-// Originaltexte gelesen werden (Default 'EN' — Konfiguration in Settings,
-// D3 in PLAN.md); die entryId trägt den entsprechenden Pfad, ein Wechsel
-// macht bestehende entryIds ungültig. Async, damit der Event Loop während des
-// Scans Fortschritt (POST /api/scan → GET /api/status) weiter bedienen kann.
-async function scan(gameRoot, workshopDir, targetLang, sourceLang = SOURCE_LANG, { onProgress } = {}) {
+// gameRoot / workshopDir: native Pfade. targetLangs: Array von Zielsprache-Codes
+// (ein versehentlich übergebener einzelner String wird der Robustheit halber
+// als [string] behandelt). sourceLang: Sprachordner, aus dem die Originaltexte
+// gelesen werden (Default 'EN'); die entryId trägt den entsprechenden Pfad,
+// ein Wechsel macht bestehende entryIds ungültig. Async, damit der Event Loop
+// während des Scans Fortschritt (POST /api/scan → GET /api/status) weiter
+// bedienen kann.
+async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG, { onProgress } = {}) {
+  const langs = Array.isArray(targetLangs) ? targetLangs : [targetLangs]
   const mods = []
   const entriesByModId = {}
   const report = (done, total, current) => {
@@ -398,12 +434,14 @@ async function scan(gameRoot, workshopDir, targetLang, sourceLang = SOURCE_LANG,
     rootPath: toPosix(gameRoot),
     poster: null,
     entryCount: 0,
-    translatedCount: 0
+    translatedCounts: {}
   }
   if (fs.existsSync(baseEnDir)) {
-    const entries = summarize(baseMod, scanEntriesForDir(baseMod, 'base', baseEnDir, targetLang, baseMod.rootPath))
-    mods.push(baseMod)
-    entriesByModId[BASE_ID] = entries
+    const entries = summarize(baseMod, scanEntriesForDir(baseMod, 'base', baseEnDir, langs, baseMod.rootPath, sourceLang), langs)
+    if (entries.length) {
+      mods.push(baseMod)
+      entriesByModId[BASE_ID] = entries
+    }
   }
   report(1, total, BASE_NAME)
   await new Promise((r) => setImmediate(r))
@@ -456,8 +494,14 @@ async function scan(gameRoot, workshopDir, targetLang, sourceLang = SOURCE_LANG,
         versions: versionNames.slice(0, 1),
         rootPath: toPosix(modDir),
         poster: posterFor(modDir),
+        // mod.info-id des Quell-Mods (B42: im Versionsordner, sonst common/
+        // oder Mod-Wurzel) — der Export setzt damit loadModAfter=.
+        modInfoId:
+          (versionNames[0] && modInfoIdIn(path.join(modDir, versionNames[0]))) ||
+          modInfoIdIn(path.join(modDir, 'common')) ||
+          modInfoIdIn(modDir),
         entryCount: 0,
-        translatedCount: 0
+        translatedCounts: {}
       }
 
       let entries = []
@@ -468,15 +512,18 @@ async function scan(gameRoot, workshopDir, targetLang, sourceLang = SOURCE_LANG,
       // common-Layout prüfen
       const commonEnDir = path.join(modDir, 'common', 'media', 'lua', 'shared', 'Translate', sourceLang)
       if (fs.existsSync(commonEnDir)) {
-        const commonEntries = scanEntriesForDir(mod, 'common', commonEnDir, targetLang, path.join(modDir, 'common'))
+        const commonEntries = scanEntriesForDir(mod, 'common', commonEnDir, langs, path.join(modDir, 'common'), sourceLang)
         entries.push(...commonEntries)
       }
 
-      // root-Layout prüfen (nur wenn kein common-Layout)
-      if (!fs.existsSync(commonEnDir)) {
+      // root-Layout (B41) nur, wenn weder common noch der neueste
+      // Versionsordner einen Quellordner hat — B42 lädt die Mod-Wurzel nie,
+      // dort liegen bei B42-Mods nur Altlasten für B41.
+      const newestEnDir = versionNames[0] ? translateDir(path.join(modDir, versionNames[0]), sourceLang) : null
+      if (!fs.existsSync(commonEnDir) && !(newestEnDir && fs.existsSync(newestEnDir))) {
         const rootEnDir = path.join(modDir, 'media', 'lua', 'shared', 'Translate', sourceLang)
         if (fs.existsSync(rootEnDir)) {
-          const rootEntries = scanEntriesForDir(mod, 'root', rootEnDir, targetLang, modDir)
+          const rootEntries = scanEntriesForDir(mod, 'root', rootEnDir, langs, modDir, sourceLang)
           entries.push(...rootEntries)
         }
       }
@@ -484,10 +531,13 @@ async function scan(gameRoot, workshopDir, targetLang, sourceLang = SOURCE_LANG,
       // Version-Ordner scannen
       for (const version of versionNames.slice(0, 1)) {
         const enDir = translateDir(path.join(modDir, version), sourceLang)
-        entries.push(...scanEntriesForDir(mod, version, enDir, targetLang, path.join(modDir, version)))
+        entries.push(...scanEntriesForDir(mod, version, enDir, langs, path.join(modDir, version), sourceLang))
       }
 
-      summarize(mod, entries)
+      // Mods ohne übersetzbare Einträge (kein Translate-Ordner o. ä.) gar nicht
+      // erst listen — sie wären dauerhaft "Open 0 %" und nie übersetzbar.
+      if (!entries.length) continue
+      summarize(mod, entries, langs)
       mods.push(mod)
       entriesByModId[mod.id] = entries
     }
@@ -498,4 +548,21 @@ async function scan(gameRoot, workshopDir, targetLang, sourceLang = SOURCE_LANG,
   return { mods, entriesByModId }
 }
 
-module.exports = { scan, readFlatMap, readTxtMap, targetFileName, versionDirOf, translateDir, toPosix, SOURCE_LANG, BASE_ID, BASE_NAME }
+module.exports = {
+  scan,
+  readFlatMap,
+  readTxtMap,
+  targetFileName,
+  legacyTargetFileName,
+  categoryOf,
+  sourceFileNames,
+  readSourceMap,
+  readTargetMap,
+  modInfoIdIn,
+  versionDirOf,
+  translateDir,
+  toPosix,
+  SOURCE_LANG,
+  BASE_ID,
+  BASE_NAME
+}

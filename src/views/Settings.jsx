@@ -1,19 +1,29 @@
-import { useEffect, useState } from "react";
-import { ScanSearch, Save, RotateCcw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArchiveRestore } from "lucide-react";
 import Button from "../components/Button.jsx";
-import Card from "../components/Card.jsx";
-import Input from "../components/Input.jsx";
 import Modal from "../components/Modal.jsx";
-import ProgressBar from "../components/ProgressBar.jsx";
+import LangSelect, { fieldBox, fieldFocus } from "../components/LangSelect.jsx";
+import LangMultiSelect from "../components/LangMultiSelect.jsx";
 import Tag from "../components/Tag.jsx";
+import {
+  AutoDetectIcon,
+  EditIcon,
+  FolderIcon,
+  GoToModsIcon,
+  NoIcon,
+  ResetIcon,
+  SaveIcon,
+  SearchIcon,
+  YesIcon,
+} from "../components/Icons.jsx";
 import { useToast } from "../components/Toast.jsx";
 import * as api from "../api.js";
 
 // saveErr ist eine oder mehrere Satz-für-Satz-Meldungen von POST /api/config
-// (server/config.js validate()), z. B. "Game folder does not exist or is
-// not a directory: ... . Source and target language must not be the same."
-// Wir teilen sie am Feld auf, damit sie direkt bei der betroffenen Eingabe
-// steht; alles Übrige (`otherErrs`) geht als Toast raus.
+// (server/config.js validate()), z. B. "Select at least one target language.
+// Unknown target language: XY." Jede Meldung ist ein Satz mit Punkt. Wir
+// teilen sie am Feld auf, damit sie direkt bei der betroffenen Eingabe steht;
+// alles Übrige (`otherErrs`) geht als Toast raus.
 function splitSaveErr(saveErr) {
   const parts = saveErr ? saveErr.split(/(?<=\.)\s+/).filter(Boolean) : [];
   const gameRootErrs = parts.filter((p) => p.startsWith("Game folder"));
@@ -24,39 +34,210 @@ function splitSaveErr(saveErr) {
   return { gameRootErrs, workshopErrs, langErrs, otherErrs };
 }
 
-function StatusCard({ title, path, found }) {
+// `found`: true = Pfad gefunden (Haken), false = nicht gefunden (Kreuz),
+// null = noch nicht geprüft (kein Icon). `locked`: nur lesbar.
+// Anklicken leert das Feld für eine neue Eingabe (USER-Wahl); wird es ohne
+// Eingabe verlassen, kommt genau der Wert zurück, der VOR dem Anklicken
+// drinstand — nicht der gespeicherte, falls schon etwas Neues getippt war.
+function PathField({ label, hint, value, onChange, errors, className, found, locked }) {
+  const beforeFocus = useRef("");
   return (
-    <Card
-      title={title}
-      footer={
-        <Tag tone={found ? "success" : "danger"}>
-          {found ? "Found" : "Not found"}
-        </Tag>
-      }
-    >
-      <p className="text-xs text-muted">
-        Path:{" "}
-        <span className="break-all font-mono leading-relaxed text-text">{path}</span>
-      </p>
-    </Card>
+    <div className="space-y-2">
+      <label className="block space-y-2">
+        <span className="block text-xs font-medium text-muted">{label}</span>
+        <div className={`${fieldBox} ${locked ? "" : fieldFocus}`}>
+          <FolderIcon size={14} className="shrink-0 text-text" />
+          <input
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            readOnly={locked}
+            tabIndex={locked ? -1 : 0}
+            onFocus={() => {
+              if (locked) return;
+              beforeFocus.current = value;
+              onChange("");
+            }}
+            onBlur={() => !locked && value === "" && onChange(beforeFocus.current)}
+            spellCheck={false}
+            className={`h-full min-w-0 flex-1 bg-transparent p-0 text-xs leading-none outline-none ${className}`}
+          />
+          {found === true && <YesIcon size={14} className="shrink-0 text-success" />}
+          {found === false && <NoIcon size={14} className="shrink-0 text-danger" />}
+        </div>
+      </label>
+      {errors.length > 0 ? (
+        <p className="text-xs text-danger">
+          {errors.map((e) => e.replace(/^(Game|Workshop) folder/, "Folder")).join(" ")}
+        </p>
+      ) : (
+        <p className="text-xs text-muted/80">{hint}</p>
+      )}
+    </div>
   );
 }
 
-export default function Settings({ onOpenMods }) {
+// Englische Oberfläche, aber 24-Stunden-Zeit: "19 Sept 2026, 14:32".
+function formatBackupDate(iso) {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// "Restore Backup": Karte im selben Aufbau wie "Reset Translations", der
+// Dialog listet die Speicherpunkte (neueste zuerst) nur mit ihrem Zeitpunkt
+// (USER-Wahl: mehr braucht es zur Auswahl nicht). Zurückspielen sichert
+// serverseitig zuerst den aktuellen Stand als eigenen Punkt — ein Restore ist
+// also selbst wieder rückgängig zu machen. Nicht zuordenbare Alt-Punkte (s.
+// server/backups.js) erscheinen ausgegraut.
+function RestoreBackupCard() {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [backups, setBackups] = useState(null); // null = lädt
+  const [selected, setSelected] = useState(null);
+  const [restoring, setRestoring] = useState(false);
+
+  const openDialog = () => {
+    setOpen(true);
+    setSelected(null);
+    setBackups(null);
+    api
+      .listBackups()
+      .then((res) => setBackups(res.backups || []))
+      .catch((err) => {
+        setOpen(false);
+        toast("error", err.message);
+      });
+  };
+
+  const handleRestore = async () => {
+    if (!selected) return;
+    setRestoring(true);
+    try {
+      const res = await api.restoreBackup(selected);
+      setOpen(false);
+      const skipped =
+        res.skipped > 0 ? ` ${res.skipped} file(s) skipped because their mod could not be found.` : "";
+      if (res.restored === 0) {
+        toast("info", `Nothing to restore. The files already match this backup.${skipped}`);
+      } else {
+        toast(
+          "success",
+          `Restored ${res.restored} file(s). Your previous state was saved as a new backup.${skipped}`,
+        );
+      }
+    } catch (err) {
+      toast("error", err.message);
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  return (
+    <>
+      <section className="rounded-[0.625rem] border border-line bg-surface">
+        <header className="flex items-center justify-between gap-4 p-4">
+          <div>
+            <h2 className="text-sm font-semibold text-text">Restore Backup</h2>
+            <p className="mt-1.5 text-xs text-muted">
+              Roll your translation files back to an earlier save point.
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            icon={ArchiveRestore}
+            className="shrink-0 whitespace-nowrap"
+            onClick={openDialog}
+          >
+            Restore Backup
+          </Button>
+        </header>
+      </section>
+
+      <Modal
+        open={open}
+        onClose={() => (!restoring ? setOpen(false) : undefined)}
+        title="Restore a backup"
+      >
+        <div className="space-y-4">
+          {backups === null ? (
+            <p className="text-sm text-muted">Loading backups…</p>
+          ) : backups.length === 0 ? (
+            <p className="text-sm text-muted">
+              No backups yet. A save point is created every time you save in the Editor.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-text">
+                Choose a save point. Its files go back to how they were before it.
+                Your current state is backed up first, so this can be undone.
+              </p>
+              <div className="max-h-72 space-y-1.5 overflow-y-auto">
+                {backups.map((b) => {
+                  const on = selected === b.id;
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      disabled={!b.restorable || restoring}
+                      onClick={() => setSelected(b.id)}
+                      className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${
+                        on ? "border-accent bg-raised" : "border-line hover:bg-raised"
+                      } ${b.restorable ? "cursor-pointer" : "cursor-not-allowed opacity-50 hover:bg-transparent"}`}
+                    >
+                      <span
+                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
+                          on ? "border-accent" : "border-line"
+                        }`}
+                      >
+                        {on && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
+                      </span>
+                      <span className="text-ui font-semibold text-text">
+                        {formatBackupDate(b.createdAt)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setOpen(false)} disabled={restoring}>
+              Cancel
+            </Button>
+            <Button onClick={handleRestore} disabled={!selected || restoring}>
+              {restoring ? "Restoring..." : "Restore"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
+export default function Settings({ onOpenMods, onLangsChanged, activeLang: activeLangProp, noScanNotice = false }) {
   const [config, setConfig] = useState(null);
   const [status, setStatus] = useState(null);
   const toast = useToast();
   const [gameRoot, setGameRoot] = useState("");
   const [workshopDir, setWorkshopDir] = useState("");
-  const [sourceLang, setSourceLang] = useState("EN");
-  const [targetLang, setTargetLang] = useState("DE");
+  const [targetLangs, setTargetLangs] = useState(["DE"]);
+  const [activeLang, setActiveLang] = useState("DE");
   const [scanning, setScanning] = useState(false);
   const [scanDone, setScanDone] = useState(false);
-  const [scanProgress, setScanProgress] = useState({ done: 0, total: 0, current: "" });
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState("");
   const [resetModalOpen, setResetModalOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
+  // Bearbeitungsmodus: beim Erststart offen, nach dem Speichern gesperrt
+  // (Edit Paths öffnet ihn wieder). detect = Ergebnis von "Auto detect".
+  const [editing, setEditing] = useState(false);
+  const [detect, setDetect] = useState(null); // null | "detected" | "partial" | "failed"
+  const [justSaved, setJustSaved] = useState(false);
+  const [noticeGone, setNoticeGone] = useState(false);
 
   // Initial load
   useEffect(() => {
@@ -65,9 +246,10 @@ export default function Settings({ onOpenMods }) {
         setConfig(cfg);
         setGameRoot(cfg.gameRoot);
         setWorkshopDir(cfg.workshopDir);
-        setSourceLang(cfg.sourceLang || "EN");
-        setTargetLang(cfg.targetLang);
+        setTargetLangs(cfg.targetLangs);
+        setActiveLang(cfg.activeLang);
         setStatus(st);
+        setEditing(!st.configSaved);
       })
       .catch((err) => toast("error", err.message));
   }, [toast]);
@@ -79,12 +261,15 @@ export default function Settings({ onOpenMods }) {
       try {
         const st = await api.getStatus();
         setStatus(st);
-        if (st.scanProgress) setScanProgress(st.scanProgress);
         if (!st.scanRunning) {
           clearInterval(timer);
           setScanning(false);
           setScanDone(true);
-          toast("success", `Scan complete — ${st.modCount} mods found.`);
+          if (st.error) {
+            toast("error", st.error);
+          } else {
+            toast("success", `Scan complete. ${st.modCount} mods found.`);
+          }
         }
       } catch (err) {
         toast("error", err.message);
@@ -95,15 +280,34 @@ export default function Settings({ onOpenMods }) {
     return () => clearInterval(timer);
   }, [scanning, toast]);
 
+  // Dieselbe Einstellung laesst sich auch ueber den Sprachumschalter in der
+  // Navbar aendern. Ohne diesen Abgleich zeigt das Feld hier weiter die alte
+  // Sprache — und ein spaeteres Speichern wuerde den Wechsel zurueckdrehen.
+  useEffect(() => {
+    if (!activeLangProp) return;
+    setActiveLang(activeLangProp);
+    setConfig((c) => (c && c.activeLang !== activeLangProp ? { ...c, activeLang: activeLangProp } : c));
+  }, [activeLangProp]);
+
+  // Bleibt die aktive Sprache erhalten, wenn sie aus der Zielsprachen-Auswahl
+  // fliegt (server/config.js hält dieselbe Regel: activeLang muss in
+  // targetLangs stecken, sonst gilt targetLangs[0]).
+  useEffect(() => {
+    if (targetLangs.length > 0 && !targetLangs.includes(activeLang)) {
+      setActiveLang(targetLangs[0]);
+    }
+  }, [targetLangs, activeLang]);
+
   const { gameRootErrs, workshopErrs, langErrs } = splitSaveErr(saveErr);
 
   // Unsaved changes: any field differs from the last loaded/saved config.
+  const targetLangsEqual = (a, b) => a.length === b.length && a.every((c, i) => c === b[i]);
   const configDirty =
     !!config &&
     (gameRoot !== config.gameRoot ||
       workshopDir !== config.workshopDir ||
-      sourceLang !== (config.sourceLang || "EN") ||
-      targetLang !== config.targetLang);
+      !targetLangsEqual(targetLangs, config.targetLangs) ||
+      activeLang !== config.activeLang);
 
   const handleSave = async () => {
     setSaveErr("");
@@ -113,28 +317,35 @@ export default function Settings({ onOpenMods }) {
       const saved = await api.saveConfig({
         gameRoot,
         workshopDir,
-        sourceLang,
-        targetLang,
+        targetLangs,
+        activeLang,
       });
       setConfig(saved);
       setGameRoot(saved.gameRoot);
       setWorkshopDir(saved.workshopDir);
-      setSourceLang(saved.sourceLang || "EN");
-      setTargetLang(saved.targetLang);
+      setTargetLangs(saved.targetLangs);
+      setActiveLang(saved.activeLang);
       setStatus(await api.getStatus());
-      // A changed path or language leaves the scan cache stale — the Mods page
-      // and Editor keep showing entries from before the change until a new
-      // scan runs. Say so instead of letting that surprise the user later.
+      setEditing(false);
+      setDetect(null);
+      setJustSaved(true);
+      // Der Sprachumschalter in der Navbar lebt in App.jsx und muss die neue
+      // Liste sofort sehen, nicht erst beim naechsten Seitenwechsel.
+      onLangsChanged?.();
+      // A changed path or an added/removed target language leaves the scan
+      // cache stale — the Mods page and Editor keep showing entries from
+      // before the change until a new scan runs. Say so instead of letting
+      // that surprise the user later. Switching only the active language
+      // needs no rescan: the cache already holds every target language.
       const rescanNeeded =
         !!prevConfig &&
         (saved.gameRoot !== prevConfig.gameRoot ||
           saved.workshopDir !== prevConfig.workshopDir ||
-          saved.targetLang !== prevConfig.targetLang ||
-          (saved.sourceLang || "EN") !== (prevConfig.sourceLang || "EN"));
+          !targetLangsEqual(saved.targetLangs, prevConfig.targetLangs));
       toast(
         "success",
         rescanNeeded
-          ? "Configuration saved. Run a new scan to pick up the change — existing entries still reflect the previous settings."
+          ? "Configuration saved. Search for mods again to load the new settings."
           : "Configuration saved.",
       );
     } catch (err) {
@@ -147,9 +358,9 @@ export default function Settings({ onOpenMods }) {
   };
 
   const handleScan = async () => {
+    setJustSaved(false);
     setScanDone(false);
     setScanning(true);
-    setScanProgress({ done: 0, total: 0, current: "" });
     try {
       await api.startScan();
     } catch (err) {
@@ -175,7 +386,7 @@ export default function Settings({ onOpenMods }) {
         "success",
         result.resetCount > 0
           ? `Reset ${result.resetCount} translation(s) across ${result.modCount} mod(s), including unsaved edits. Translations that shipped with a mod were kept. A backup of every overwritten file was kept.`
-          : "Nothing to reset — no translations were made through this app.",
+          : "Nothing to reset. No translations were made through this app.",
       );
     } catch (err) {
       setResetModalOpen(false);
@@ -196,146 +407,236 @@ export default function Settings({ onOpenMods }) {
     );
   }
 
+  const locked = !editing;
+  const hasScan = status.modCount > 0;
+  const scanFailed = !scanning && !!status.error;
+  const noMods = !scanning && scanDone && !scanFailed && status.modCount === 0;
+
+  // Header-Badges: Erkennung (beim Bearbeiten), "Saved", oder Scan-Ergebnis.
+  let badges = [];
+  if (editing) {
+    if (detect === "detected") badges = [{ tone: "success", text: "Detected" }];
+    else if (detect === "partial") badges = [{ tone: "warning", text: "Partially detected" }];
+    else if (detect === "failed") badges = [{ tone: "danger", text: "Detection failed" }];
+  } else if (scanFailed) {
+    badges = [{ tone: "danger", text: "Mod detection failed" }];
+  } else if (noMods) {
+    badges = [{ tone: "warning", text: "No Mods detected" }];
+  } else if (hasScan) {
+    badges = [
+      { tone: "success", text: "Mods detected" },
+      { tone: "base", text: `${status.modCount}x Mods` },
+    ];
+  } else if (justSaved) {
+    badges = [{ tone: "base", text: "Saved" }];
+  }
+
+  // Weiterleitung von Mods/Editor ohne Scan: Hinweis-Pille, solange nichts anderes gilt.
+  // Kommt eine andere Pille, verschwindet der Hinweis endgültig (noticeGone).
+  if (badges.length > 0 && !noticeGone) setNoticeGone(true);
+  if (badges.length === 0 && noScanNotice && !noticeGone && !hasScan) {
+    badges = [{ tone: "warning", text: "Search for mods first" }];
+  }
+
+  // Haken/Kreuz an den Pfaden nur direkt nach "Auto detect".
+  const showFound = editing && detect !== null;
+  const gameFoundIcon = showFound ? status.gameFound : null;
+  const workshopFoundIcon = showFound ? status.workshopFound : null;
+  // Pfadtext hell, sobald die Felder bearbeitbar sind — so sieht man nach
+  // "Edit Paths", dass man etwas eingeben kann. Beim Erststart (Figma "First
+  // Start") bleiben die vorausgefüllten Standardpfade gedämpft, bis sie
+  // geändert oder per Auto detect bestätigt sind. Gesperrt: gedämpft.
+  const pathClass = (found) =>
+    `font-mono ${
+      editing && (status.configSaved || configDirty || found === true) ? "text-text" : "text-muted"
+    }`;
+
+  // Erkennung: die vom Server gelieferte Konfiguration (beim Erststart die
+  // Standard-Steam-Pfade) übernehmen und prüfen, ob die Ordner existieren.
+  const handleAutoDetect = async () => {
+    try {
+      const [cfg, st] = await Promise.all([api.getConfig(), api.getStatus()]);
+      setGameRoot(cfg.gameRoot);
+      setWorkshopDir(cfg.workshopDir);
+      setStatus(st);
+      setJustSaved(false);
+      setDetect(
+        st.gameFound && st.workshopFound ? "detected" : st.gameFound || st.workshopFound ? "partial" : "failed",
+      );
+    } catch (err) {
+      toast("error", err.message);
+    }
+  };
+
+  const handleEdit = () => {
+    setJustSaved(false);
+    setDetect(null);
+    setEditing(true);
+  };
+
+  const footerBtn =
+    "inline-flex h-8 items-center gap-2 rounded-lg px-3 text-ui font-semibold transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed";
+  // Drei Stufen wie im Figma: aktiv-hervorgehoben (slate), aktiv (line), inaktiv (raised, gedämpft).
+  const primaryBtn = `${footerBtn} bg-slate text-text hover:brightness-110 disabled:bg-raised disabled:text-muted disabled:hover:brightness-100`;
+  const secondaryBtn = `${footerBtn} bg-line text-text hover:brightness-110 disabled:bg-raised disabled:text-muted disabled:hover:brightness-100`;
+
+  // Erststart (Figma "First Start"): erst nach Auto detect oder einer Eingabe.
+  // Danach im Bearbeitungsmodus immer, auch ohne Änderung; sonst nur, wenn
+  // etwas offen ist (dann sind es die Sprachen).
+  const firstStart = !status.configSaved;
+  const saveEnabled =
+    !saving && (configDirty || (editing && (!firstStart || detect === "detected")));
+  // Mit ungespeicherten Aenderungen wuerde der Scan noch die alte
+  // Sprachliste lesen — erst speichern, dann suchen.
+  const searchEnabled = locked && !scanning && !configDirty;
+
   return (
-    <div className="mx-auto max-w-2xl space-y-6 px-6 py-10">
+    <div className="mx-auto max-w-2xl space-y-4 px-6 py-10">
       <header className="space-y-1">
-        <h1 className="font-mono text-2xl font-bold text-accent">Settings</h1>
-        <p className="text-sm text-muted">Check configuration, edit paths, and scan mods.</p>
+        <h1 className="text-2xl font-bold text-text">Settings</h1>
+        <p className="text-sm text-muted">Check the configuration, edit paths, and scan for mods.</p>
       </header>
 
-      {/* Status cards */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <StatusCard
-          title="Game"
-          path={status.gameFound ? gameRoot : "—"}
-          found={status.gameFound}
-        />
-        <StatusCard
-          title="Workshop"
-          path={status.workshopFound ? workshopDir : "—"}
-          found={status.workshopFound}
-        />
-      </div>
-
-      {/* Edit configuration */}
-      <Card title="Configuration" subtitle="Edit paths and languages.">
-        <div className="space-y-4">
+      <section className="rounded-[0.625rem] border border-line bg-surface">
+        <header className="flex items-center justify-between gap-4 border-b border-line p-4">
           <div>
-            <Input label="Game folder" value={gameRoot} onChange={(e) => setGameRoot(e.target.value)} className="font-mono" />
-            {gameRootErrs.length > 0 && (
-              <p className="mt-1 text-xs text-danger">{gameRootErrs.join(" ")}</p>
-            )}
+            <h2 className="text-sm font-semibold text-text">Configuration</h2>
+            <p className="mt-1.5 text-xs text-muted">Edit paths and translation languages.</p>
           </div>
-          <div>
-            <Input label="Workshop folder" value={workshopDir} onChange={(e) => setWorkshopDir(e.target.value)} className="font-mono" />
-            {workshopErrs.length > 0 && (
-              <p className="mt-1 text-xs text-danger">{workshopErrs.join(" ")}</p>
-            )}
-          </div>
-          <div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted">
-                  Source language
-                </label>
-                <select
-                  value={sourceLang}
-                  onChange={(e) => setSourceLang(e.target.value)}
-                  className="h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                >
-                  <option value="EN">EN</option>
-                  <option value="DE">DE</option>
-                  <option value="FR">FR</option>
-                  <option value="ES">ES</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted">
-                  Target language
-                </label>
-                <select
-                  value={targetLang}
-                  onChange={(e) => setTargetLang(e.target.value)}
-                  className="h-9 w-full rounded-md border border-line bg-raised px-3 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                >
-                  <option value="DE">DE</option>
-                  <option value="EN">EN</option>
-                  <option value="FR">FR</option>
-                  <option value="ES">ES</option>
-                </select>
-              </div>
-            </div>
-            {langErrs.length > 0 && (
-              <p className="mt-1 text-xs text-danger">{langErrs.join(" ")}</p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              icon={Save}
-              onClick={handleSave}
-              disabled={!configDirty || saving}
-            >
-              {saving ? "Saving..." : "Save"}
-            </Button>
-          </div>
-        </div>
-      </Card>
-
-      {/* Scan */}
-      <Card>
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Button variant="primary" size="lg" icon={ScanSearch} onClick={handleScan} disabled={scanning}>
-              Scan
-            </Button>
-            {scanComplete && (
-              <Button variant="secondary" size="sm" onClick={onOpenMods}>
-                Go to Mods
-              </Button>
-            )}
-          </div>
-
-          {/* Scan progress */}
-          {(scanning || scanProgress.done > 0) && (
-            <div className="space-y-2">
-              <ProgressBar
-                value={scanProgress.done}
-                max={scanProgress.total > 0 ? scanProgress.total : 1}
-                label="Scanning…"
-                color="dust"
-                className="w-full"
-              />
-              {scanProgress.current && (
-                <p className="text-xs font-mono text-muted">{scanProgress.current}</p>
-              )}
+          {badges.length > 0 && (
+            <div className="flex items-center gap-2">
+              {badges.map((b) => (
+                <Tag key={b.text} tone={b.tone}>
+                  {b.text}
+                </Tag>
+              ))}
             </div>
           )}
+        </header>
 
+        <div className="space-y-4 p-4">
+          <PathField
+            label="Project Zomboid"
+            hint="Please enter the path of your game root folder."
+            value={gameRoot}
+            onChange={(v) => {
+              setGameRoot(v);
+              setSaveErr("");
+            }}
+            errors={gameRootErrs}
+            className={pathClass(gameFoundIcon)}
+            found={gameFoundIcon}
+            locked={locked}
+          />
+          <PathField
+            label="Workshop Mods"
+            hint="Please enter the path of your workshop mods folder."
+            value={workshopDir}
+            onChange={(v) => {
+              setWorkshopDir(v);
+              setSaveErr("");
+            }}
+            errors={workshopErrs}
+            className={pathClass(workshopFoundIcon)}
+            found={workshopFoundIcon}
+            locked={locked}
+          />
         </div>
-      </Card>
+
+        <div className="space-y-4 border-t border-line p-4">
+          <LangMultiSelect
+            label="Target Languages"
+            hint="Select the languages to translate into."
+            value={targetLangs}
+            onChange={setTargetLangs}
+          />
+          {/* EN ist Quelle UND Ziel zugleich: Speichern überschreibt die
+              Originaltexte der Mod (mit Backup). Das muss man vorher wissen. */}
+          {targetLangs.includes("EN") && (
+            <p className="text-xs text-warning">
+              Editing English overwrites the original English texts of the mods. A
+              backup of every changed file is kept in export/backups/.
+            </p>
+          )}
+          {targetLangs.length > 1 && (
+            <LangSelect
+              label="Active Language"
+              hint="The language you are editing right now."
+              value={activeLang}
+              onChange={setActiveLang}
+              codes={targetLangs}
+            />
+          )}
+          {langErrs.length > 0 && <p className="text-xs text-danger">{langErrs.join(" ")}</p>}
+        </div>
+
+        <footer className="flex items-center justify-between gap-4 border-t border-line px-5 py-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleAutoDetect}
+              disabled={locked}
+              className={secondaryBtn}
+            >
+              <AutoDetectIcon /> Auto detect
+            </button>
+            {editing || configDirty ? (
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!saveEnabled}
+                className={primaryBtn}
+              >
+                {/* Ohne Bearbeitungsmodus koennen nur die Sprachen offen sein —
+                    die Pfadfelder sind dann readOnly. */}
+                <SaveIcon /> {saving ? "Saving..." : editing ? "Save Paths" : "Save Languages"}
+              </button>
+            ) : (
+              <button type="button" onClick={handleEdit} className={secondaryBtn}>
+                <EditIcon /> Edit Paths
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {hasScan && !editing ? (
+              <>
+                <button type="button" onClick={handleScan} disabled={!searchEnabled} className={secondaryBtn}>
+                  <SearchIcon /> Search again
+                </button>
+                <button type="button" onClick={onOpenMods} className={primaryBtn}>
+                  <GoToModsIcon /> Go to Mods
+                </button>
+              </>
+            ) : (
+              <button type="button" onClick={handleScan} disabled={!searchEnabled} className={primaryBtn}>
+                <SearchIcon /> Search Mods
+              </button>
+            )}
+          </div>
+        </footer>
+      </section>
+
+      <RestoreBackupCard />
 
       {/* Reset translations */}
-      <Card title="Reset Translations" subtitle="Undo everything you translated yourself, across every scanned mod.">
-        <div className="space-y-3">
-          <p className="text-sm text-muted">
-            Undoes every change made through this app — including unsaved edits
-            open in the Editor — as if it had never been used. Translations that
-            already shipped with a mod (present before you first edited that
-            file) are kept, not cleared. Original ({sourceLang}) files are never
-            touched, and a backup of each overwritten file is kept under
-            export/backups/ — same as any other save.
-          </p>
+      <section className="rounded-[0.625rem] border border-line bg-surface">
+        <header className="flex items-center justify-between gap-4 p-4">
+          <div>
+            <h2 className="text-sm font-semibold text-text">Reset Translations</h2>
+            <p className="mt-1.5 text-xs text-muted">
+              Undo every translation you made, across every scanned mod and target language.
+            </p>
+          </div>
           <Button
             variant="danger"
-            icon={RotateCcw}
+            icon={ResetIcon}
+            className="shrink-0 whitespace-nowrap"
             onClick={() => setResetModalOpen(true)}
           >
             Reset Translations
           </Button>
-        </div>
-      </Card>
+        </header>
+      </section>
 
       <Modal
         open={resetModalOpen}
@@ -344,13 +645,9 @@ export default function Settings({ onOpenMods }) {
       >
         <div className="space-y-4">
           <p className="text-sm text-text">
-            This undoes every translation you made through this app, in every
-            scanned mod — the whole library, not just a selection — including
-            any unsaved edits open in the Editor right now. Translations that
-            already shipped with a mod are kept. This cannot be undone from
-            within the app; a backup of each overwritten file is kept under
-            export/backups/, but restoring it means copying files back by hand.
-            Original ({sourceLang}) files are never modified.
+            This removes every translation you made in this app, in every
+            target language, including unsaved edits. Translations that
+            shipped with a mod are kept. Backups stay in export/backups/.
           </p>
           <div className="flex justify-end gap-2">
             <Button

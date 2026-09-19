@@ -2,17 +2,18 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-// Zweiter Dev-Server (z. B. für Claudes Browser-Tests): PT_VITE_PORT und PORT
-// setzen, dann kollidiert er nicht mit dem Dev-Server des Nutzers.
-const VITE_PORT = Number(process.env.PT_VITE_PORT) || 5173
-const API = `http://localhost:${process.env.PORT || 3100}`
+// PORT ist hier der API-Port — scripts/dev.js setzt ihn ausdrücklich.
+// 127.0.0.1 statt "localhost": die API bindet ausdrücklich nur an die
+// Loopback-Adresse (s. server/index.js), und auf Node 17+ kann "localhost"
+// zuerst zu ::1 aufgelöst werden → ECONNREFUSED, obwohl die API läuft.
+const API = `http://127.0.0.1:${process.env.PORT || 3100}`
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     // Fester Port — nie rutschen: strictPort lässt Vite fehlschlagen,
     // statt bei Belegung einen anderen Port zu wählen.
-    port: VITE_PORT,
+    port: 5173,
     strictPort: true,
     proxy: {
       '/api': API,

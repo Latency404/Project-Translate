@@ -18,6 +18,19 @@ const root = path.join(__dirname, '..')
 const isWindows = os.platform() === 'win32'
 const children = []
 
+// Ports hier festlegen und beiden Kindern ausdrücklich mitgeben. Die
+// Preview-Verknüpfung im Claude-Browser setzt PORT auf den Preview-Port
+// (= Vite-Port). Ungefiltert würde die API dann denselben Port wie Vite
+// belegen wollen und der Vite-Proxy auf sich selbst zeigen → Frontend lädt,
+// API tot. Daher: PORT gleich Vite-Port → gilt nicht als API-Port.
+const VITE_PORT = '5173'
+let API_PORT = process.env.PORT || '3100'
+if (API_PORT === VITE_PORT) {
+  console.log(`[dev] PORT=${API_PORT} ist der Vite-Port — API läuft auf 3100`)
+  API_PORT = '3100'
+}
+const childEnv = { ...process.env, PORT: API_PORT }
+
 function killChild(c) {
   if (!c || c.killed) return
   if (isWindows && c.pid) {
@@ -39,7 +52,7 @@ const vite = spawn(process.execPath, [path.join(root, 'node_modules', 'vite', 'b
   cwd: root,
   // PT_FAKE wird nicht mehr gesetzt → echter Modus gegen die Steam-Pfade.
   // Wer die Fake-API braucht: `PT_FAKE=1 npm run dev` (wird durchgegereicht).
-  env: process.env,
+  env: childEnv,
   stdio: 'inherit',
   detached: true
 })
@@ -57,7 +70,7 @@ function startApi() {
   api = spawn(process.execPath, [path.join(root, 'server', 'index.js')], {
     cwd: root,
     // PT_FAKE nicht gesetzt → echter Modus (wird via process.env durchgereicht).
-    env: process.env,
+    env: childEnv,
     stdio: 'inherit'
   })
   children.push(api)

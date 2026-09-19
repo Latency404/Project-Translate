@@ -7,7 +7,8 @@ import Input from "../components/Input.jsx";
 import Modal from "../components/Modal.jsx";
 import ModCard from "../components/ModCard.jsx";
 import { useToast } from "../components/Toast.jsx";
-import { loadDirty, saveDirty, reviewModIds, statusOf, FILTER_TONE_CLASS } from "../reviewStore.js";
+import { loadDirty, saveDirty, dirtyKey, reviewModIds, statusOf, FILTER_TONE_CLASS } from "../reviewStore.js";
+import { langLabel } from "../langs.js";
 
 // Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
 // als Backend-Wert unverändert (Export-Ordnernamen etc. hängen daran).
@@ -23,11 +24,14 @@ const FILTERS = [
   { key: "review", label: "Needs Review" },
 ];
 
-export default function Mods({ onGoToSetup }) {
+export default function Mods({ activeLang, onGoToSetup }) {
   const [mods, setMods] = useState([]);
+  const [loading, setLoading] = useState(true);
   const toast = useToast();
   const [loadFailed, setLoadFailed] = useState(false);
-  const [targetLang, setTargetLang] = useState("DE");
+  // Alle konfigurierten Zielsprachen (nicht nur die aktive) — braucht der
+  // LLM-Export, damit die erzeugte Datei alle Sprachen anfragt.
+  const [targetLangs, setTargetLangs] = useState([]);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -75,15 +79,17 @@ export default function Mods({ onGoToSetup }) {
   }, [selected]);
 
   // --- "Zu Prüfen" status: mods with pending (unsaved) import entries ---
-  const [dirty, setDirty] = useState(() => loadDirty());
+  const [dirty, setDirty] = useState(() => loadDirty(activeLang));
   const reviewIds = useMemo(() => reviewModIds(dirty), [dirty]);
 
   // Load data. If the API hasn't scanned mods yet, there's nothing useful to
   // show here — go straight to Settings (where scanning happens) instead of
-  // a dead-end hint.
+  // a dead-end hint. `activeLang` bestimmt, für welche Sprache translatedCount
+  // (und damit Open/Translated) gilt — ein Wechsel lädt die Mods neu.
   useEffect(() => {
+    setLoading(true);
     api
-      .getMods()
+      .getMods(activeLang)
       .then((data) => setMods(data.mods || []))
       .catch((err) => {
         if (err.message && err.message.toLowerCase().includes('scan')) {
@@ -92,12 +98,13 @@ export default function Mods({ onGoToSetup }) {
           setLoadFailed(true);
           toast("error", err.message);
         }
-      });
-  }, [onGoToSetup, toast]);
+      })
+      .finally(() => setLoading(false));
+  }, [activeLang, onGoToSetup, toast]);
 
   useEffect(() => {
     api.getConfig()
-      .then((cfg) => setTargetLang(cfg.targetLang || "DE"))
+      .then((cfg) => setTargetLangs(Array.isArray(cfg.targetLangs) && cfg.targetLangs.length > 0 ? cfg.targetLangs : ["DE"]))
       .catch(() => {});
   }, []);
 
@@ -161,7 +168,7 @@ export default function Mods({ onGoToSetup }) {
     setExportLoading(true);
 
     try {
-      const result = await api.exportLlm(Array.from(selected));
+      const result = await api.exportLlm(Array.from(selected), targetLangs);
       const blob = new Blob([result.text], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -200,9 +207,6 @@ export default function Mods({ onGoToSetup }) {
       const result = await api.importPreview(text);
       setImportPreview(result);
       setImportModalOpen(true);
-      if (result.detectedTargetLang && result.detectedTargetLang !== targetLang) {
-        toast("info", `Detected imported language: ${result.detectedTargetLang} (configured: ${targetLang})`);
-      }
     } catch (err) {
       toast("error", err.message);
     } finally {
@@ -214,15 +218,18 @@ export default function Mods({ onGoToSetup }) {
   const handleImportConfirm = () => {
     if (!importPreview) return;
     const next = new Map(dirty);
-    for (const { modId, entryId, translation } of importPreview.matches) {
-      next.set(entryId, { modId, value: translation, origin: "import" });
+    // Treffer mehrerer Sprachen aus EINEM Import landen unter je eigenem
+    // Sprachpräfix in der dirty-Map — dieselbe entryId kann so in DE und FR
+    // gleichzeitig einen offenen Import-Wert haben.
+    for (const { modId, entryId, translation, lang } of importPreview.matches) {
+      next.set(dirtyKey(lang, entryId), { modId, value: translation, origin: "import", lang });
     }
     setDirty(next);
     const persisted = saveDirty(next);
     if (!persisted) {
       toast(
         "error",
-        "Could not save the import for review — it's too large for the browser's session storage. Try importing fewer mods at once.",
+        "Could not save the import for review because it is too large for the browser's session storage. Try importing fewer mods at once.",
       );
     }
 
@@ -235,6 +242,16 @@ export default function Mods({ onGoToSetup }) {
   const matchedModCount = importPreview
     ? Object.values(importPreview.perMod).filter((pm) => pm.matched > 0).length
     : 0;
+  // Mehrere Sprachen in einer Datei: die Vorschau nennt sie einzeln. Bei
+  // genau einer Sprache bleibt die Anzeige so schlicht wie zuvor.
+  const detectedLangs = importPreview ? importPreview.detectedTargetLangs || [] : [];
+  const perLang = importPreview ? importPreview.perLang || {} : {};
+  // Sprachen, die die Datei mitbringt, die aber gar nicht konfiguriert sind:
+  // der Server übernimmt sie bewusst NICHT (der Editor könnte sie weder
+  // anzeigen noch speichern). Das muss sichtbar sein, sonst fehlen stillschweigend
+  // Übersetzungen, für die das LLM gearbeitet hat.
+  const unknownLangs = importPreview ? importPreview.unknownLangs || [] : [];
+  const isMultiLangImport = detectedLangs.length > 1;
 
   // === Error state (real errors only — "no scan yet" redirects to Settings instead) ===
   if (loadFailed) {
@@ -252,10 +269,26 @@ export default function Mods({ onGoToSetup }) {
   }
 
   // === Loading state (also covers the moment before the "no scan yet" redirect) ===
-  if (mods.length === 0) {
+  if (loading) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
         <p className="text-center text-muted">Loading…</p>
+      </div>
+    );
+  }
+
+  // === Empty state: scan finished but found no translatable mods ===
+  if (mods.length === 0) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-10">
+        <Card title="Mods">
+          <div className="space-y-4">
+            <p className="text-sm text-muted">No translatable mods found.</p>
+            <Button variant="secondary" onClick={onGoToSetup}>
+              Go to Settings
+            </Button>
+          </div>
+        </Card>
       </div>
     );
   }
@@ -303,6 +336,9 @@ export default function Mods({ onGoToSetup }) {
               </button>
             ))}
           </div>
+          {activeLang && (
+            <span className="text-xs text-muted">Status for {langLabel(activeLang)}</span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -367,14 +403,40 @@ export default function Mods({ onGoToSetup }) {
         title="Mark imported translations for review"
       >
         <div className="space-y-4">
+          {unknownLangs.length > 0 && (
+            <p className="text-sm text-warning">
+              Skipped {unknownLangs.join(", ")}: not in your target languages. Add
+              the language in Settings and import the file again.
+            </p>
+          )}
           {totalMatched === 0 && totalUnmatched === 0 ? (
             <p className="text-sm text-muted">
               No matching entries found in the chosen file.
             </p>
+          ) : isMultiLangImport ? (
+            <>
+              <p className="text-sm text-text">
+                Detected {detectedLangs.length} languages: {detectedLangs.map(langLabel).join(", ")}.
+              </p>
+              <ul className="space-y-1 text-sm text-muted">
+                {detectedLangs.map((lang) => (
+                  <li key={lang}>
+                    {langLabel(lang)}: {perLang[lang]?.matched ?? 0} matched
+                    {perLang[lang]?.unmatched > 0 && `, ${perLang[lang].unmatched} unmatched`}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-sm text-text">
+                {totalMatched} entries across {matchedModCount} mods will be marked
+                "Needs Review". Nothing is written to disk yet. Open the affected
+                mods in the Editor to check and save them.
+                {totalUnmatched > 0 && ` (${totalUnmatched} unmatched will be discarded.)`}
+              </p>
+            </>
           ) : (
             <p className="text-sm text-text">
               {totalMatched} entries across {matchedModCount} mods will be marked
-              "Needs Review" — nothing is written to disk yet. Open the affected
+              "Needs Review". Nothing is written to disk yet. Open the affected
               mods in the Editor to check and save them.
               {totalUnmatched > 0 && ` (${totalUnmatched} unmatched will be discarded.)`}
             </p>

@@ -9,7 +9,16 @@ import Tag from "../components/Tag.jsx";
 import ModCard from "../components/ModCard.jsx";
 import DiscardIcon from "../components/DiscardIcon.jsx";
 import { useToast } from "../components/Toast.jsx";
-import { loadDirty, saveDirty, reviewModIds, statusOf, FILTER_TONE_CLASS } from "../reviewStore.js";
+import {
+  loadDirty,
+  saveDirty,
+  dirtyForLang,
+  dirtyKey,
+  parseDirtyKey,
+  reviewModIds,
+  statusOf,
+  FILTER_TONE_CLASS,
+} from "../reviewStore.js";
 
 // Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
 // als Backend-Wert unverändert (Export-Ordnernamen etc. hängen daran).
@@ -205,7 +214,7 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
   );
 }
 
-export default function Editor({ onReselect, onGoToSettings }) {
+export default function Editor({ onReselect, onGoToSettings, activeLang }) {
   // --- Universe: the Library selection (read-only here) ---
   const [universeIds] = useState(() => loadUniverseIds());
   // --- Active mod: exactly one at a time ("Mod für Mod durcharbeiten") ---
@@ -220,6 +229,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
 
   // --- State ---
   const [allMods, setAllMods] = useState([]);
+  const [modsLoading, setModsLoading] = useState(true);
   const toast = useToast();
   const [loadFailed, setLoadFailed] = useState(false);
 
@@ -255,7 +265,12 @@ export default function Editor({ onReselect, onGoToSettings }) {
   const fileTabDragRef = useRef({ dragging: false, startX: 0, scrollLeft: 0, moved: false });
   const [fileTabDragging, setFileTabDragging] = useState(false);
 
-  const [dirty, setDirty] = useState(() => loadDirty());
+  // `dirty` hält ALLE Sprachen gleichzeitig (Key "<lang>::<entryId>", s.
+  // reviewStore.js) — mehrere Sprachen können parallel ungespeicherte
+  // Änderungen haben. Der Editor selbst arbeitet aber immer nur mit der
+  // aktiven Sprache; die per-Sprache-Sicht liefert `dirtyForLang` weiter
+  // unten (`activeDirty`).
+  const [dirty, setDirty] = useState(() => loadDirty(activeLang));
   // Entprellte Kopie von `dirty`, nur für den Re-Sort bei aktiver
   // Translation-Sortierung — verhindert einen kompletten Re-Sort von
   // zehntausenden Zeilen bei jedem Tastendruck (Eingabe selbst bleibt live).
@@ -275,8 +290,9 @@ export default function Editor({ onReselect, onGoToSettings }) {
   // there's nothing useful to show here — go straight to Settings instead
   // of a dead-end hint (mirrors Mods.jsx). ---
   useEffect(() => {
+    setModsLoading(true);
     api
-      .getMods()
+      .getMods(activeLang)
       .then((data) => setAllMods(data.mods || []))
       .catch((err) => {
         if (err.message && err.message.toLowerCase().includes('scan')) {
@@ -286,15 +302,16 @@ export default function Editor({ onReselect, onGoToSettings }) {
           toast("error", err.message);
           setAllMods([]);
         }
-      });
-  }, [onGoToSettings, toast]);
+      })
+      .finally(() => setModsLoading(false));
+  }, [activeLang, onGoToSettings, toast]);
 
   // --- Persist dirty edits so they survive a view switch ---
   useEffect(() => {
     if (!saveDirty(dirty)) {
       toast(
         "error",
-        "Could not save unsaved edits for the view switch — too large for the browser's session storage.",
+        "Could not save unsaved edits for the view switch because they are too large for the browser's session storage.",
       );
     }
   }, [dirty, toast]);
@@ -352,7 +369,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
       let page = 1;
       let guard = 0;
       while (all.length < total && guard < 1000) {
-        const data = await api.getEntries(activeModId, { page, pageSize: FETCH_PAGE_SIZE, search });
+        const data = await api.getEntries(activeModId, { page, pageSize: FETCH_PAGE_SIZE, search, lang: activeLang });
         total = data.total ?? 0;
         const batch = data.entries || [];
         all = all.concat(batch);
@@ -367,7 +384,8 @@ export default function Editor({ onReselect, onGoToSettings }) {
       setRenderCount(Math.min(all.length, PAGE_SIZE));
     })()
       .catch((err) => {
-        if (!cancelled) toast("error", err.message);
+        // "Kein Scan": die Weiterleitung nach Settings meldet das bereits.
+        if (!cancelled && !err.message.toLowerCase().includes("scan")) toast("error", err.message);
       })
       .finally(() => {
         if (!cancelled) setEntriesLoading(false);
@@ -375,7 +393,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
     return () => {
       cancelled = true;
     };
-  }, [activeModId, search, reloadKey, toast]);
+  }, [activeModId, activeLang, search, reloadKey, toast]);
 
   // --- Prune stale dirty ids for the ACTIVE mod, once its full (unfiltered)
   // stock is known — a rescan can remove/rename an entry, leaving a stale
@@ -392,10 +410,14 @@ export default function Editor({ onReselect, onGoToSettings }) {
     setDirty((prev) => {
       const validIds = new Set(entries.map((e) => e.id));
       let next = null;
-      for (const [id, val] of prev) {
-        if (val.modId === activeModId && val.origin !== "import" && !validIds.has(id)) {
+      // Die entryId selbst ist sprachunabhängig (sie referenziert die
+      // EN-Quelldatei) — ein Rescan-Wegfall betrifft deshalb Dirty-Einträge
+      // ALLER Sprachen dieser Mod gleichermaßen, nicht nur die aktive.
+      for (const [key, val] of prev) {
+        const { entryId } = parseDirtyKey(key);
+        if (val.modId === activeModId && val.origin !== "import" && !validIds.has(entryId)) {
           if (!next) next = new Map(prev);
-          next.delete(id);
+          next.delete(key);
         }
       }
       return next || prev;
@@ -412,11 +434,12 @@ export default function Editor({ onReselect, onGoToSettings }) {
     if (entries.length === 0 || !activeModId || entriesModId !== activeModId) return;
     setDirty((prev) => {
       let next = null;
-      for (const [id, val] of prev) {
+      for (const [key, val] of prev) {
         if (val.modId != null) continue;
-        if (entries.some((e) => e.id === id)) {
+        const { entryId } = parseDirtyKey(key);
+        if (entries.some((e) => e.id === entryId)) {
           if (!next) next = new Map(prev);
-          next.set(id, { ...val, modId: activeModId });
+          next.set(key, { ...val, modId: activeModId });
         }
       }
       return next || prev;
@@ -513,30 +536,52 @@ export default function Editor({ onReselect, onGoToSettings }) {
   const updateDirty = useCallback((id, translation, original) => {
     const value = translation === null ? "" : String(translation);
     const originalValue = original === null || original === undefined ? "" : String(original);
+    const key = dirtyKey(activeLang, id);
 
     setDirty((prev) => {
-      const existing = prev.get(id);
+      const existing = prev.get(key);
       // Ein Import bleibt bis zum erfolgreichen Save ein Review-Eintrag —
       // auch wenn sein Wert während der Prüfung wieder dem Original gleicht.
       if (value === originalValue && existing?.origin !== "import") {
         if (!existing) return prev;
         const next = new Map(prev);
-        next.delete(id);
+        next.delete(key);
         return next;
       }
       const next = new Map(prev);
-      next.set(id, { modId: activeModId, value, origin: existing?.origin || "manual" });
+      next.set(key, { modId: activeModId, value, origin: existing?.origin || "manual", lang: activeLang });
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeModId]);
+  }, [activeModId, activeLang]);
 
-  // Dirty items of the ACTIVE mod only — Save only ever touches the mod
-  // currently open (that's the whole point of "Mod für Mod").
-  const activeDirtyItems = Array.from(dirty.entries())
+  // Nur die aktive Sprache, als Map(entryId -> { modId, value, origin }) —
+  // die Zeilen/Sortierung arbeiten weiter rein auf entryId-Basis.
+  const activeDirty = useMemo(() => dirtyForLang(dirty, activeLang), [dirty, activeLang]);
+  const activeDirtyDebounced = useMemo(
+    () => dirtyForLang(dirtyDebounced, activeLang),
+    [dirtyDebounced, activeLang],
+  );
+
+  // Dirty items of the ACTIVE mod UND der aktiven Sprache — Save touched
+  // immer nur den offenen Mod ("Mod für Mod") in der gerade offenen Sprache.
+  const activeDirtyItems = Array.from(activeDirty.entries())
     .filter(([, val]) => val.modId === activeModId)
     .map(([id, val]) => [id, val.value]);
   const dirtySize = activeDirtyItems.length;
+
+  // Unaufdringlicher Hinweis: hat der offene Mod zusätzlich ungespeicherte
+  // Änderungen in ANDEREN Sprachen (die der Zähler oben bewusst nicht zählt)?
+  const otherLangDirtyCount = useMemo(() => {
+    if (!activeModId) return 0;
+    let count = 0;
+    for (const [key, val] of dirty) {
+      if (val.modId !== activeModId) continue;
+      const { lang } = parseDirtyKey(key);
+      if (lang && lang !== activeLang) count += 1;
+    }
+    return count;
+  }, [dirty, activeModId, activeLang]);
 
   // Unsaved edits whose mod is no longer part of the Library selection: kept
   // (never deleted), but invisible and unsavable until the mod is reselected.
@@ -570,7 +615,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
   const handleDiscardConfirm = () => {
     setDirty((prev) => {
       const next = new Map(prev);
-      for (const [id] of activeDirtyItems) next.delete(id);
+      for (const [id] of activeDirtyItems) next.delete(dirtyKey(activeLang, id));
       return next;
     });
     setDiscardConfirmOpen(false);
@@ -585,16 +630,17 @@ export default function Editor({ onReselect, onGoToSettings }) {
       await api.saveEntries(
         activeModId,
         activeDirtyItems.map(([entryId, translation]) => ({ entryId, translation })),
+        activeLang,
       );
       setDirty((prev) => {
         const next = new Map(prev);
-        for (const [id] of activeDirtyItems) next.delete(id);
+        for (const [id] of activeDirtyItems) next.delete(dirtyKey(activeLang, id));
         return next;
       });
 
       setReloadKey((k) => k + 1);
       api
-        .getMods()
+        .getMods(activeLang)
         .then((data) => setAllMods(data.mods || []))
         .catch(() => {});
     } catch (err) {
@@ -632,7 +678,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
   }
 
   // === Loading mods ===
-  if (allMods.length === 0) {
+  if (modsLoading) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
         <p className="text-center text-muted">Loading...</p>
@@ -736,6 +782,14 @@ export default function Editor({ onReselect, onGoToSettings }) {
               </button>
             ))}
           </div>
+          {otherLangDirtyCount > 0 && (
+            <span
+              className="shrink-0 whitespace-nowrap text-ui font-semibold text-muted"
+              title="This mod has unsaved changes in other languages too, switch the active language to review them"
+            >
+              {otherLangDirtyCount} unsaved in other languages
+            </span>
+          )}
           <Button
             variant="secondary"
             icon={DiscardIcon}
@@ -761,7 +815,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
             <div className="mx-auto max-w-md px-6 py-10">
               <Card title="Editor">
                 {universe.length > 0 ? (
-                  <p className="text-sm text-muted">No mod selected — pick one from the sidebar.</p>
+                  <p className="text-sm text-muted">No mod selected. Pick one from the sidebar.</p>
                 ) : (
                   <>
                     <p className="text-sm text-muted">
@@ -800,7 +854,7 @@ export default function Editor({ onReselect, onGoToSettings }) {
                   Oberkante und Linie steht. */}
               <div className="sticky top-0 z-10 flex items-stretch bg-raised px-4 after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-accent after:content-['']">
                 <SortHeader field="key" label="Key" className="w-1/3 shrink-0 pt-[0.5rem] pb-[0.6rem] pr-4" sort={sort} onCycle={cycleSort} />
-                <SortHeader field="translation" label="Translation" className="w-1/3 shrink-0 border-l border-muted/15 px-4 pt-[0.5rem] pb-[0.6rem]" sort={sort} onCycle={cycleSort} />
+                <SortHeader field="translation" label={`Translation (${activeLang})`} className="w-1/3 shrink-0 border-l border-muted/15 px-4 pt-[0.5rem] pb-[0.6rem]" sort={sort} onCycle={cycleSort} />
                 <SortHeader field="original" label="Original" className="w-1/3 min-w-0 border-l border-muted/15 pl-4 pt-[0.5rem] pb-[0.6rem]" sort={sort} onCycle={cycleSort} />
               </div>
               <EntryRows
@@ -808,8 +862,8 @@ export default function Editor({ onReselect, onGoToSettings }) {
                 renderCount={renderCount}
                 search={search}
                 sort={sort}
-                dirty={dirty}
-                sortDirty={dirtyDebounced}
+                dirty={activeDirty}
+                sortDirty={activeDirtyDebounced}
                 updateDirty={updateDirty}
                 sentinelRef={sentinelRef}
                 hasMore={hasMore}

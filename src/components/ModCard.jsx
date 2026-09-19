@@ -24,7 +24,16 @@ function ModCard({ mod, name, status, active = false, locked = false, id, onTogg
   return (
     <div
       onClick={() => onToggle(id)}
-      className={`flex flex-col gap-2 rounded-lg border p-3 transition-colors duration-100 ${
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onToggle(id);
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-pressed={active}
+      className={`flex flex-col gap-2 rounded-lg border p-3 transition-colors duration-100 focus-visible:outline-none focus-visible:border-accent ${
         active && locked
           ? "cursor-default border-muted bg-muted/10"
           : active

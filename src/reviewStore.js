@@ -6,29 +6,73 @@
 
 const DIRTY_KEY = "pt_editor_dirty";
 
-// dirty: Map(entryId -> { modId, value, origin }). origin ist "manual"
-// (Standard, auch für aus älteren Sessions migrierte Einträge) oder "import"
-// (kam unverändert-ungespeichert aus einem LLM-JSON-Import, s. Mods.jsx) —
-// Grundlage für den "Zu Prüfen"-Status: eine Mod gilt als "zu prüfen",
-// solange sie mindestens einen offenen "import"-Eintrag hat.
-export function loadDirty() {
+// dirty: Map("<lang>::<entryId>" -> { modId, value, origin, lang }).
+// Der Sprachpräfix ist nötig, seit mehrere Zielsprachen gleichzeitig offen
+// sein können: DIESELBE entryId kann in DE und FR unterschiedliche
+// ungespeicherte Werte haben.
+// origin ist "manual" (Standard) oder "import" (kam unverändert-ungespeichert
+// aus einem LLM-JSON-Import, s. Mods.jsx) — Grundlage für den "Zu Prüfen"-
+// Status: eine Mod gilt als "zu prüfen", solange sie mindestens einen offenen
+// "import"-Eintrag hat.
+
+// Sprachcodes enthalten nie ":", entryIds nie am Anfang — deshalb trennt das
+// ERSTE "::" den Sprachcode sauber ab, auch wenn die entryId selbst ein "::"
+// enthält (sie tut es: "<version>/<file>::<key>").
+export function dirtyKey(lang, entryId) {
+  return `${lang}::${entryId}`;
+}
+
+export function parseDirtyKey(key) {
+  const i = key.indexOf("::");
+  if (i === -1) return { lang: null, entryId: key };
+  return { lang: key.slice(0, i), entryId: key.slice(i + 2) };
+}
+
+// `activeLang` wird gebraucht, um Einträge aus älteren Sessions (noch ohne
+// Sprachpräfix) einer Sprache zuzuordnen — damals gab es nur eine.
+export function loadDirty(activeLang) {
   try {
     const raw = sessionStorage.getItem(DIRTY_KEY);
     if (raw) {
       const pairs = JSON.parse(raw);
       if (Array.isArray(pairs)) {
-        return new Map(
-          pairs.map(([id, val]) => [
-            id,
+        const out = new Map();
+        for (const [key, val] of pairs) {
+          const obj =
             val && typeof val === "object"
-              ? { modId: val.modId ?? null, value: val.value, origin: val.origin || "manual" }
-              : { modId: null, value: val, origin: "manual" },
-          ]),
-        );
+              ? { modId: val.modId ?? null, value: val.value, origin: val.origin || "manual", lang: val.lang || null }
+              : { modId: null, value: val, origin: "manual", lang: null };
+          if (obj.lang) {
+            // Bereits im neuen Format (Key trägt den Sprachpräfix).
+            out.set(key, obj);
+          } else if (activeLang) {
+            // Altes Format: nackte entryId, Sprache war die damals einzige.
+            obj.lang = activeLang;
+            out.set(dirtyKey(activeLang, key), obj);
+          }
+        }
+        return out;
       }
     }
   } catch { /* ignore */ }
   return new Map();
+}
+
+// Ob überhaupt ungespeicherte Einträge existieren — ohne die ganze Map zu
+// parsen (loadDirty braucht eine activeLang zum Migrieren alter Einträge,
+// hier reicht ein roher Blick auf den gespeicherten JSON-Array). Basis für
+// die beforeunload-Warnung in App.jsx: die geht verloren, sobald der Tab
+// schließt oder neu lädt (sessionStorage bleibt zwar über einen Reload
+// erhalten, aber nicht über ein Schließen des Tabs).
+export function hasDirty() {
+  try {
+    const raw = sessionStorage.getItem(DIRTY_KEY);
+    if (!raw) return false;
+    const pairs = JSON.parse(raw);
+    return Array.isArray(pairs) && pairs.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 // Gibt zurück, ob das Schreiben geklappt hat — ein sessionStorage-Quota-Fehler
@@ -48,8 +92,21 @@ export function saveDirty(dirty) {
   }
 }
 
+// Nur die Einträge einer Sprache, als Map(entryId -> { modId, value, origin }).
+// Der Editor arbeitet immer in genau einer Sprache und braucht deshalb die
+// entryId als Schlüssel, nicht den zusammengesetzten.
+export function dirtyForLang(dirty, lang) {
+  const out = new Map();
+  for (const [key, val] of dirty) {
+    if (val.lang === lang) out.set(parseDirtyKey(key).entryId, val);
+  }
+  return out;
+}
+
 // Set der modIds, die mindestens einen noch offenen (dirty) Import-Eintrag
 // haben — Basis für den "Zu Prüfen"-Status auf der Mods-Seite und im Editor.
+// Sprachübergreifend: eine Mod ist auch dann zu prüfen, wenn der offene
+// Import eine andere als die gerade aktive Sprache betrifft.
 export function reviewModIds(dirty) {
   const ids = new Set();
   for (const val of dirty.values()) {
@@ -58,8 +115,20 @@ export function reviewModIds(dirty) {
   return ids;
 }
 
+// Die Sprachen, in denen eine Mod offene Import-Einträge hat — für den
+// Hinweis, wo noch etwas zu prüfen ist.
+export function reviewLangsOf(dirty, modId) {
+  const langs = new Set();
+  for (const val of dirty.values()) {
+    if (val.origin === "import" && val.modId === modId && val.lang) langs.add(val.lang);
+  }
+  return [...langs].sort();
+}
+
 // Status einer Mod für Filter-Pillen/Tags: "review" (Import-Einträge noch
 // offen) schlägt den aus translatedCount/entryCount abgeleiteten Stand.
+// `translatedCount` ist der von der API für die AKTIVE Sprache gelieferte
+// flache Wert (der Scan-Cache hält intern einen Wert je Sprache).
 export function statusOf(mod, reviewIds) {
   if (reviewIds.has(mod.id)) return "review";
   if (mod.entryCount > 0 && mod.translatedCount === mod.entryCount) return "translated";

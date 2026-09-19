@@ -98,9 +98,14 @@ const skipReason = !available
 
 let result
 
+let multiLangResult
+const FIRST_LANG = DEFAULTS.targetLangs[0]
+const SECOND_LANG = 'FR'
+
 before(async () => {
   if (!available) return
-  result = await scan(gameRoot, workshopDir, DEFAULTS.targetLang)
+  result = await scan(gameRoot, workshopDir, [FIRST_LANG])
+  multiLangResult = await scan(gameRoot, workshopDir, [FIRST_LANG, SECOND_LANG])
 })
 
 test('echter Scan findet ≥ 100 Mods inkl. Base Game', { skip: skipReason }, () => {
@@ -160,5 +165,57 @@ test('Einträge tragen id/file/key/original korrekt (id = <version>/<file>::<key
     assert.ok(e.file.includes('Translate/EN/'), `kein EN-Pfad: ${e.file}`)
     assert.equal(e.id, `${e.version}/${e.file}::${e.key}`, `id nicht aufgebaut: ${e.id}`)
     assert.equal(e.modId, m.id)
+    assert.equal(typeof e.translations, 'object')
+    assert.equal(typeof e.preFilled, 'object')
+    assert.ok(
+      FIRST_LANG in e.translations,
+      `translations fehlt Sprache ${FIRST_LANG}: ${JSON.stringify(e.translations)}`
+    )
   }
+})
+
+test('mehrere Zielsprachen: translations/translatedCounts haben Einträge für beide Sprachen', {
+  skip: skipReason
+}, () => {
+  const { mods, entriesByModId } = multiLangResult
+
+  // Jeder Mod bekommt translatedCounts für BEIDE Sprachen — auch 0, wenn nichts übersetzt ist.
+  for (const m of mods) {
+    assert.ok(
+      FIRST_LANG in m.translatedCounts,
+      `${m.id}: translatedCounts fehlt ${FIRST_LANG}: ${JSON.stringify(m.translatedCounts)}`
+    )
+    assert.ok(
+      SECOND_LANG in m.translatedCounts,
+      `${m.id}: translatedCounts fehlt ${SECOND_LANG}: ${JSON.stringify(m.translatedCounts)}`
+    )
+    assert.equal(typeof m.translatedCounts[FIRST_LANG], 'number')
+    assert.equal(typeof m.translatedCounts[SECOND_LANG], 'number')
+  }
+
+  // Ein Mod mit Einträgen nehmen und prüfen, dass jeder Entry beide Sprachen trägt.
+  const withEntries = mods
+    .map((m) => ({ m, entries: entriesByModId[m.id] || [] }))
+    .find(({ entries }) => entries.length > 0)
+  assert.ok(withEntries, 'kein Mod mit Einträgen gefunden')
+
+  const { entries } = withEntries
+  for (const e of entries) {
+    assert.ok(
+      FIRST_LANG in e.translations && SECOND_LANG in e.translations,
+      `translations fehlt eine Sprache: ${JSON.stringify(e.translations)}`
+    )
+    assert.ok(
+      FIRST_LANG in e.preFilled && SECOND_LANG in e.preFilled,
+      `preFilled fehlt eine Sprache: ${JSON.stringify(e.preFilled)}`
+    )
+    assert.equal(e.preFilled[FIRST_LANG], e.translations[FIRST_LANG] !== null)
+    assert.equal(e.preFilled[SECOND_LANG], e.translations[SECOND_LANG] !== null)
+    // translation ist kein Feld mehr im neuen Datenmodell
+    assert.equal('translation' in e, false)
+  }
+
+  // Anzahl/Reihenfolge der Entries darf sich durch die zweite Sprache nicht ändern.
+  const singleEntries = entriesByModId[withEntries.m.id]
+  assert.equal(singleEntries.length, entries.length)
 })

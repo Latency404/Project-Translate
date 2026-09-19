@@ -8,11 +8,15 @@ builds an installable translation mod from it.
 ## Requirements
 
 - Windows, with Project Zomboid (B42) and its Workshop mods installed via Steam.
-- Node.js (a recent LTS version).
+- Node.js 22.2 or newer (the ZIP download behind "Export Mod" needs `zlib.crc32`,
+  which only exists from that version on).
 - Administrator rights when the game or Workshop folder lives under
   `C:\Program Files (x86)\...` — writing translations there needs them. Without
   admin rights the app still runs; saving a translation fails with a readable 403
   error instead of silently doing nothing.
+
+The API only listens on `127.0.0.1` — it's not reachable from other machines on
+your network.
 
 ## Install and start
 
@@ -43,31 +47,40 @@ PT_FAKE=1 npm run dev
 ## Workflow
 
 1. **Settings** — set the game folder and Workshop folder (defaults are prefilled for
-   the usual Steam paths), the source language texts are originally written in
-   (defaults to `EN`) and the target language you're translating into, then **Save**.
-   Run **Scan** to read the installation; this can take a while the first time with
-   many mods installed. Changing the game/Workshop folder or the source language
-   invalidates the current scan — the app rescans automatically the next time you
-   open the Mods page.
+   the usual Steam paths) and the target language(s) you're translating into, then
+   **Save**. The source language is fixed to English (B42's own source language) and
+   isn't configurable. Click **Search Mods** to scan the installation; this can take
+   a while the first time with many mods installed. Changing the game/Workshop
+   folder or the target languages invalidates the current scan — there's no
+   automatic rescan, so Mods/Editor point back here until you click **Search Mods**
+   again. This page also has **Restore Backup** (undo a save, reset or restore point)
+   and **Reset Translations** (clear a mod's saved translations back to untranslated).
 2. **Mods** — pick the mods you want to translate (the base game is listed too);
-   filter by status (Open / Translated / Needs Review). Selection carries over to
-   the Editor and to the global **Export Mod** button. This page also has the LLM
-   round trip: **Export** downloads the selected mods' entries as one JSON file
-   with the original-language texts — hand that to an LLM (or translate it by
-   hand) and get back a translated version in the same structure. **Import** loads
-   that file, shows a preview of how many entries matched, and on confirmation
-   marks the affected mods **Needs Review** — nothing is written to disk yet.
+   filter by status (Open / Translated / Needs Review). With more than one target
+   language configured, a language switcher (top bar) selects which one Mods and
+   Editor show and edit — switching is instant, no rescan needed. Selection carries
+   over to the Editor and to the global **Export Mod** button. This page also has the
+   LLM round trip: **Export** downloads the selected mods' entries as one JSON file
+   with the original-language texts (covering all target languages at once) — hand
+   that to an LLM (or translate it by hand) and get back a translated version in the
+   same structure. **Import** loads that file, shows a preview of how many entries
+   matched, and on confirmation marks the affected mods **Needs Review** — nothing is
+   written to disk yet.
 3. **Editor** — pick one mod from the sidebar at a time and work through its
-   entries (search, sort, filter by file). Entries imported via the LLM round trip
-   show up pre-filled but unsaved, exactly like a manual edit — review them and
-   hit **Save**, which writes to disk (with an automatic backup of anything
-   overwritten) and re-scans so the counts stay accurate. Once every "Needs
-   Review" entry of a mod is saved, it reverts to its normal Open/Translated
-   status.
+   entries (search, sort, filter by file) in the currently active language. Entries
+   imported via the LLM round trip show up pre-filled but unsaved, exactly like a
+   manual edit — review them and hit **Save**, which writes to disk (with an
+   automatic backup of anything overwritten) and re-scans so the counts stay
+   accurate. Once every "Needs Review" entry of a mod is saved, it reverts to its
+   normal Open/Translated status. Some older mods only ship their original texts as
+   plain Lua `.txt` files instead of JSON — B42 no longer reads those, so saving a
+   translation for them writes a proper `.json` file instead; nothing you need to do
+   differently.
 4. **Export Mod** (top-right, on every page) — bundles the translated entries of
-   the currently selected mods into one installable mod folder, with a valid
-   `mod.info` per layout location. Copy that folder into your game's `mods`
-   directory and enable it in the launcher.
+   the currently selected mods and target languages into one installable mod, and
+   downloads it as a ZIP (with a valid `mod.info` per layout location). Extract the
+   ZIP into your game's mods folder — typically `%UserProfile%\Zomboid\mods` — and
+   enable the mod in the launcher.
 
 ## Commands
 
