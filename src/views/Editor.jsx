@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronsUpDown, Save } from "lucide-react";
 import * as api from "../api.js";
 import Button from "../components/Button.jsx";
@@ -188,6 +188,95 @@ function PlaceholderWarning({ missing, extra, onInsert }) {
   );
 }
 
+// Eine Zeile. memo: beim Tippen rendert nur die Zeile neu, deren dirtyEntry
+// sich ändert (die Werte in `dirty` behalten ihre Identität).
+const EntryRow = memo(function EntryRow({ entry, dirtyEntry, sourceFile, showFileDivider, updateDirty }) {
+  // Platzhalter an der Cursorposition des Übersetzungsfelds einfügen (am Ende,
+  // wenn das Feld noch nie den Fokus hatte).
+  const insertPlaceholder = (token) => {
+    const el = document.querySelector(`[data-entry-input="${CSS.escape(entry.id)}"]`);
+    const cur = String((dirtyEntry ? dirtyEntry.value : entry.translation) ?? "");
+    const pos = el && el.selectionStart != null ? Math.min(el.selectionStart, cur.length) : cur.length;
+    updateDirty(entry.id, cur.slice(0, pos) + token + cur.slice(pos), entry.translation);
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(pos + token.length, pos + token.length);
+    });
+  };
+
+  const currentTranslation = dirtyEntry ? dirtyEntry.value : entry.translation;
+  const entryDirty = dirtyEntry !== undefined;
+  const needsReview = dirtyEntry?.origin === "import";
+
+  let borderClass = "border-success";
+  // Importierte Einträge nutzen bewusst denselben Akzentton wie die
+  // "Needs Review"-Pill, bis sie gespeichert wurden.
+  if (needsReview || entryDirty) borderClass = "border-accent";
+  else if (!entry.translation) borderClass = "border-warning";
+
+  // Nur prüfen, wenn schon etwas geschrieben steht (leer = "noch offen").
+  const ph = currentTranslation ? comparePlaceholders(entry.original, currentTranslation) : null;
+  const phIssue = ph && (ph.missing.length > 0 || ph.extra.length > 0);
+
+  const sources = placeholderSources(entry.original, entry.usage);
+
+  return (
+    <div>
+      {showFileDivider && (
+        <div className="flex items-stretch border-t border-line bg-surface px-4 text-ui font-semibold text-muted">
+          <span className="w-1/3 shrink-0 truncate py-1.5 pr-4">{sourceFile}</span>
+          <span className="w-1/3 shrink-0 border-l border-muted/15" />
+          <span className="w-1/3 border-l border-muted/15" />
+        </div>
+      )}
+      <div className="flex items-stretch border-b border-line px-4 last:border-b-0 hover:bg-raised/30">
+        <span className="flex w-1/3 shrink-0 items-center py-2 pr-4">
+          <span className="truncate text-ui leading-none font-semibold text-text">{entry.key}</span>
+        </span>
+        <span className="flex w-1/3 shrink-0 flex-col justify-center gap-1.5 border-l border-muted/15 px-4 py-2">
+          <input
+            data-entry-input={entry.id}
+            value={currentTranslation ?? ""}
+            onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation)}
+            placeholder="Translation..."
+            className={`h-10 w-full min-w-[20ch] rounded-lg border-2 bg-raised px-3 text-ui font-semibold text-text placeholder:text-muted placeholder:font-semibold focus-visible:outline-none focus-visible:border-accent ${phIssue ? "border-warning" : borderClass}`}
+          />
+          {phIssue && (
+            <PlaceholderWarning
+              missing={ph.missing}
+              extra={ph.extra}
+              onInsert={insertPlaceholder}
+            />
+          )}
+        </span>
+        <span className="flex w-1/3 min-w-0 flex-col justify-center gap-1.5 border-l border-muted/15 py-2 pl-4">
+          <span className="text-ui leading-snug font-semibold break-words text-text">
+            <PlaceholderText text={entry.original} />
+          </span>
+          {entry.notInCode && (
+            <span
+              className="text-xs leading-snug text-warning"
+              title="This mod's code never mentions this key. The game may still use it if the code builds keys dynamically or if another mod uses it, so check before skipping it."
+            >
+              Not found in the mod's code, so it may not be used in the game.
+            </span>
+          )}
+          {Object.keys(sources).length > 0 && (
+            <span className="space-y-0.5 text-xs leading-snug break-words text-muted">
+              {Object.entries(sources).map(([tok, s]) => (
+                <span key={tok} className="block">
+                  <span className="font-semibold text-accent">{tok}</span> = {s.value}
+                </span>
+              ))}
+            </span>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+});
+
 // Die Zeilen des aktiven Mods. Eigene Komponente, damit useMemo den Re-Sort
 // nicht bei jedem Tastendruck woanders im Editor mit auslöst.
 function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updateDirty, sentinelRef, hasMore, fetching, showFileDividers }) {
@@ -221,99 +310,23 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
     );
   }
 
-  // Platzhalter an der Cursorposition des Übersetzungsfelds einfügen (am Ende,
-  // wenn das Feld noch nie den Fokus hatte).
-  const insertPlaceholder = (entry, token) => {
-    const el = document.querySelector(`[data-entry-input="${CSS.escape(entry.id)}"]`);
-    const cur = String(currentTranslationOf(entry, dirty) ?? "");
-    const pos = el && el.selectionStart != null ? Math.min(el.selectionStart, cur.length) : cur.length;
-    updateDirty(entry.id, cur.slice(0, pos) + token + cur.slice(pos), entry.translation);
-    requestAnimationFrame(() => {
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(pos + token.length, pos + token.length);
-    });
-  };
-
   let prevSourceFile = null;
 
   return (
     <>
       {displayEntries.map((entry) => {
-        const currentTranslation = currentTranslationOf(entry, dirty);
-        const dirtyEntry = dirty.get(entry.id);
-        const entryDirty = dirtyEntry !== undefined;
-        const needsReview = dirtyEntry?.origin === "import";
-
-        let borderClass = "border-success";
-        // Importierte Einträge nutzen bewusst denselben Akzentton wie die
-        // "Needs Review"-Pill, bis sie gespeichert wurden.
-        if (needsReview || entryDirty) borderClass = "border-accent";
-        else if (!entry.translation) borderClass = "border-warning";
-
-        // Nur prüfen, wenn schon etwas geschrieben steht (leer = "noch offen").
-        const ph = currentTranslation ? comparePlaceholders(entry.original, currentTranslation) : null;
-        const phIssue = ph && (ph.missing.length > 0 || ph.extra.length > 0);
-
-        const sources = placeholderSources(entry.original, entry.usage);
-
         const sourceFile = sourceFileOf(entry);
         const showFileDivider = showFileDividers && sourceFile !== prevSourceFile;
         prevSourceFile = sourceFile;
-
         return (
-          <div key={entry.id}>
-            {showFileDivider && (
-              <div className="flex items-stretch border-t border-line bg-surface px-4 text-ui font-semibold text-muted">
-                <span className="w-1/3 shrink-0 truncate py-1.5 pr-4">{sourceFile}</span>
-                <span className="w-1/3 shrink-0 border-l border-muted/15" />
-                <span className="w-1/3 border-l border-muted/15" />
-              </div>
-            )}
-            <div className="flex items-stretch border-b border-line px-4 last:border-b-0 hover:bg-raised/30">
-              <span className="flex w-1/3 shrink-0 items-center py-2 pr-4">
-                <span className="truncate text-ui leading-none font-semibold text-text">{entry.key}</span>
-              </span>
-              <span className="flex w-1/3 shrink-0 flex-col justify-center gap-1.5 border-l border-muted/15 px-4 py-2">
-                <input
-                  data-entry-input={entry.id}
-                  value={currentTranslation ?? ""}
-                  onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation)}
-                  placeholder="Translation..."
-                  className={`h-10 w-full min-w-[20ch] rounded-lg border-2 bg-raised px-3 text-ui font-semibold text-text placeholder:text-muted placeholder:font-semibold focus-visible:outline-none focus-visible:border-accent ${phIssue ? "border-warning" : borderClass}`}
-                />
-                {phIssue && (
-                  <PlaceholderWarning
-                    missing={ph.missing}
-                    extra={ph.extra}
-                    onInsert={(tok) => insertPlaceholder(entry, tok)}
-                  />
-                )}
-              </span>
-              <span className="flex w-1/3 min-w-0 flex-col justify-center gap-1.5 border-l border-muted/15 py-2 pl-4">
-                <span className="text-ui leading-snug font-semibold break-words text-text">
-                  <PlaceholderText text={entry.original} />
-                </span>
-                {entry.notInCode && (
-                  <span
-                    className="text-xs leading-snug text-warning"
-                    title="This mod's code never mentions this key. The game may still use it if the code builds keys dynamically or if another mod uses it, so check before skipping it."
-                  >
-                    Not found in the mod's code, so it may not be used in the game.
-                  </span>
-                )}
-                {Object.keys(sources).length > 0 && (
-                  <span className="space-y-0.5 text-xs leading-snug break-words text-muted">
-                    {Object.entries(sources).map(([tok, s]) => (
-                      <span key={tok} className="block">
-                        <span className="font-semibold text-accent">{tok}</span> = {s.value}
-                      </span>
-                    ))}
-                  </span>
-                )}
-              </span>
-            </div>
-          </div>
+          <EntryRow
+            key={entry.id}
+            entry={entry}
+            dirtyEntry={dirty.get(entry.id)}
+            sourceFile={sourceFile}
+            showFileDivider={showFileDivider}
+            updateDirty={updateDirty}
+          />
         );
       })}
       {hasMore && (
@@ -394,6 +407,13 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
   }, [dirty]);
   const [reloadKey, setReloadKey] = useState(0);
 
+  // Entprellte Suche: nur sie löst den Neu-Abruf aller Einträge aus.
+  const [fetchSearch, setFetchSearch] = useState(search);
+  useEffect(() => {
+    const t = setTimeout(() => setFetchSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const searchRef = useRef(search);
   useEffect(() => {
     searchRef.current = search;
@@ -472,7 +492,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
     // Ausnahme: ein reiner Reload nach Save (gleicher Mod/Sprache/Suche) lässt die
     // Liste stehen und tauscht sie erst mit den neuen Daten aus — sonst klappt sie
     // zusammen und die Ansicht springt an den Anfang.
-    const loadKey = `${activeModId}|${activeLang}|${search}`;
+    const loadKey = `${activeModId}|${activeLang}|${fetchSearch}`;
     const isReload = loadKey === lastLoadKeyRef.current;
     lastLoadKeyRef.current = loadKey;
     if (!isReload) {
@@ -490,7 +510,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
       let page = 1;
       let guard = 0;
       while (all.length < total && guard < 1000) {
-        const data = await api.getEntries(activeModId, { page, pageSize: FETCH_PAGE_SIZE, search, lang: activeLang });
+        const data = await api.getEntries(activeModId, { page, pageSize: FETCH_PAGE_SIZE, search: fetchSearch, lang: activeLang });
         total = data.total ?? 0;
         const batch = data.entries || [];
         all = all.concat(batch);
@@ -514,7 +534,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
     return () => {
       cancelled = true;
     };
-  }, [activeModId, activeLang, search, reloadKey, toast]);
+  }, [activeModId, activeLang, fetchSearch, reloadKey, toast]);
 
   // --- Prune stale dirty ids for the ACTIVE mod, once its full (unfiltered)
   // stock is known — a rescan can remove/rename an entry, leaving a stale
@@ -526,7 +546,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
   // already points at the new one; without this guard that stale pairing
   // would wrongly prune the new mod's still-valid dirty entries. ---
   useEffect(() => {
-    if (search !== "" || !activeModId || entriesModId !== activeModId) return;
+    if (fetchSearch !== "" || !activeModId || entriesModId !== activeModId) return;
     if (entries.length < entriesTotal) return;
     setDirty((prev) => {
       const validIds = new Set(entries.map((e) => e.id));
@@ -543,7 +563,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
       }
       return next || prev;
     });
-  }, [entries, entriesTotal, entriesModId, search, activeModId]);
+  }, [entries, entriesTotal, entriesModId, fetchSearch, activeModId]);
 
   // --- Backward-compat: fill in modId for dirty entries restored from an
   // older sessionStorage shape (modId: null), once identifiable from the
@@ -1001,7 +1021,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
               <EntryRows
                 entries={visibleEntries}
                 renderCount={renderCount}
-                search={search}
+                search={fetchSearch}
                 sort={sort}
                 dirty={activeDirty}
                 sortDirty={activeDirtyDebounced}
