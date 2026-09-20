@@ -27,6 +27,7 @@ const { saveBatch, resetToGame, classifyFsError } = require('./entries')
 const guard = require('./guard')
 const { listBackups, restoreBackup, freshStamp } = require('./backups')
 const llm = require('./llm-io')
+const scanStore = require('./scan-store')
 const { exportModsBundle } = require('./mod-export')
 const { buildZip, collectFiles } = require('./zip')
 
@@ -44,6 +45,7 @@ const BACKUP_ROOT = path.join(EXPORT_ROOT, 'backups')
 // Workshop-Ordner werden von der App nur gelesen (s. guard.js).
 const WORK_ROOT = path.join(EXPORT_ROOT, 'work')
 const MOD_EXPORT_DEFAULT = path.join(EXPORT_ROOT, 'mods')
+const SCAN_CACHE_FILE = path.join(EXPORT_ROOT, 'scan-cache.json')
 
 // Fake-Mode: auch für Scan und Save die Fixture-Wurzel verwenden —
 // roots() kennt den Modus, alle Routen nutzen sie. (config.json dient
@@ -124,6 +126,31 @@ let scanRunning = false
 let scanProgress = { done: 0, total: 0, current: '' }
 let scanError = null
 
+// Scan-Stand auf die Platte legen (nach jedem Scan/Rescan), gebündelt: läuft ein
+// Schreiben, wird danach genau einmal mit dem dann aktuellen Stand nachgeschrieben.
+let persistRunning = false
+let persistAgain = false
+function persistCache() {
+  if (!cache) return
+  if (persistRunning) {
+    persistAgain = true
+    return
+  }
+  persistRunning = true
+  const r = roots()
+  const meta = { gameRoot: r.gameRoot, workshopDir: r.workshopDir, langs: cache.langs }
+  scanStore
+    .save(SCAN_CACHE_FILE, meta, cache)
+    .catch((err) => console.error(`Scan-Stand konnte nicht gespeichert werden: ${err.message}`))
+    .finally(() => {
+      persistRunning = false
+      if (persistAgain) {
+        persistAgain = false
+        persistCache()
+      }
+    })
+}
+
 // Die Disk ist die Quelle der Wahrheit: nach jedem Schreiben (PUT / Reset)
 // spiegelt rescan() die Disk in den Cache, damit der Editor (GET /entries)
 // gespeicherte Änderungen sofort sieht — in Fake- und echtem Modus gleich.
@@ -134,6 +161,7 @@ function rescan() {
   return scan(r.gameRoot, r.workshopDir, cfg.targetLangs, config.SOURCE_LANG, { workRoot: WORK_ROOT })
     .then((result) => {
       cache = { ...result, langs: [...cfg.targetLangs] }
+      persistCache()
     })
     .finally(() => {
       rescanning = false
@@ -182,6 +210,7 @@ function startScan() {
     .then((result) => {
       cache = { ...result, langs: [...cfg.targetLangs] }
       scanRunning = false
+      persistCache()
     })
     .catch((err) => {
       scanRunning = false
@@ -688,6 +717,12 @@ app.use('/api', (err, req, res, next) => {
 // kann jeder im selben LAN Backups zurückspielen, Übersetzungen ändern oder über /api/export/mod einen beliebigen targetDir
 // beschreiben lassen. Auf Node 17+ löst "localhost" u. U. zuerst zu ::1 auf —
 // deshalb binden wir auf die Adresse, nicht auf den Namen.
+// Letzten Scan-Stand laden (falls er zu den aktuellen Einstellungen passt).
+{
+  const r = roots()
+  cache = scanStore.load(SCAN_CACHE_FILE, { gameRoot: r.gameRoot, workshopDir: r.workshopDir, langs: config.load().targetLangs })
+}
+
 app.listen(PORT, '127.0.0.1', (err) => {
   if (err) {
     console.error(`API konnte Port ${PORT} nicht öffnen: ${err.message}`)
