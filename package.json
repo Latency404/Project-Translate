@@ -1,8 +1,10 @@
 {
   "name": "project-translate",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Desktop-Tool zum Uebersetzen von Project-Zomboid-Mods (Workshop + Base Game)",
+  "author": "Latency404",
+  "license": "MIT",
   "engines": {
     "node": ">=22.2"
   },

@@ -133,3 +133,8 @@ folder from `mods\` yourself.
 
 See [CLAUDE.md](CLAUDE.md) for the project's internal contracts (entry ID format,
 API routes, layout rules).
+
+## License
+
+MIT — see [LICENSE](LICENSE). Project Zomboid is a trademark of The Indie Stone;
+this tool is not affiliated with or endorsed by them.
