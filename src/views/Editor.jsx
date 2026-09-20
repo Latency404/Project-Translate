@@ -86,15 +86,6 @@ function sourceFileOf(entry) {
   return relPath.slice(relPath.lastIndexOf("/") + 1);
 }
 
-function currentTranslationOf(entry, dirty) {
-  const d = dirty.get(entry.id);
-  return d ? d.value : entry.translation;
-}
-
-function isDirtyEntry(entry, dirty) {
-  return dirty.has(entry.id);
-}
-
 // Sortable column header (Key / Translation / Original). Click toggles
 // asc → desc → server order.
 function SortHeader({ field, label, className, sort, onCycle }) {
@@ -368,6 +359,13 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
   // below would read that stale set as if it were the new mod's and delete
   // the new mod's still-valid dirty entries as "stale".
   const [entriesModId, setEntriesModId] = useState(null);
+  // Die Suche, zu der `entries` gehört (null = nichts geladen). Wie
+  // `entriesModId` nötig, weil `entries` dem Suchbegriff um einen Fetch
+  // hinterherhinkt: beim Leeren einer aktiven Suche steht `fetchSearch` schon
+  // auf "", `entries` hält aber noch die GEFILTERTE Liste. Der Prune-Effekt
+  // unten darf erst greifen, wenn der geladene Stand wirklich ungefiltert ist
+  // — sonst löscht er jede Änderung außerhalb des Filters.
+  const [entriesSearch, setEntriesSearch] = useState(null);
   const [renderCount, setRenderCount] = useState(0);
   const [entriesLoading, setEntriesLoading] = useState(false);
   const lastLoadKeyRef = useRef(null);
@@ -480,6 +478,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
       setEntries([]);
       setEntriesTotal(Infinity);
       setEntriesModId(null);
+      setEntriesSearch(null);
       setRenderCount(0);
     }
     if (!activeModId) return;
@@ -504,6 +503,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
       setEntries(all);
       setEntriesTotal(total);
       setEntriesModId(activeModId);
+      setEntriesSearch(fetchSearch);
       setRenderCount((c) => Math.min(all.length, isReload ? Math.max(c, PAGE_SIZE) : PAGE_SIZE));
     })()
       .catch((err) => {
@@ -521,14 +521,14 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
   // --- Prune stale dirty ids for the ACTIVE mod, once its full (unfiltered)
   // stock is known — a rescan can remove/rename an entry, leaving a stale
   // entryId that would fail to save. Only prunes what's currently loaded &
-  // fully known (search === ""), never touches dirty entries of other mods.
+  // fully known (entriesSearch === ""), never touches dirty entries of other mods.
   // Guarded by entriesModId === activeModId (not just `entries` being
   // "fully known") — right after switching mods, `entries` can for one
   // render still be the PREVIOUS mod's fully-loaded set while `activeModId`
   // already points at the new one; without this guard that stale pairing
   // would wrongly prune the new mod's still-valid dirty entries. ---
   useEffect(() => {
-    if (fetchSearch !== "" || !activeModId || entriesModId !== activeModId) return;
+    if (entriesSearch !== "" || !activeModId || entriesModId !== activeModId) return;
     if (entries.length < entriesTotal) return;
     setDirty((prev) => {
       const validIds = new Set(entries.map((e) => e.id));
@@ -545,7 +545,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
       }
       return next || prev;
     });
-  }, [entries, entriesTotal, entriesModId, fetchSearch, activeModId]);
+  }, [entries, entriesTotal, entriesModId, entriesSearch, activeModId]);
 
   // --- Backward-compat: fill in modId for dirty entries restored from an
   // older sessionStorage shape (modId: null), once identifiable from the

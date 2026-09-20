@@ -6,7 +6,9 @@ export function useDismiss(open, refs, onClose) {
   useEffect(() => {
     if (!open) return;
     const onDown = (e) => {
-      if (refs.every((r) => r.current && !r.current.contains(e.target))) onClose();
+      // Ein Ref ohne Element zählt als "außerhalb" — sonst bliebe das
+      // Popover offen, solange eines seiner Elemente noch nicht gemountet ist.
+      if (refs.every((r) => !r.current || !r.current.contains(e.target))) onClose();
     };
     const onKey = (e) => {
       if (e.key === "Escape") onClose();
