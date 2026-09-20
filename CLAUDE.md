@@ -226,7 +226,10 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   geöffnete Mod — Editor-eigen, nie die Mods-Auswahl selbst), `pt_active_view`,
   `pt_editor_dirty` (ungespeicherte Einträge, Key ist `<lang>::<entryId>`, Wert
   `{ modId, value, origin, lang }`; `origin` ist `"manual"` oder `"import"` —
-  s. `src/reviewStore.js`). Der Sprachpräfix ist nötig, weil dieselbe entryId in
+  s. `src/reviewStore.js`). **Ausnahme: `pt_editor_dirty` liegt in
+  `localStorage`**, damit ungespeicherte Änderungen das Schließen von Tab/Browser
+  überleben (ein Alt-Stand in sessionStorage wird weiter gelesen und beim
+  nächsten Schreiben übernommen; `clearDirty()` löscht beide). Der Sprachpräfix ist nötig, weil dieselbe entryId in
   mehreren Sprachen gleichzeitig offen sein kann; Einträge aus älteren Sessions
   ohne Präfix werden beim Laden auf die aktive Sprache migriert.
 - **Disk ist die Quelle der Wahrheit**: PUT löst einen Rescan aus, bevor es

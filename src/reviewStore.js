@@ -1,8 +1,11 @@
 // Geteilter Session-State für ungespeicherte (dirty) Editor-Einträge — sowohl
 // von Editor.jsx (liest/schreibt beim Bearbeiten und Speichern) als auch von
 // Mods.jsx (liest nur, um den "Zu Prüfen"-Status zu berechnen, und schreibt
-// nach einem JSON-Import) genutzt. Persistiert in sessionStorage, überlebt
-// also einen View-Wechsel (Editor/Mods werden von App.jsx unmounted).
+// nach einem JSON-Import) genutzt. Persistiert in localStorage, überlebt also
+// View-Wechsel (Editor/Mods werden von App.jsx unmounted) UND das Schließen von
+// Tab/Browser/App — man macht später dort weiter, wo man aufgehört hat. Ein
+// Stand aus sessionStorage (Sitzungen vor dieser Umstellung) wird weiter gelesen
+// und beim nächsten Schreiben nach localStorage übernommen.
 
 const DIRTY_KEY = "pt_editor_dirty";
 
@@ -14,6 +17,18 @@ const DIRTY_KEY = "pt_editor_dirty";
 // aus einem LLM-JSON-Import, s. Mods.jsx) — Grundlage für den "Zu Prüfen"-
 // Status: eine Mod gilt als "zu prüfen", solange sie mindestens einen offenen
 // "import"-Eintrag hat.
+
+function readRaw() {
+  return localStorage.getItem(DIRTY_KEY) ?? sessionStorage.getItem(DIRTY_KEY);
+}
+
+// Alles Ungespeicherte verwerfen (auch einen Alt-Stand in sessionStorage).
+export function clearDirty() {
+  try {
+    localStorage.removeItem(DIRTY_KEY);
+    sessionStorage.removeItem(DIRTY_KEY);
+  } catch { /* ignore */ }
+}
 
 // Sprachcodes enthalten nie ":", entryIds nie am Anfang — deshalb trennt das
 // ERSTE "::" den Sprachcode sauber ab, auch wenn die entryId selbst ein "::"
@@ -32,7 +47,7 @@ export function parseDirtyKey(key) {
 // Sprachpräfix) einer Sprache zuzuordnen — damals gab es nur eine.
 export function loadDirty(activeLang) {
   try {
-    const raw = sessionStorage.getItem(DIRTY_KEY);
+    const raw = readRaw();
     if (raw) {
       const pairs = JSON.parse(raw);
       if (Array.isArray(pairs)) {
@@ -58,33 +73,17 @@ export function loadDirty(activeLang) {
   return new Map();
 }
 
-// Ob überhaupt ungespeicherte Einträge existieren — ohne die ganze Map zu
-// parsen (loadDirty braucht eine activeLang zum Migrieren alter Einträge,
-// hier reicht ein roher Blick auf den gespeicherten JSON-Array). Basis für
-// die beforeunload-Warnung in App.jsx: die geht verloren, sobald der Tab
-// schließt oder neu lädt (sessionStorage bleibt zwar über einen Reload
-// erhalten, aber nicht über ein Schließen des Tabs).
-export function hasDirty() {
-  try {
-    const raw = sessionStorage.getItem(DIRTY_KEY);
-    if (!raw) return false;
-    const pairs = JSON.parse(raw);
-    return Array.isArray(pairs) && pairs.length > 0;
-  } catch {
-    return false;
-  }
-}
-
-// Gibt zurück, ob das Schreiben geklappt hat — ein sessionStorage-Quota-Fehler
+// Gibt zurück, ob das Schreiben geklappt hat — ein Storage-Quota-Fehler
 // (z. B. bei einem sehr großen LLM-Import) würde sonst lautlos verschluckt und
 // die Einträge wären beim nächsten View-Wechsel (Editor liest sessionStorage
 // frisch ein) spurlos weg, obwohl die Mods-Seite den React-State noch zeigt.
 export function saveDirty(dirty) {
   try {
     if (dirty.size === 0) {
-      sessionStorage.removeItem(DIRTY_KEY);
+      clearDirty();
     } else {
-      sessionStorage.setItem(DIRTY_KEY, JSON.stringify(Array.from(dirty.entries())));
+      localStorage.setItem(DIRTY_KEY, JSON.stringify(Array.from(dirty.entries())));
+      sessionStorage.removeItem(DIRTY_KEY);
     }
     return true;
   } catch {

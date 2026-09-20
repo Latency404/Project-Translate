@@ -7,7 +7,7 @@ import Editor from "./views/Editor.jsx";
 import LangSelect from "./components/LangSelect.jsx";
 import { langLabel, langName } from "./langs.js";
 import { ToastProvider, useToast } from "./components/Toast.jsx";
-import { hasDirty, loadDirty } from "./reviewStore.js";
+import { loadDirty } from "./reviewStore.js";
 import * as api from "./api.js";
 
 const VIEWS = [
@@ -298,20 +298,6 @@ function AppShell() {
   useEffect(() => {
     loadLangConfig();
   }, [loadLangConfig]);
-
-  // Unsaved editor entries (incl. a whole unreviewed LLM import) live only in
-  // sessionStorage (pt_editor_dirty, s. reviewStore.js) — closing the tab or
-  // reloading loses them silently, with no chance to save first. The
-  // browser's native leave-confirmation is the only hook available for that.
-  useEffect(() => {
-    const onBeforeUnload = (e) => {
-      if (!hasDirty()) return;
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, []);
 
   // Sprachwechsel: nur die aktive Sprache umschalten, kein Rescan. Optimistisch
   // im UI, mit Rollback + Toast, falls der Server ablehnt (z. B. Sprache nicht

@@ -18,6 +18,7 @@ import {
 } from "../components/Icons.jsx";
 import { useToast } from "../components/Toast.jsx";
 import * as api from "../api.js";
+import { clearDirty } from "../reviewStore.js";
 
 // saveErr ist eine oder mehrere Satz-für-Satz-Meldungen von POST /api/config
 // (server/config.js validate()), z. B. "Select at least one target language.
@@ -374,13 +375,10 @@ export default function Settings({ onOpenMods, onLangsChanged, activeLang: activ
     try {
       const result = await api.resetTranslations();
       // Reset betrifft nur die gespeicherten (Disk-)Übersetzungen — noch
-      // ungespeicherte Eingaben im Editor leben als "dirty" im sessionStorage
-      // (Editor.jsx DIRTY_KEY = "pt_editor_dirty") und überleben einen
-      // View-Wechsel. Ohne diesen Schritt würde der Editor sie beim nächsten
-      // Öffnen wieder anzeigen, als hätte Reset sie übersprungen.
-      try {
-        sessionStorage.removeItem("pt_editor_dirty");
-      } catch { /* ignore */ }
+      // ungespeicherte Eingaben im Editor leben als "dirty" im Browser-Speicher
+      // (reviewStore.js, "pt_editor_dirty") und überleben View-Wechsel und Neustart.
+      // Ohne diesen Schritt würde der Editor sie beim nächsten Öffnen wieder anzeigen, als hätte Reset sie übersprungen.
+      clearDirty();
       setResetModalOpen(false);
       toast(
         "success",
