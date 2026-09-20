@@ -130,6 +130,7 @@ folder from `mods\` yourself.
 | Production (everything on `:3100`) | `npm start` |
 | Tests | `npm test` |
 | Build the release package | `npm run package` |
+| Build the Steam Workshop item | `npm run workshop` |
 
 See [CLAUDE.md](CLAUDE.md) for the project's internal contracts (entry ID format,
 API routes, layout rules).

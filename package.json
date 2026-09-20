@@ -12,6 +12,7 @@
     "dev": "node scripts/dev.js",
     "build": "vite build",
     "package": "node scripts/package.js",
+    "workshop": "node scripts/workshop.js",
     "start": "node server/index.js",
     "test": "node --test"
   },
