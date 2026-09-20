@@ -254,6 +254,9 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
 
 ## Regeln
 
+- Autor ist immer `Latency404` (`251464007+Latency404@users.noreply.github.com`).
+  Kein Klarname, keine private E-Mail, keine Benutzerpfade (`C:\Users\...`) in
+  Dateien, Oberfläche oder Commits.
 - Code suchen/verstehen: zuerst `codegraph_explore` (bzw. `codegraph explore "<Frage>"`),
   erst danach Grep/Dateien lesen. Dieses Projekt ist indexiert.
 - Die Frontend holt Daten ausschließlich über `src/api.js`, nie direkte `fetch`-Aufrufe.
