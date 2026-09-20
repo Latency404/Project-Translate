@@ -281,22 +281,50 @@ function getMod(res, modId) {
   return mod
 }
 
-// Lua-Fundstellen der Keys (Kontext für Platzhalter im Editor) je Mod; einmal
-// pro Scan-Cache gelesen, weil der Editor Seiten nachlädt.
+// Lua-Fundstellen der Keys (Kontext für Platzhalter im Editor) und die Wörter aus
+// dem Mod-Code je Mod; einmal pro Scan-Cache gelesen, weil der Editor Seiten
+// nachlädt.
 const usageMemo = new WeakMap()
 function usageFor(mod) {
   let perMod = usageMemo.get(cache)
   if (!perMod) usageMemo.set(cache, (perMod = new Map()))
   if (!perMod.has(mod.id)) {
-    let found
+    let found = new Map()
+    let words = null
     try {
       found = llm.modUsageFound(mod, config.SOURCE_LANG)
+      words = llm.modMentionedWords(mod, config.SOURCE_LANG)
     } catch {
-      found = new Map()
+      /* Hinweise sind optional */
     }
-    perMod.set(mod.id, found)
+    perMod.set(mod.id, { found, words })
   }
   return perMod.get(mod.id)
+}
+
+// Nur Kategorien, die das Spiel nicht von selbst nach Namensschema liest
+// (Sandbox_, ItemName_, Fluid_, UI_optionscreen_binding_, UI_trait_ … holt die
+// Engine ohne Lua-Code). Bei ContextMenu/Tooltip bleibt ein Key, den der
+// Mod-Code nie nennt, verdächtig: evtl. ungenutzt. Die Engine liest auch hier
+// ein paar Schemata selbst (EvolvedRecipe).
+const CODE_USED_CATEGORIES = new Set(['contextmenu', 'tooltip'])
+const ENGINE_KEY_PREFIXES = ['ContextMenu_EvolvedRecipe_']
+function categoryOf(file) {
+  const m = /([^/]+?)(?:_EN)?\.(?:json|txt)$/i.exec(file || '')
+  return m ? m[1].toLowerCase() : ''
+}
+// true = der Mod-Code nennt den Key nirgends; false = genannt oder nicht belastbar.
+// Als genannt gilt auch ein Key, der mit einem Wort aus dem Code beginnt
+// (Prefix, z. B. "ContextMenu_FenceSheets_AddSheet" .. richtung, oder "KEY" ..
+// "_tooltip"): dann baut der Code ihn vermutlich zusammen.
+function notInModCode(entry, words) {
+  if (!words || !CODE_USED_CATEGORIES.has(categoryOf(entry.file))) return false
+  if (!/^[A-Za-z0-9_]+$/.test(entry.key) || words.has(entry.key)) return false
+  if (ENGINE_KEY_PREFIXES.some((p) => entry.key.startsWith(p))) return false
+  for (const w of words) {
+    if (w.length >= 8 && entry.key.startsWith(w)) return false
+  }
+  return true
 }
 
 app.get('/api/mods/:modId/entries', (req, res) => {
@@ -330,8 +358,11 @@ app.get('/api/mods/:modId/entries', (req, res) => {
     pageSize,
     entries: filtered.slice(start, start + pageSize).map((e) => {
       const projected = projectEntryForLang(e, lang)
-      const uses = usageFor(mod).get(e.key)
-      return uses ? { ...projected, usage: uses } : projected
+      const { found, words } = usageFor(mod)
+      const uses = found.get(e.key)
+      if (uses) projected.usage = uses
+      if (notInModCode(e, words)) projected.notInCode = true
+      return projected
     })
   })
 })

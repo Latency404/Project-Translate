@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { findUsages, usageHint, readArgs } = require('./lua-usage')
+const { findUsages, usageHint, readArgs, findMentionedWords } = require('./lua-usage')
 const { exportLlmBundle } = require('./llm-io')
 
 let root
@@ -85,4 +85,13 @@ test('exportLlmBundle: Basisspiel wird nicht nach Lua-Aufrufen durchsucht', () =
   const base = { id: 'BASE', name: 'Base', isBaseGame: true, rootPath: root, versions: ['base'] }
   const doc = JSON.parse(exportLlmBundle([base], 'EN', ['DE']).text)
   assert.equal('usage' in doc.mods[0], false)
+})
+
+test('findMentionedWords: Wörter aus Code, Translate-Ordner ausgenommen, hasLua', () => {
+  const media = path.join(modDir, '42', 'media')
+  const r = findMentionedWords([media])
+  assert.equal(r.hasLua, true)
+  assert.equal(r.complete, true)
+  assert.ok(r.words.has('ContextMenu_UB_UnscrewPlug'), 'Key aus getText-Aufruf')
+  assert.equal(r.words.has('ContextMenu_UB_Nowhere'), false, 'nur in Translate/EN.json, nicht im Code')
 })

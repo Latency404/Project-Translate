@@ -40,7 +40,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { translateDir, sourceFileNames, readSourceMap, versionDirOf } = require('./scanner')
-const { findUsages, usageHint } = require('./lua-usage')
+const { findUsages, usageHint, findMentionedWords } = require('./lua-usage')
 const { SOURCE_LANG, langName } = require('./langs')
 
 // EN-Stellen eines Mods: [{ version, enDir }] — dieselben Regeln wie
@@ -202,6 +202,15 @@ function modUsageFound(mod, sourceLang = SOURCE_LANG) {
   if (mod.isBaseGame) return new Map()
   const luaDirs = [...new Set(enLocations(mod, sourceLang).map((l) => path.join(versionDirOf(mod, l.version), 'media', 'lua')))]
   return findUsages(luaDirs)
+}
+
+// Wörter aus Code/Skripten der Mod (für "Key kommt im Mod-Code nicht vor"); null,
+// wenn sich das nicht belastbar sagen lässt (Basisspiel, kein Lua-Code, zu groß).
+function modMentionedWords(mod, sourceLang = SOURCE_LANG) {
+  if (mod.isBaseGame) return null
+  const mediaDirs = [...new Set(enLocations(mod, sourceLang).map((l) => path.join(versionDirOf(mod, l.version), 'media')))]
+  const r = findMentionedWords(mediaDirs)
+  return r.hasLua && r.complete ? r.words : null
 }
 
 function modUsage(mod, files, sourceLang) {
@@ -388,5 +397,6 @@ module.exports = {
   importPreview,
   enLocations,
   buildValidKeys,
-  modUsageFound
+  modUsageFound,
+  modMentionedWords
 }

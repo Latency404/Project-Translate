@@ -294,6 +294,14 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
                 <span className="text-ui leading-snug font-semibold break-words text-text">
                   <PlaceholderText text={entry.original} />
                 </span>
+                {entry.notInCode && (
+                  <span
+                    className="text-xs leading-snug text-warning"
+                    title="This mod's code never mentions this key. The game may still use it if the code builds keys dynamically or if another mod uses it, so check before skipping it."
+                  >
+                    Not found in the mod's code, so it may not be used in the game.
+                  </span>
+                )}
                 {Object.keys(sources).length > 0 && (
                   <span className="space-y-0.5 text-xs leading-snug break-words text-muted">
                     {Object.entries(sources).map(([tok, s]) => (
