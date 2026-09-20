@@ -5,20 +5,33 @@ Workshop mods. It scans a Steam installation, shows every translatable text entr
 an editor, exports them as one file for an LLM, takes the translation back in, and
 builds an installable translation mod from it.
 
+## Download and run
+
+Grab the release ZIP, extract it anywhere, and double-click
+**Start Project Translate.cmd**. Your browser opens at `http://127.0.0.1:3100`.
+Closing the console window stops the tool.
+
+Nothing is installed: the Node runtime ships inside the folder, and everything the
+tool writes (`config.json`, `export\`) stays next to the start file. To update, copy
+in the new version and keep your `config.json` and `export\` folder.
+
 ## Requirements
 
 - Windows, with Project Zomboid (B42) and its Workshop mods installed via Steam.
-- Node.js 22.2 or newer (the ZIP download behind "Export Mod" needs `zlib.crc32`,
-  which only exists from that version on).
-- Administrator rights when the game or Workshop folder lives under
-  `C:\Program Files (x86)\...` — writing translations there needs them. Without
-  admin rights the app still runs; saving a translation fails with a readable 403
-  error instead of silently doing nothing.
+- Nothing else for the release ZIP. To run from source instead, you need Node.js
+  22.2 or newer (the ZIP download behind "Export Mod" needs `zlib.crc32`, which
+  only exists from that version on).
+
+**No administrator rights needed.** The tool only ever reads your game and Workshop
+folders, never writes there — not even when they live under
+`C:\Program Files (x86)\...`. Your translations go to the tool's own `export\work`
+folder, and the way to get them into the game is "Export Mod", which you install
+yourself.
 
 The API only listens on `127.0.0.1` — it's not reachable from other machines on
 your network.
 
-## Install and start
+## Running from source
 
 ```
 npm install
@@ -116,6 +129,7 @@ folder from `mods\` yourself.
 | Build | `npm run build` |
 | Production (everything on `:3100`) | `npm start` |
 | Tests | `npm test` |
+| Build the release package | `npm run package` |
 
 See [CLAUDE.md](CLAUDE.md) for the project's internal contracts (entry ID format,
 API routes, layout rules).
