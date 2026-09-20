@@ -286,6 +286,24 @@ test('GET /api/mods/:modId/entries — Pagination + Suche + id-Format', async ()
   assert.equal(badLang.status, 400)
 })
 
+test('GET /api/mods/:modId/entries — Suche findet auch Treffer in der Übersetzung der angefragten Sprache', async () => {
+  const pid = encodeURIComponent('3500000004/Fuel Trailer')
+  const all = await api('GET', `/mods/${pid}/entries?lang=DE&pageSize=500`)
+  // Ein Eintrag, dessen Übersetzung weder im Key noch im Original vorkommt.
+  const entry = all.json.entries.find(
+    (e) => e.translation && !e.key.toLowerCase().includes(e.translation.toLowerCase()) && !e.original.toLowerCase().includes(e.translation.toLowerCase())
+  )
+  assert.ok(entry, 'Fixture mit DE-Übersetzung fehlt')
+  const term = entry.translation.slice(0, 5).toUpperCase() // Groß-/Kleinschreibung egal
+
+  const de = await api('GET', `/mods/${pid}/entries?lang=DE&search=${encodeURIComponent(term)}`)
+  assert.ok(de.json.entries.some((e) => e.id === entry.id), 'Treffer in der DE-Übersetzung')
+
+  // Eine andere Sprache (FR, keine Übersetzung) durchsucht ihre eigene, nicht die DE.
+  const fr = await api('GET', `/mods/${pid}/entries?lang=FR&search=${encodeURIComponent(term)}`)
+  assert.ok(!fr.json.entries.some((e) => e.id === entry.id))
+})
+
 test('PUT /api/mods/:modId/entries — speichert in den Arbeitsordner (Workshop-Kopie bleibt unverändert) + Backup', async () => {
   const pid = encodeURIComponent('3500000004/Fuel Trailer')
   const before = await api('GET', `/mods/${pid}/entries`)

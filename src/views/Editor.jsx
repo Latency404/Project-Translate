@@ -9,6 +9,7 @@ import Tag from "../components/Tag.jsx";
 import ModCard from "../components/ModCard.jsx";
 import DiscardIcon from "../components/DiscardIcon.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { splitByPlaceholders, comparePlaceholders, describePlaceholder } from "../placeholders.js";
 import {
   loadDirty,
   saveDirty,
@@ -127,6 +128,66 @@ function SortHeader({ field, label, className, sort, onCycle }) {
   );
 }
 
+// Original mit hervorgehobenen Platzhaltern (%1, {0}, <LINE> …); der Tooltip
+// erklärt, was der jeweilige Platzhalter im Spiel bewirkt.
+function PlaceholderText({ text }) {
+  return splitByPlaceholders(text).map((p, i) =>
+    p.token ? (
+      <span
+        key={i}
+        title={`${p.text}: ${describePlaceholder(p.text)}. Keep it in your translation.`}
+        className="rounded bg-accent/15 px-1 text-accent"
+      >
+        {p.text}
+      </span>
+    ) : (
+      <span key={i}>{p.text}</span>
+    ),
+  );
+}
+
+// Warnung unter dem Übersetzungsfeld, wenn Platzhalter fehlen oder zu viel sind.
+// Bewusst nur ein Hinweis: gespeichert werden kann trotzdem.
+function PlaceholderWarning({ missing, extra, onInsert }) {
+  const them = missing.length > 1 ? "them" : "it";
+  return (
+    <div className="space-y-1 text-xs leading-snug text-warning">
+      {missing.length > 0 && (
+        <p>
+          Missing from your translation:{" "}
+          {missing.map((tok, i) => (
+            <span key={tok}>
+              {i > 0 && ", "}
+              <span className="font-semibold">{tok}</span> ({describePlaceholder(tok)})
+            </span>
+          ))}
+          . The game needs {them} here. You can move {them} anywhere in your text.
+        </p>
+      )}
+      {extra.length > 0 && (
+        <p>
+          Not in the original: <span className="font-semibold">{extra.join(", ")}</span>. The game has
+          nothing to put there, so it may show an error. Remove {extra.length > 1 ? "them" : "it"}.
+        </p>
+      )}
+      {missing.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {missing.map((tok) => (
+            <button
+              key={tok}
+              type="button"
+              onClick={() => onInsert(tok)}
+              className="cursor-pointer rounded-full bg-warning/15 px-2 py-0.5 font-semibold text-warning transition-colors hover:bg-warning/25"
+            >
+              Insert {tok}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Die Zeilen des aktiven Mods. Eigene Komponente, damit useMemo den Re-Sort
 // nicht bei jedem Tastendruck woanders im Editor mit auslöst.
 function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updateDirty, sentinelRef, hasMore, fetching, showFileDividers }) {
@@ -160,6 +221,20 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
     );
   }
 
+  // Platzhalter an der Cursorposition des Übersetzungsfelds einfügen (am Ende,
+  // wenn das Feld noch nie den Fokus hatte).
+  const insertPlaceholder = (entry, token) => {
+    const el = document.querySelector(`[data-entry-input="${CSS.escape(entry.id)}"]`);
+    const cur = String(currentTranslationOf(entry, dirty) ?? "");
+    const pos = el && el.selectionStart != null ? Math.min(el.selectionStart, cur.length) : cur.length;
+    updateDirty(entry.id, cur.slice(0, pos) + token + cur.slice(pos), entry.translation);
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(pos + token.length, pos + token.length);
+    });
+  };
+
   let prevSourceFile = null;
 
   return (
@@ -175,6 +250,10 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
         // "Needs Review"-Pill, bis sie gespeichert wurden.
         if (needsReview || entryDirty) borderClass = "border-accent";
         else if (!entry.translation) borderClass = "border-warning";
+
+        // Nur prüfen, wenn schon etwas geschrieben steht (leer = "noch offen").
+        const ph = currentTranslation ? comparePlaceholders(entry.original, currentTranslation) : null;
+        const phIssue = ph && (ph.missing.length > 0 || ph.extra.length > 0);
 
         const sourceFile = sourceFileOf(entry);
         const showFileDivider = showFileDividers && sourceFile !== prevSourceFile;
@@ -193,16 +272,26 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
               <span className="flex w-1/3 shrink-0 items-center py-2 pr-4">
                 <span className="truncate text-ui leading-none font-semibold text-text">{entry.key}</span>
               </span>
-              <span className="flex w-1/3 shrink-0 items-center border-l border-muted/15 px-4 py-2">
+              <span className="flex w-1/3 shrink-0 flex-col justify-center gap-1.5 border-l border-muted/15 px-4 py-2">
                 <input
+                  data-entry-input={entry.id}
                   value={currentTranslation ?? ""}
                   onChange={(e) => updateDirty(entry.id, e.target.value, entry.translation)}
                   placeholder="Translation..."
-                  className={`h-10 w-full min-w-[20ch] rounded-lg border-2 bg-raised px-3 text-ui font-semibold text-text placeholder:text-muted placeholder:font-semibold focus-visible:outline-none focus-visible:border-accent ${borderClass}`}
+                  className={`h-10 w-full min-w-[20ch] rounded-lg border-2 bg-raised px-3 text-ui font-semibold text-text placeholder:text-muted placeholder:font-semibold focus-visible:outline-none focus-visible:border-accent ${phIssue ? "border-warning" : borderClass}`}
                 />
+                {phIssue && (
+                  <PlaceholderWarning
+                    missing={ph.missing}
+                    extra={ph.extra}
+                    onInsert={(tok) => insertPlaceholder(entry, tok)}
+                  />
+                )}
               </span>
               <span className="flex w-1/3 min-w-0 items-center border-l border-muted/15 py-2 pl-4">
-                <span className="truncate text-ui leading-none font-semibold text-text">{entry.original}</span>
+                <span className="truncate text-ui leading-none font-semibold text-text">
+                  <PlaceholderText text={entry.original} />
+                </span>
               </span>
             </div>
           </div>

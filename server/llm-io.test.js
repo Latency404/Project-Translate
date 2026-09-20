@@ -127,6 +127,25 @@ test('exportLlmBundle: mehrere Zielsprachen → translations-Gerüst mit beiden 
   assert.doesNotMatch(doc.note, /—/) // keine Gedankenstriche
 })
 
+test('exportLlmBundle: context erklärt Spiel, Sprachen (mit Namen) und Regeln; Mod-Beschreibung wird mitgegeben', () => {
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
+  const withDesc = { ...coffee, description: 'Adds a working coffee machine.' }
+  const plain = { ...mods.find((m) => m.id === '3000000003/Equipment Belt'), description: null }
+  const doc = JSON.parse(exportLlmBundle([withDesc, plain], 'EN', ['DE', 'FR']).text)
+
+  assert.match(doc.context.game, /Project Zomboid/)
+  assert.deepEqual(doc.context.languages, { DE: 'German', FR: 'French' })
+  assert.ok(doc.context.rules.some((r) => /placeholder/i.test(r) && r.includes('%1') && r.includes('<LINE>')))
+  assert.ok(doc.context.rules.some((r) => /Return only/.test(r)))
+  assert.doesNotMatch(JSON.stringify(doc.context), /—/) // keine Gedankenstriche
+
+  assert.equal(doc.mods[0].description, 'Adds a working coffee machine.')
+  assert.equal('description' in doc.mods[1], false, 'ohne Beschreibung kein leeres Feld')
+  // Die Struktur, die das LLM zurückgibt, bleibt unverändert lesbar (Import ignoriert context/description).
+  doc.translations.DE[coffee.id] = {}
+  assert.equal(normalizeImportInput(JSON.stringify(doc)).error, null)
+})
+
 test('exportLlmBundle: keine Zielsprache → leeres targetLangs/translations, Note bittet LLM um eigene Sprachwahl', () => {
   const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const { targetLangs } = exportLlmBundle([coffee])

@@ -52,6 +52,8 @@ src/
                      Zielsprache eine feste Pille mit dem Sprachcode)
   api.js             Einziger Zugriffspunkt auf die API
   langs.js           Spiegel von server/langs.js (Codes + Namen) fürs Frontend
+  placeholders.js    Platzhalter (%1, {0}, <RGB:…>) erkennen/vergleichen; der Editor
+                     hebt sie im Original hervor und warnt bei Abweichung (kein Blocker)
   reviewStore.js     Geteilter Session-State für dirty Editor-Einträge je Sprache
                      (Mods-Seite + Editor) — Basis für den "Zu Prüfen"-Status
   components/        Button, Card, Input, Modal, ProgressBar, Tag, Toast, Icons
@@ -104,7 +106,9 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   Re-Fetch (`POST /api/active-lang`) und braucht **keinen** neuen Scan.
 - **LLM-Datei-Keys** sind die Kurzform `<version>/<Dateiname>` (z. B. `42.20/UI.json`);
   `llm-io.js` rekonstruiert daraus die entryId. Die exportierte Datei trägt
-  `targetLangs`, die Originaltexte unter `mods` und ein leeres Gerüst
+  `targetLangs`, `note` und `context` (Spiel, Sprachnamen, Übersetzungsregeln z. B. zu
+  Platzhaltern — `llm-io.buildContext`), die Originaltexte unter `mods` (je Mod optional
+  `description` aus der `mod.info`) und ein leeres Gerüst
   `translations: { "<LANG>": {} }`, das das LLM füllt:
   `translations[LANG][modId][fileKey][key] = "Übersetzung"`. Das alte
   einsprachige Format (`{ targetLang, mods }`, blankes Array, einzelnes Mod-Doc)

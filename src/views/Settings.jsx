@@ -571,7 +571,7 @@ export default function Settings({ onOpenMods, onLangsChanged, activeLang: activ
           {langErrs.length > 0 && <p className="text-xs text-danger">{langErrs.join(" ")}</p>}
         </div>
 
-        <footer className="flex items-center justify-between gap-4 border-t border-line px-5 py-4">
+        <footer className="flex items-center justify-between gap-4 border-t border-line p-4">
           <div className="flex items-center gap-3">
             <button
               type="button"

@@ -40,7 +40,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { translateDir, sourceFileNames, readSourceMap } = require('./scanner')
-const { SOURCE_LANG } = require('./langs')
+const { SOURCE_LANG, langName } = require('./langs')
 
 // EN-Stellen eines Mods: [{ version, enDir }] — dieselben Regeln wie
 // scanner.scan(): common, die neueste Version zusätzlich; root (B41) nur, wenn
@@ -151,16 +151,46 @@ function buildNote(langs) {
   )
 }
 
+// Kontext für das LLM: worum es geht und worauf beim Übersetzen zu achten ist.
+// Englisch und knapp, damit es in jedem Modell-Kontext Platz hat. Die
+// Regeln zu Platzhaltern sind der wichtigste Teil — ein zerstörter Platzhalter
+// (%1, <LINE>, <RGB:...>) bricht im Spiel Texte oder Farben.
+function buildContext(langs) {
+  return {
+    game: 'Project Zomboid (Build 42), a zombie survival game. Gritty, serious tone.',
+    about:
+      'The strings are in-game texts of the base game or of a workshop mod: item names, tooltips, ' +
+      'context menu entries, recipes, UI labels, sandbox options, moodles and descriptions. ' +
+      'Each mod may carry a short description that says what the mod does.',
+    languages: Object.fromEntries(langs.map((l) => [l, langName(l)])),
+    rules: [
+      'Translate only the string values, never the keys.',
+      'Keep placeholders, tags and control codes exactly as they are: %1 %2 %s %d {0} <LINE> <BR> <SPACE> <RGB:1,1,1> <IMAGE:...> <SIZE:...> <INDENT:...> and any other <...> tag, plus the escape sequences \\n and \\t.',
+      'Keep proper names, place names and brand names as they are (e.g. Muldraugh, Rosewood, Knox Country).',
+      'UI labels and menu entries must stay short, similar in length to the original.',
+      'Use one consistent term for the same thing across all entries and mods.',
+      'Prefer the wording the official game translation uses for that language.',
+      'If a string cannot or should not be translated, copy the original unchanged.',
+      'Return only the completed JSON file, nothing else.'
+    ]
+  }
+}
+
 // Alle ausgewählten Mods in EINE Datei bündeln, mit einem leeren
 // `translations`-Gerüst je Zielsprache. Rückgabe:
 // { text, filename, modCount, entryCount, targetLangs }. Die Frontend lädt
 // `text` als `filename` über den Save-Dialog herunter.
 function exportLlmBundle(mods, sourceLang = SOURCE_LANG, targetLangs = []) {
-  const modDocs = mods.map((mod) => ({ mod: mod.name, modId: mod.id, files: modFiles(mod, sourceLang) }))
+  const modDocs = mods.map((mod) => {
+    const doc = { mod: mod.name, modId: mod.id }
+    if (mod.description) doc.description = mod.description.slice(0, 500)
+    doc.files = modFiles(mod, sourceLang)
+    return doc
+  })
   const langs = normalizeLangList(targetLangs)
   const translations = {}
   for (const lang of langs) translations[lang] = {}
-  const doc = { targetLangs: langs, note: buildNote(langs), mods: modDocs, translations }
+  const doc = { targetLangs: langs, note: buildNote(langs), context: buildContext(langs), mods: modDocs, translations }
   let entryCount = 0
   for (const d of modDocs) {
     for (const keys of Object.values(d.files)) entryCount += Object.keys(keys).length

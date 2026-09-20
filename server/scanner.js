@@ -540,6 +540,8 @@ async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG
         // Anzeigename ist der `name=` aus der mod.info — wie im Spiel.
         id: `${pid}/${name}`,
         name: firstInfo('name') || name,
+        // Beschreibung aus der mod.info — Kontext für das LLM im Export.
+        description: firstInfo('description'),
         isBaseGame: false,
         versions: versionNames.slice(0, 1),
         rootPath: toPosix(modDir),

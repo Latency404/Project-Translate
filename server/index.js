@@ -292,8 +292,17 @@ app.get('/api/mods/:modId/entries', (req, res) => {
   const search = req.query.search ? String(req.query.search).toLowerCase() : ''
   const page = Math.max(1, parseInt(req.query.page, 10) || 1)
   const pageSize = Math.min(500, Math.max(1, parseInt(req.query.pageSize, 10) || 50))
+  // Treffer im Schlüssel, im Originaltext oder in der (gespeicherten) Übersetzung
+  // der angefragten Sprache.
   const filtered = search
-    ? all.filter((e) => e.key.toLowerCase().includes(search) || e.original.toLowerCase().includes(search))
+    ? all.filter((e) => {
+        const t = e.translations && e.translations[lang]
+        return (
+          e.key.toLowerCase().includes(search) ||
+          e.original.toLowerCase().includes(search) ||
+          (typeof t === 'string' && t.toLowerCase().includes(search))
+        )
+      })
     : all
   const start = (page - 1) * pageSize
   res.json({
