@@ -19,21 +19,19 @@ import {
   reviewModIds,
   statusOf,
   FILTER_TONE_CLASS,
+  displayModName,
+  loadSelectedModIds,
+  matchesModSearch,
+  baseGameFirst,
+  statusCounts,
 } from "../reviewStore.js";
 
 // Pseudo-Tab neben "All Files": zeigt über alle Dateien nur Einträge ohne Übersetzung.
 const OPEN_TAB = Symbol("open");
 
-// Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
-// als Backend-Wert unverändert (Export-Ordnernamen etc. hängen daran).
-function displayModName(mod) {
-  return mod.name.replace(/\s*\(Base Game\)\s*$/, "");
-}
-
 // The universe of mods the Editor can show IS the Library selection — the
 // Editor only ever READS this key (the Library writes it). Switching the
 // active mod in the Editor never touches the Library selection.
-const UNIVERSE_KEY = "pt_library_selected";
 // The Editor's own single active mod (one mod at a time — "durcharbeiten Mod
 // für Mod"). Persisted in its own key so it survives view switches without
 // touching the Library selection at all.
@@ -48,17 +46,8 @@ const ACTIVE_KEY = "pt_editor_active_mod";
 // Scroll-Reveal erweitert) — keine zehntausende DOM-Zeilen auf einmal.
 const FETCH_PAGE_SIZE = 500;
 const PAGE_SIZE = 200;
-
-function loadUniverseIds() {
-  try {
-    const raw = sessionStorage.getItem(UNIVERSE_KEY);
-    if (raw) {
-      const ids = JSON.parse(raw);
-      if (Array.isArray(ids)) return ids;
-    }
-  } catch { /* ignore */ }
-  return [];
-}
+// So viele Seiten werden gleichzeitig geholt.
+const FETCH_PARALLEL = 4;
 
 function loadActiveModId() {
   try {
@@ -340,7 +329,7 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
 
 export default function Editor({ onReselect, onGoToSettings, activeLang }) {
   // --- Universe: the Library selection (read-only here) ---
-  const [universeIds] = useState(() => loadUniverseIds());
+  const [universeIds] = useState(() => loadSelectedModIds());
   // --- Active mod: exactly one at a time ("Mod für Mod durcharbeiten") ---
   const [activeModId, setActiveModIdState] = useState(() => loadActiveModId());
   const setActiveModId = (id) => {
@@ -468,19 +457,11 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
   // Sidebar list: the full Library selection, filtered by its own search +
   // status pill (independent of what's actually open).
   const sidebarMods = universe.filter((m) => {
-    if (modSearch.trim() !== "") {
-      const q = modSearch.toLowerCase();
-      if (!m.name.toLowerCase().includes(q) && !m.id.toLowerCase().includes(q)) return false;
-    }
+    if (!matchesModSearch(m, modSearch)) return false;
     if (modFilter === "all") return true;
     return statusOf(m, reviewIds) === modFilter;
-  }).sort((a, b) => Number(b.isBaseGame) - Number(a.isBaseGame));
-  const filterCounts = {
-    all: universe.length,
-    open: universe.filter((m) => statusOf(m, reviewIds) === "open").length,
-    translated: universe.filter((m) => statusOf(m, reviewIds) === "translated").length,
-    review: universe.filter((m) => statusOf(m, reviewIds) === "review").length,
-  };
+  }).sort(baseGameFirst);
+  const filterCounts = { all: universe.length, ...statusCounts(universe, reviewIds) };
 
   // --- Load the active mod's full (search-filtered) entry set ---
   useEffect(() => {
@@ -505,20 +486,21 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
     let cancelled = false;
     setEntriesLoading(true);
     (async () => {
-      let all = [];
-      let total = Infinity;
-      let page = 1;
-      let guard = 0;
-      while (all.length < total && guard < 1000) {
-        const data = await api.getEntries(activeModId, { page, pageSize: FETCH_PAGE_SIZE, search: fetchSearch, lang: activeLang });
-        total = data.total ?? 0;
-        const batch = data.entries || [];
-        all = all.concat(batch);
-        if (batch.length === 0) break;
-        page += 1;
-        guard += 1;
+      const fetchPage = (page) =>
+        api.getEntries(activeModId, { page, pageSize: FETCH_PAGE_SIZE, search: fetchSearch, lang: activeLang });
+      // Erste Seite liefert `total`; die restlichen Seiten laufen in kleinen
+      // parallelen Gruppen (Reihenfolge bleibt erhalten).
+      const first = await fetchPage(1);
+      const total = first.total ?? 0;
+      const pages = [first.entries || []];
+      const pageCount = Math.min(1000, Math.ceil(total / FETCH_PAGE_SIZE));
+      for (let page = 2; page <= pageCount && !cancelled; page += FETCH_PARALLEL) {
+        const group = [];
+        for (let p = page; p < page + FETCH_PARALLEL && p <= pageCount; p++) group.push(fetchPage(p));
+        for (const data of await Promise.all(group)) pages.push(data.entries || []);
       }
       if (cancelled) return;
+      const all = pages.flat();
       setEntries(all);
       setEntriesTotal(total);
       setEntriesModId(activeModId);
@@ -575,10 +557,11 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
     if (entries.length === 0 || !activeModId || entriesModId !== activeModId) return;
     setDirty((prev) => {
       let next = null;
+      const loadedIds = new Set(entries.map((e) => e.id));
       for (const [key, val] of prev) {
         if (val.modId != null) continue;
         const { entryId } = parseDirtyKey(key);
-        if (entries.some((e) => e.id === entryId)) {
+        if (loadedIds.has(entryId)) {
           if (!next) next = new Map(prev);
           next.set(key, { ...val, modId: activeModId });
         }
@@ -711,9 +694,13 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
 
   // Dirty items of the ACTIVE mod UND der aktiven Sprache — Save touched
   // immer nur den offenen Mod ("Mod für Mod") in der gerade offenen Sprache.
-  const activeDirtyItems = Array.from(activeDirty.entries())
-    .filter(([, val]) => val.modId === activeModId)
-    .map(([id, val]) => [id, val.value]);
+  const activeDirtyItems = useMemo(
+    () =>
+      Array.from(activeDirty.entries())
+        .filter(([, val]) => val.modId === activeModId)
+        .map(([id, val]) => [id, val.value]),
+    [activeDirty, activeModId],
+  );
   const dirtySize = activeDirtyItems.length;
 
   // Unaufdringlicher Hinweis: hat der offene Mod zusätzlich ungespeicherte
@@ -731,12 +718,16 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
 
   // Unsaved edits whose mod is no longer part of the Library selection: kept
   // (never deleted), but invisible and unsavable until the mod is reselected.
-  const orphanedDirtyModIds = Array.from(
-    new Set(
-      Array.from(dirty.values())
-        .map((v) => v.modId)
-        .filter((modId) => modId != null && !universeIds.includes(modId)),
-    ),
+  const orphanedDirtyModIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          Array.from(dirty.values())
+            .map((v) => v.modId)
+            .filter((modId) => modId != null && !universeIds.includes(modId)),
+        ),
+      ),
+    [dirty, universeIds],
   );
   const orphanedCount = orphanedDirtyModIds.length;
   useEffect(() => {

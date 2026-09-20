@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useDismiss } from "../useDismiss.js";
 import { Check, ChevronDown, X } from "lucide-react";
 import { TARGET_LANGS, langLabel, langName } from "../langs.js";
 
@@ -15,21 +16,7 @@ export default function LangMultiSelect({ label, hint, value = [], onChange, loc
   const [search, setSearch] = useState("");
   const ref = useRef(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    };
-    const onKey = (e) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useDismiss(open, [ref], () => setOpen(false));
 
   const toggle = (code) => {
     if (value.includes(code)) {

@@ -3,6 +3,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { SOURCE_LANG, isKnownLang } = require('./langs')
+const { toPosix } = require('./scanner')
 
 // Laufzeit: config.json im Projektroot (git-ignoriert); PT_CONFIG_PATH erlaubt
 // einen anderen Ort (Tests).
@@ -88,10 +89,6 @@ function save(config) {
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true })
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2) + '\n', 'utf8')
   return merged
-}
-
-function toPosix(p) {
-  return String(p).replace(/\\/g, '/')
 }
 
 function isExistingDir(p) {

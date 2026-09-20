@@ -155,17 +155,24 @@ function persistCache() {
 // spiegelt rescan() die Disk in den Cache, damit der Editor (GET /entries)
 // gespeicherte Änderungen sofort sieht — in Fake- und echtem Modus gleich.
 function rescan() {
-  const r = roots()
-  const cfg = config.load()
   rescanning = true
-  return scan(r.gameRoot, r.workshopDir, cfg.targetLangs, config.SOURCE_LANG, { workRoot: WORK_ROOT })
-    .then((result) => {
-      cache = { ...result, langs: [...cfg.targetLangs] }
-      persistCache()
-    })
+  return runScan()
+    .then(persistCache)
     .finally(() => {
       rescanning = false
     })
+}
+
+// Liest Spiel/Workshop/Arbeitsordner neu ein und setzt den Cache. Flags,
+// Fortschritt und Persistieren machen die Aufrufer.
+function runScan(extraOpts) {
+  const r = roots()
+  const cfg = config.load()
+  return scan(r.gameRoot, r.workshopDir, cfg.targetLangs, config.SOURCE_LANG, { workRoot: WORK_ROOT, ...extraOpts }).then(
+    (result) => {
+      cache = { ...result, langs: [...cfg.targetLangs] }
+    }
+  )
 }
 
 // Antwort erst nach dem Rescan senden. War beim Start ein Rescan aktiv, ist
@@ -222,19 +229,15 @@ app.post('/api/scan', (req, res) => {
 
 // Startet einen Scan im Hintergrund (Fortschritt über /api/status).
 function startScan() {
-  const r = roots()
-  const cfg = config.load()
   scanRunning = true
   scanError = null
   scanProgress = { done: 0, total: 0, current: '' }
-  scan(r.gameRoot, r.workshopDir, cfg.targetLangs, config.SOURCE_LANG, {
-    workRoot: WORK_ROOT,
+  runScan({
     onProgress: (p) => {
       scanProgress = p
     }
   })
-    .then((result) => {
-      cache = { ...result, langs: [...cfg.targetLangs] }
+    .then(() => {
       scanRunning = false
       persistCache()
     })
@@ -244,14 +247,33 @@ function startScan() {
     })
 }
 
-// filesCount = Anzahl distincter Quelldateien (version/file) des Mods — für
-// den "N Files"-Badge auf der Mods-Seite. Gleiche Ableitung wie die
-// Datei-Gruppierung in der Reset-Translations-Route unten.
-function filesCountOf(mod) {
+// Distincte Quelldateien (version/file) eines Mods: Map "version/file" →
+// { version, file }. Pro Eintragsliste einmal berechnet (der Cache tauscht die
+// Listen bei jedem Scan aus).
+const sourceFilesMemo = new WeakMap()
+function sourceFilesOf(mod) {
   const entries = cache.entriesByModId[mod.id] || []
-  const files = new Set()
-  for (const e of entries) files.add(`${e.version}/${e.file}`)
-  return files.size
+  let files = sourceFilesMemo.get(entries)
+  if (!files) {
+    files = new Map()
+    for (const e of entries) {
+      const key = `${e.version}/${e.file}`
+      if (!files.has(key)) files.set(key, { version: e.version, file: e.file })
+    }
+    sourceFilesMemo.set(entries, files)
+  }
+  return files
+}
+
+// filesCount = Anzahl distincter Quelldateien — für den "N Files"-Badge auf der
+// Mods-Seite. Gleiche Ableitung wie die Reset-Translations-Route unten.
+function filesCountOf(mod) {
+  return sourceFilesOf(mod).size
+}
+
+// Sprachcode aus einem Request-Wert: Großbuchstaben oder fallback.
+function langOf(value, fallback) {
+  return typeof value === 'string' && value ? value.toUpperCase() : fallback
 }
 
 // ?lang=-Query lesen und gegen den Cache validieren (Default: activeLang).
@@ -259,7 +281,7 @@ function filesCountOf(mod) {
 // Fehler statt stiller undefined-Felder (translatedCounts/translations kennen
 // nur die beim letzten Scan aktiven Sprachen).
 function resolveCacheLang(req, cfg) {
-  const raw = typeof req.query.lang === 'string' && req.query.lang ? req.query.lang.toUpperCase() : cfg.activeLang
+  const raw = langOf(req.query.lang, cfg.activeLang)
   if (!cache.langs.includes(raw)) {
     return { error: `Language not scanned: ${raw}. Run a scan after selecting it as a target language.` }
   }
@@ -332,7 +354,6 @@ function getMod(res, modId) {
     fail(res, 404, `Mod not found: ${modId}.`)
     return null
   }
-  mod.posterUrl = posterUrl(mod)
   return mod
 }
 
@@ -382,6 +403,25 @@ function notInModCode(entry, words) {
   return true
 }
 
+// Der Editor holt die Treffer seitenweise — den Filter über alle Einträge nur
+// einmal je (Eintragsliste, Sprache, Suchtext) rechnen.
+let lastSearch = null
+function searchEntries(all, lang, search) {
+  if (lastSearch && lastSearch.all === all && lastSearch.lang === lang && lastSearch.search === search) {
+    return lastSearch.filtered
+  }
+  const filtered = all.filter((e) => {
+    const t = e.translations && e.translations[lang]
+    return (
+      e.key.toLowerCase().includes(search) ||
+      e.original.toLowerCase().includes(search) ||
+      (typeof t === 'string' && t.toLowerCase().includes(search))
+    )
+  })
+  lastSearch = { all, lang, search, filtered }
+  return filtered
+}
+
 app.get('/api/mods/:modId/entries', (req, res) => {
   const mod = getMod(res, req.params.modId)
   if (!mod) return
@@ -395,16 +435,7 @@ app.get('/api/mods/:modId/entries', (req, res) => {
   const pageSize = Math.min(500, Math.max(1, parseInt(req.query.pageSize, 10) || 50))
   // Treffer im Schlüssel, im Originaltext oder in der (gespeicherten) Übersetzung
   // der angefragten Sprache.
-  const filtered = search
-    ? all.filter((e) => {
-        const t = e.translations && e.translations[lang]
-        return (
-          e.key.toLowerCase().includes(search) ||
-          e.original.toLowerCase().includes(search) ||
-          (typeof t === 'string' && t.toLowerCase().includes(search))
-        )
-      })
-    : all
+  const filtered = search ? searchEntries(all, lang, search) : all
   const start = (page - 1) * pageSize
   res.json({
     modId: mod.id,
@@ -428,7 +459,7 @@ app.get('/api/mods/:modId/entries', (req, res) => {
 app.post('/api/active-lang', (req, res) => {
   const body = req.body || {}
   const cfg = config.load()
-  const lang = typeof body.lang === 'string' && body.lang ? body.lang.toUpperCase() : ''
+  const lang = langOf(body.lang, '')
   if (!lang || !cfg.targetLangs.includes(lang)) {
     return fail(res, 400, `Unknown target language: ${body.lang}.`)
   }
@@ -464,14 +495,8 @@ app.post('/api/reset-translations', (req, res) => {
   const resetStamp = freshStamp(BACKUP_ROOT)
   try {
     for (const mod of cache.mods) {
-      const entries = cache.entriesByModId[mod.id] || []
-      const files = new Map()
-      for (const e of entries) {
-        const key = `${e.version}/${e.file}`
-        if (!files.has(key)) files.set(key, { version: e.version, file: e.file })
-      }
       let modChanged = false
-      for (const { version, file } of files.values()) {
+      for (const { version, file } of sourceFilesOf(mod).values()) {
         for (const lang of langs) {
           const changed = resetToGame(mod, version, file, lang, BACKUP_ROOT, WORK_ROOT, resetStamp)
           if (changed > 0) {
@@ -514,7 +539,7 @@ app.put('/api/mods/:modId/entries', (req, res) => {
   if (!mod) return
   const cfg = config.load()
   const body = req.body || {}
-  const lang = typeof body.lang === 'string' && body.lang ? body.lang.toUpperCase() : cfg.activeLang
+  const lang = langOf(body.lang, cfg.activeLang)
   if (!cfg.targetLangs.includes(lang)) return fail(res, 400, `Unknown target language: ${lang}.`)
   const wasRescanning = rescanning
   let result

@@ -138,3 +138,40 @@ export const FILTER_TONE_CLASS = {
   translated: "bg-success/15 text-success",
   review: "bg-accent/15 text-accent",
 };
+
+// Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
+// als Backend-Wert unverändert (Export-Ordnernamen etc. hängen daran).
+export function displayModName(mod) {
+  return mod.name.replace(/\s*\(Base Game\)\s*$/, "");
+}
+
+// Die Mods-Auswahl (pt_library_selected) — nur die Mods-Seite schreibt sie;
+// Editor und der globale Export-Mod-Button lesen sie.
+export function loadSelectedModIds() {
+  try {
+    const raw = sessionStorage.getItem("pt_library_selected");
+    const ids = raw ? JSON.parse(raw) : [];
+    return Array.isArray(ids) ? ids : [];
+  } catch {
+    return [];
+  }
+}
+
+// Such-Filter der Mod-Listen (Mods-Seite + Editor-Sidebar): Treffer im Namen oder in der id.
+export function matchesModSearch(mod, search) {
+  if (search.trim() === "") return true;
+  const q = search.toLowerCase();
+  return mod.name.toLowerCase().includes(q) || mod.id.toLowerCase().includes(q);
+}
+
+// Sortierung der Mod-Listen: Basisspiel zuerst.
+export function baseGameFirst(a, b) {
+  return Number(b.isBaseGame) - Number(a.isBaseGame);
+}
+
+// Anzahl je Status-Pille (open / translated / review).
+export function statusCounts(mods, reviewIds) {
+  const counts = { open: 0, translated: 0, review: 0 };
+  for (const m of mods) counts[statusOf(m, reviewIds)] += 1;
+  return counts;
+}

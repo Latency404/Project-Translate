@@ -78,13 +78,19 @@ function versionDirOf(mod, version) {
 // Wert einer Zeile `<key>=<wert>` aus <dir>/mod.info (Groß-/Kleinschreibung des
 // Keys egal, Werte dürfen quoted sein, BOM am Dateianfang wird ignoriert).
 // null, wenn es die Datei oder den Key nicht gibt oder der Wert leer ist.
-function modInfoValueIn(dir, key) {
-  let raw
-  try {
-    raw = fs.readFileSync(path.join(dir, 'mod.info'), 'utf8')
-  } catch {
-    return null
+// `infoCache` (optionale Map dir → Text|null) spart beim Scan das mehrfache
+// Lesen derselben Datei.
+function modInfoValueIn(dir, key, infoCache) {
+  let raw = infoCache ? infoCache.get(dir) : undefined
+  if (raw === undefined) {
+    try {
+      raw = fs.readFileSync(path.join(dir, 'mod.info'), 'utf8')
+    } catch {
+      raw = null
+    }
+    if (infoCache) infoCache.set(dir, raw)
   }
+  if (raw === null) return null
   const re = new RegExp(`^${key}\\s*=\\s*(.+)$`, 'i')
   for (const line of raw.replace(/^﻿/, '').split(/\r?\n/)) {
     const m = re.exec(line.trim())
@@ -110,11 +116,11 @@ function modInfoDirs(modDir, versionNames) {
 // common (nicht in der Mod-Wurzel), und das deklarierte Bild liegt neben ihr.
 // Reihenfolge: das in einer mod.info deklarierte `poster=` (relativ zu deren
 // Ordner), dann poster.png / generic.png / icon.png in einem der Ordner.
-function posterFor(modDir, versionNames = []) {
+function posterFor(modDir, versionNames = [], infoCache) {
   const dirs = modInfoDirs(modDir, versionNames)
   const candidates = []
   for (const dir of dirs) {
-    const declared = modInfoValueIn(dir, 'poster')
+    const declared = modInfoValueIn(dir, 'poster', infoCache)
     if (declared) candidates.push([dir, declared])
   }
   for (const name of ['poster.png', 'generic.png', 'icon.png']) {
@@ -532,9 +538,10 @@ async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG
 
       // Mod-Objekt anlegen (vor dem Scan, damit es referenziert werden kann)
       const infoDirs = modInfoDirs(modDir, versionNames)
+      const infoCache = new Map()
       const firstInfo = (key) => {
         for (const dir of infoDirs) {
-          const v = modInfoValueIn(dir, key)
+          const v = modInfoValueIn(dir, key, infoCache)
           if (v) return v
         }
         return null
@@ -552,7 +559,7 @@ async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG
         isBaseGame: false,
         versions: versionNames.slice(0, 1),
         rootPath: toPosix(modDir),
-        poster: posterFor(modDir, versionNames),
+        poster: posterFor(modDir, versionNames, infoCache),
         // mod.info-id des Quell-Mods (B42: im Versionsordner, sonst common/
         // oder Mod-Wurzel) — der Export setzt damit loadModAfter=.
         modInfoId: firstInfo('id'),

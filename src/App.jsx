@@ -7,7 +7,9 @@ import Editor from "./views/Editor.jsx";
 import LangSelect from "./components/LangSelect.jsx";
 import { langLabel, langName } from "./langs.js";
 import { ToastProvider, useToast } from "./components/Toast.jsx";
-import { loadDirty } from "./reviewStore.js";
+import { loadDirty, loadSelectedModIds } from "./reviewStore.js";
+import { saveBlob } from "./download.js";
+import { useDismiss } from "./useDismiss.js";
 import * as api from "./api.js";
 
 const VIEWS = [
@@ -108,33 +110,7 @@ function ExportModPopover({ targetLangs }) {
     setSelectedLangs(targetLangs);
   }, [targetLangs]);
 
-  useEffect(() => {
-    if (!settingsOpen) return;
-    const onClick = (e) => {
-      const inAnchor = ref.current && ref.current.contains(e.target);
-      const inPanel = panelRef.current && panelRef.current.contains(e.target);
-      if (!inAnchor && !inPanel) setSettingsOpen(false);
-    };
-    const onKey = (e) => {
-      if (e.key === "Escape") setSettingsOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [settingsOpen]);
-
-  const selectedIds = () => {
-    try {
-      const raw = sessionStorage.getItem("pt_library_selected");
-      const ids = raw ? JSON.parse(raw) : [];
-      return Array.isArray(ids) ? ids : [];
-    } catch {
-      return [];
-    }
-  };
+  useDismiss(settingsOpen, [ref, panelRef], () => setSettingsOpen(false));
 
   const toggleLang = (code) => {
     setSelectedLangs((prev) => {
@@ -147,7 +123,7 @@ function ExportModPopover({ targetLangs }) {
   };
 
   const handleExportClick = async () => {
-    const modIds = selectedIds();
+    const modIds = loadSelectedModIds();
     if (modIds.length === 0) {
       toast("error", "Select mod(s) on the Mods page first.");
       return;
@@ -156,14 +132,7 @@ function ExportModPopover({ targetLangs }) {
     setExporting(true);
     try {
       const { blob, filename } = await api.exportModZip(modIds, selectedLangs);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      saveBlob(blob, filename);
       // The exported mod only ever contains what's already on disk — any
       // dirty (unsaved manual edit or unreviewed import) entry for one of the
       // selected mods/languages just got silently left out. Warn so that

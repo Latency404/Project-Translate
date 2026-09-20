@@ -7,14 +7,12 @@ import Input from "../components/Input.jsx";
 import Modal from "../components/Modal.jsx";
 import ModCard from "../components/ModCard.jsx";
 import { useToast } from "../components/Toast.jsx";
-import { loadDirty, saveDirty, dirtyKey, reviewModIds, statusOf, FILTER_TONE_CLASS } from "../reviewStore.js";
+import {
+  loadDirty, saveDirty, dirtyKey, reviewModIds, statusOf, FILTER_TONE_CLASS,
+  displayModName, loadSelectedModIds, matchesModSearch, baseGameFirst, statusCounts,
+} from "../reviewStore.js";
+import { saveBlob } from "../download.js";
 import { langLabel } from "../langs.js";
-
-// Anzeige-Name ohne den "(Base Game)"-Zusatz — der volle Name (mod.name) bleibt
-// als Backend-Wert unverändert (Export-Ordnernamen etc. hängen daran).
-function displayModName(mod) {
-  return mod.name.replace(/\s*\(Base Game\)\s*$/, "");
-}
 
 const FILTERS = [
   { key: "all", label: "All Mods" },
@@ -39,11 +37,7 @@ export default function Mods({ activeLang, onGoToSetup }) {
   // Mods page keeps the checkmarks — the Editor + global Export-Mod popover
   // read this same key.
   const [selected, setSelected] = useState(() => {
-    try {
-      const stored = sessionStorage.getItem("pt_library_selected");
-      if (stored) return new Set(JSON.parse(stored));
-    } catch { /* ignore */ }
-    return new Set();
+    return new Set(loadSelectedModIds());
   });
   // Lock: freezes the selection so cards / "All" can't change it by accident.
   // Persisted like the selection itself (sessionStorage).
@@ -110,21 +104,12 @@ export default function Mods({ activeLang, onGoToSetup }) {
 
   // Filter by search text + status
   const filtered = mods.filter((m) => {
-    if (search.trim() !== "") {
-      const q = search.toLowerCase();
-      if (!m.name.toLowerCase().includes(q) && !m.id.toLowerCase().includes(q)) return false;
-    }
+    if (!matchesModSearch(m, search)) return false;
     if (statusFilter === "all") return true;
     if (statusFilter === "selected") return selected.has(m.id);
     return statusOf(m, reviewIds) === statusFilter;
-  }).sort((a, b) => Number(b.isBaseGame) - Number(a.isBaseGame));
-  const filterCounts = {
-    all: mods.length,
-    selected: selected.size,
-    open: mods.filter((m) => statusOf(m, reviewIds) === "open").length,
-    translated: mods.filter((m) => statusOf(m, reviewIds) === "translated").length,
-    review: mods.filter((m) => statusOf(m, reviewIds) === "review").length,
-  };
+  }).sort(baseGameFirst);
+  const filterCounts = { all: mods.length, selected: selected.size, ...statusCounts(mods, reviewIds) };
 
   const allVisibleSelected =
     filtered.length > 0 && filtered.every((m) => selected.has(m.id));
@@ -176,14 +161,7 @@ export default function Mods({ activeLang, onGoToSetup }) {
     try {
       const result = await api.exportLlm(Array.from(selected), targetLangs, exportNotes.trim());
       const blob = new Blob([result.text], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = result.filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      saveBlob(blob, result.filename);
       setExportModalOpen(false);
     } catch (err) {
       toast("error", err.message);

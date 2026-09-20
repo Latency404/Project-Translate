@@ -58,8 +58,11 @@ const {
   readSourceMap,
   readTargetMapWithWork,
   targetFileName,
+  versionDirOf,
   TOOL_AUTHOR
 } = require('./scanner')
+const { enLocations } = require('./llm-io')
+const { writeJson } = require('./entries')
 const { SOURCE_LANG, isKnownLang } = require('./langs')
 const { assertWritable } = require('./guard')
 
@@ -95,11 +98,6 @@ function langSuffix(langsSorted, sep) {
 // unabhängig von der Anzahl — hier gibt es keine Pfadlängen-Grenze.
 function langDisplayList(langsSorted) {
   return langsSorted.join(', ')
-}
-
-function writeJson(filePath, obj) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true })
-  fs.writeFileSync(filePath, JSON.stringify(obj, null, 4) + '\n', 'utf8')
 }
 
 // Nur [A-Za-z0-9_] — die einzigen Zeichen, die in echten mod.info-`id`-Werten
@@ -177,27 +175,7 @@ function bundleDisplayName(mods, targetLangs) {
 // eine Herkunfts-Kennung fürs Lesen/Testen — der Export selbst schreibt IMMER
 // nach common/ im Zielordner (s. Kopfkommentar), unabhängig von `rel`.
 function layoutLocations(mod, sourceLang = SOURCE_LANG) {
-  if (mod.isBaseGame) {
-    return [{ rel: 'base', vdir: mod.rootPath }]
-  }
-  const locs = []
-  const commonDir = path.join(mod.rootPath, 'common')
-  const commonEnDir = translateDir(commonDir, sourceLang)
-  const newest = mod.versions[0]
-  const newestDir = newest ? path.join(mod.rootPath, newest) : null
-  const newestEnDir = newestDir ? translateDir(newestDir, sourceLang) : null
-  if (fs.existsSync(commonEnDir)) {
-    locs.push({ rel: 'common', vdir: commonDir })
-  } else if (!(newestEnDir && fs.existsSync(newestEnDir))) {
-    const rootEnDir = translateDir(mod.rootPath, sourceLang)
-    if (fs.existsSync(rootEnDir)) {
-      locs.push({ rel: 'root', vdir: mod.rootPath })
-    }
-  }
-  if (newestDir) {
-    locs.push({ rel: newest, vdir: newestDir })
-  }
-  return locs
+  return enLocations(mod, sourceLang).map(({ version }) => ({ rel: version, vdir: versionDirOf(mod, version) }))
 }
 
 // Bildquelle fürs Icon: das deklarierte Poster, sonst ein sibling icon.png.

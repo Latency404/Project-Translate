@@ -288,5 +288,6 @@ module.exports = {
   META_FILE,
   timestampDir,
   classifyFsError,
-  safeWriteError
+  safeWriteError,
+  writeJson
 }

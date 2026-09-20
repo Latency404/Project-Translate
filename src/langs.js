@@ -4,8 +4,6 @@
 // nimmt sie als Zielsprache. Quelle und Ziel sind dann dieselbe Datei.
 //
 // Achtung: ES_CL/ES_MX sind 5 Zeichen lang.
-export const SOURCE_LANG = "EN";
-
 export const LANG_NAMES = {
   AR: "Arabic",
   CA: "Catalan",

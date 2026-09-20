@@ -70,7 +70,6 @@ export function saveEntries(modId, entries, lang) {
     `/api/mods/${encodeURIComponent(modId)}/entries`,
     {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(lang ? { entries, lang } : { entries }),
     },
   );
@@ -81,13 +80,6 @@ export function exportLlm(modIds, targetLangs, notes) {
   return request("/api/export/llm", {
     method: "POST",
     body: JSON.stringify({ modIds, ...(targetLangs ? { targetLangs } : {}), ...(notes ? { notes } : {}) }),
-  });
-}
-
-export function exportMod(modIds, targetDir, targetLangs) {
-  return request("/api/export/mod", {
-    method: "POST",
-    body: JSON.stringify({ modIds, targetDir, targetLangs }),
   });
 }
 
