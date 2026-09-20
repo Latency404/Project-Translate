@@ -1,0 +1,16 @@
+Project Translate {VERSION} - SHA-256 checksums
+
+HOW TO VERIFY
+  Open a command prompt in this folder and run:
+
+    certutil -hashfile "runtime\node.exe" SHA256
+
+  Compare the result with the matching line below. Upper/lower case does
+  not matter.
+
+ABOUT runtime\node.exe
+  It is the official Node.js runtime {NODE_VERSION}, taken unmodified from a
+  nodejs.org installation. The strongest check is not this hash but the
+  digital signature: right-click the file, choose Properties, then the
+  "Digital Signatures" tab. It must name the OpenJS Foundation.
+

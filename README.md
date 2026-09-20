@@ -11,6 +11,12 @@ Grab the release ZIP, extract it anywhere, and double-click
 **Start Project Translate.cmd**. Your browser opens at `http://127.0.0.1:3100`.
 Closing the console window stops the tool.
 
+`CHECKSUMS.txt` in the folder lists SHA-256 hashes for the files that matter,
+with instructions for checking them. The bundled `runtime
+ode.exe` is the
+official Node.js runtime, digitally signed by the OpenJS Foundation — verify it
+via Properties, "Digital Signatures".
+
 Nothing is installed: the Node runtime ships inside the folder, and everything the
 tool writes (`config.json`, `export\`) stays next to the start file. To update, copy
 in the new version and keep your `config.json` and `export\` folder.

@@ -16,9 +16,12 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { execSync } = require('node:child_process')
+const crypto = require('node:crypto')
+const os = require('node:os')
 const { buildZip, collectFiles } = require('../server/zip')
 
 const ROOT = path.join(__dirname, '..')
+const GITHUB = 'https://github.com/Latency404/Project-Translate'
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
 const NAME = `ProjectTranslate-${pkg.version}`
 const RELEASE = path.join(ROOT, 'release')
@@ -89,46 +92,43 @@ fs.copyFileSync(process.execPath, path.join(OUT, 'runtime', path.basename(proces
 // eine kaputte .cmd erzeugt.
 fs.copyFileSync(path.join(__dirname, 'launcher.cmd'), path.join(OUT, 'Start Project Translate.cmd'))
 
-const readme = [
-  `Project Translate ${pkg.version}`,
-  '',
-  'Translate Project Zomboid B42 mods and the base game, then build an',
-  'installable translation mod.',
-  '',
-  'HOW TO RUN',
-  '  Double-click "Start Project Translate.cmd".',
-  '  Your browser opens at http://127.0.0.1:3100.',
-  '  Close the black console window to stop the tool.',
-  '',
-  'NOTHING TO INSTALL',
-  '  The Node runtime is included in runtime\. Nothing is written outside',
-  '  this folder.',
-  '',
-  'YOUR FILES',
-  '  config.json   your settings (created on first start)',
-  '  export\work   your translations',
-  '  export\mods   the translation mods you build',
-  '  export\backups  restore points',
-  '  Keep this folder when you update - copy in the new version and keep',
-  '  config.json and export\.',
-  '',
-  'GAME FOLDERS ARE READ-ONLY',
-  '  The tool only reads your Project Zomboid and Workshop folders. It never',
-  '  writes there. To use a translation, export it as a mod and install that.',
-  '',
-  'REQUIREMENTS',
-  '  Windows, Project Zomboid B42.',
-  '',
-  `Author: Latency404`
-].join('\r\n') + '\r\n'
-fs.writeFileSync(path.join(OUT, 'README.txt'), readme, 'utf8')
+// README aus der Vorlage; der Text steht in scripts/package-readme.txt, damit
+// die Windows-Pfade darin nicht im JS maskiert werden muessen. Genau das hat
+// hier schon einmal eine kaputte Startdatei und eine kaputte README erzeugt.
+const fill = (tpl) =>
+  tpl
+    .replaceAll('{VERSION}', pkg.version)
+    .replaceAll('{NODE_VERSION}', process.version)
+    .replaceAll('{GITHUB}', GITHUB)
+
+fs.writeFileSync(
+  path.join(OUT, 'README.txt'),
+  fill(fs.readFileSync(path.join(__dirname, 'package-readme.txt'), 'utf8')),
+  'utf8'
+)
+
+// Pruefsummen der Dateien, auf die es beim Vertrauen ankommt: die Laufzeit und
+// die Startdatei. Wer misstrauisch ist, kann sie mit certutil nachrechnen.
+const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+const checked = ['runtime/node.exe', 'Start Project Translate.cmd', 'app/server/index.js']
+const sums = checked.map((rel) => `${sha256(path.join(OUT, ...rel.split('/')))}  ${rel.split('/').join(path.sep)}`)
+fs.writeFileSync(
+  path.join(OUT, 'CHECKSUMS.txt'),
+  fill(fs.readFileSync(path.join(__dirname, 'checksums-header.txt'), 'utf8')) + sums.join(os.EOL) + os.EOL,
+  'utf8'
+)
 
 // 6. ZIP daneben legen (projekteigener Writer, s. server/zip.js).
 log('6/6  ZIP schreiben')
 const zipPath = path.join(RELEASE, `${NAME}.zip`)
 fs.writeFileSync(zipPath, buildZip(collectFiles(OUT, RELEASE)))
 
+// Pruefsumme der ZIP fuer die Release-Seite auf GitHub.
+const zipSum = sha256(zipPath)
+fs.writeFileSync(`${zipPath}.sha256`, `${zipSum}  ${NAME}.zip${os.EOL}`, 'utf8')
+
 const mb = (p) => (fs.statSync(p).size / 1024 / 1024).toFixed(1)
 log('')
 log(`Fertig: ${path.relative(ROOT, OUT)}`)
 log(`        ${path.relative(ROOT, zipPath)} (${mb(zipPath)} MB)`)
+log(`        SHA-256: ${zipSum}`)
