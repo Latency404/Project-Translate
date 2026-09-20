@@ -56,7 +56,7 @@ function ModCard({ mod, name, status, active = false, locked = false, id, onTogg
         <div className="min-w-0">
           <p className="truncate text-lg font-semibold text-text">{name}</p>
           <p className="truncate font-mono text-ui font-medium text-muted">
-            {mod.isBaseGame ? "Base Game" : mod.id}
+            {mod.isBaseGame ? "Base Game" : mod.id.split("/")[0]}
           </p>
         </div>
       </div>
