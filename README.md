@@ -51,9 +51,10 @@ PT_FAKE=1 npm run dev
    **Save**. The source language is fixed to English (B42's own source language) and
    isn't configurable. Click **Search Mods** to scan the installation; this can take
    a while the first time with many mods installed. Changing the game/Workshop
-   folder or the target languages invalidates the current scan — there's no
-   automatic rescan, so Mods/Editor point back here until you click **Search Mods**
-   again. This page also has **Restore Backup** (undo a save, reset or restore point)
+   folder or the target languages invalidates the current scan; if there was one
+   before, a new scan starts automatically in the background. The last scan is
+   kept across restarts, so you only need **Search Mods** again after a Workshop
+   update or a new mod. This page also has **Restore Backup** (undo a save, reset or restore point)
    and **Reset Translations** (clear a mod's saved translations back to untranslated).
 2. **Mods** — pick the mods you want to translate (the base game is listed too);
    filter by status (Open / Translated / Needs Review). With more than one target

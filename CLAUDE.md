@@ -41,6 +41,8 @@ server/              Express-API (CommonJS)
   guard.js           Schreibschutz: jedes Schreiben in Spiel-/Workshop-Ordner → 403
   llm-io.js          LLM-Export-Bundle, Import-Vorschau (inkl. matches)
   lua-usage.js       getText("KEY", ...)-Fundstellen im Mod-Code (Kontext für den LLM-Export)
+  scan-store.js      Letzten Scan-Stand nach export/scan-cache.json legen und beim
+                     Start wieder laden (nur bei gleichen Pfaden/Zielsprachen)
   mod-export.js      Installierbaren Übersetzungs-Mod erzeugen
   zip.js             Minimaler ZIP-Writer (kein externes Paket) für den Export-Mod-Download
   fake-api.js        Nur Wurzel-Tausch auf server/fixtures/ (PT_FAKE=1)
@@ -87,9 +89,16 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   **fest `EN`** (`server/langs.js` → `SOURCE_LANG`) und nicht konfigurierbar — eine
   entryId ändert sich dadurch nie durch Konfiguration. `POST /api/config` verwirft den
   Scan-Cache, wenn sich `targetLangs`, `gameRoot` oder `workshopDir` ändern
-  (`index.js`). Es gibt **keinen** automatischen Rescan danach — Mods und Editor
-  zeigen den verworfenen Stand als „noch nicht gescannt" und verweisen auf Settings;
-  erst ein erneutes **Search Mods** dort löst den nächsten Scan aus.
+  (`index.js`). War schon einmal gescannt worden, startet danach **automatisch**
+  ein neuer Scan im Hintergrund (Fortschritt über `/api/status`); gab es noch keinen
+  Scan, zeigen Mods und Editor „noch nicht gescannt" und verweisen auf Settings.
+  Übersetzungs-Mods, die das Tool selbst exportiert hat (`author=Project Translate`
+  in der `mod.info`), überspringt der Scanner.
+  **Scan-Stand überlebt den Neustart**: nach jedem Scan/Rescan schreibt
+  `scan-store.js` den Cache nach `export/scan-cache.json`; der Server lädt ihn beim
+  Start, sofern `gameRoot`, `workshopDir` und `targetLangs` noch zu dem Scan
+  passen (sonst wird er ignoriert). Steam-seitige Änderungen (Workshop-Update)
+  sieht man erst nach **Search Mods**.
 - **Mehrere Zielsprachen**: `config.targetLangs` (Liste, nie leer) und
   `config.activeLang` (eine davon, die im Editor bearbeitete). Die möglichen Codes
   stehen in `server/langs.js` und gespiegelt in `src/langs.js` — die 28 Sprachen,
@@ -245,6 +254,8 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
 
 ## Regeln
 
+- Code suchen/verstehen: zuerst `codegraph_explore` (bzw. `codegraph explore "<Frage>"`),
+  erst danach Grep/Dateien lesen. Dieses Projekt ist indexiert.
 - Die Frontend holt Daten ausschließlich über `src/api.js`, nie direkte `fetch`-Aufrufe.
 - Styles nur über die Tokens aus `src/styles/theme.css` und `src/components/` — keine
   eigenen Farben oder Abstände in Views.

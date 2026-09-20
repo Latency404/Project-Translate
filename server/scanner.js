@@ -455,6 +455,10 @@ function summarize(mod, entries, targetLangs) {
 // ein Wechsel macht bestehende entryIds ungültig. Async, damit der Event Loop
 // während des Scans Fortschritt (POST /api/scan → GET /api/status) weiter
 // bedienen kann.
+// author= in der mod.info der vom Tool exportierten Übersetzungs-Mods
+// (mod-export.js schreibt ihn, der Scanner überspringt solche Mods).
+const TOOL_AUTHOR = 'Project Translate'
+
 async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG, { onProgress, workRoot = null } = {}) {
   const langs = Array.isArray(targetLangs) ? targetLangs : [targetLangs]
   const mods = []
@@ -535,6 +539,9 @@ async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG
         }
         return null
       }
+      // Übersetzungs-Mods, die dieses Tool selbst exportiert hat, sind keine Quelle
+      // (z. B. mit EN als Zielsprache in den Workshop-Ordner kopiert).
+      if (firstInfo('author') === TOOL_AUTHOR) continue
       const mod = {
         // Die id bleibt der Ordnername (stabil, steckt in jeder entryId); der
         // Anzeigename ist der `name=` aus der mod.info — wie im Spiel.
@@ -599,6 +606,7 @@ async function scan(gameRoot, workshopDir, targetLangs, sourceLang = SOURCE_LANG
 
 module.exports = {
   scan,
+  TOOL_AUTHOR,
   readFlatMap,
   readTxtMap,
   targetFileName,

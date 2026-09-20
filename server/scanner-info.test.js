@@ -87,3 +87,18 @@ test('scan: ein Poster-Pfad außerhalb des Mod-Ordners wird ignoriert', async ()
   const { mods } = await scan(path.join(root, 'game'), workshop, ['DE'])
   assert.equal(mods.find((m) => m.id === '4/Escape').poster, null)
 })
+
+test('scan: vom Tool exportierte Übersetzungs-Mods (author=Project Translate) werden übersprungen', async () => {
+  const ws = path.join(root, 'workshop-own')
+  const mk = (pid, folder, info) => {
+    const modDir = path.join(ws, pid, 'mods', folder)
+    const tdir = path.join(modDir, '42', 'media', 'lua', 'shared', 'Translate', 'EN')
+    fs.mkdirSync(tdir, { recursive: true })
+    fs.writeFileSync(path.join(tdir, 'UI.json'), JSON.stringify({ Hello: 'Hello' }))
+    fs.writeFileSync(path.join(modDir, '42', 'mod.info'), info)
+  }
+  mk('1', 'Normal', 'name=Normal\nauthor=Someone\n')
+  mk('2', 'OwnExport', 'name=Own Translation\nauthor=Project Translate\n')
+  const { mods } = await scan(path.join(root, 'game'), ws, ['DE'])
+  assert.deepEqual(mods.filter((m) => !m.isBaseGame).map((m) => m.id), ['1/Normal'])
+})

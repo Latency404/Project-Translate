@@ -57,7 +57,8 @@ const {
   sourceFileNames,
   readSourceMap,
   readTargetMapWithWork,
-  targetFileName
+  targetFileName,
+  TOOL_AUTHOR
 } = require('./scanner')
 const { SOURCE_LANG, isKnownLang } = require('./langs')
 const { assertWritable } = require('./guard')
@@ -286,7 +287,7 @@ function buildExport(mods, targetLangs, targetDir, sourceLang = SOURCE_LANG, wor
 
   const id = mods.length === 1 ? singleModInfoId(mods[0], langs) : bundleModInfoId(mods, langs)
   const name = bundleDisplayName(mods, langs)
-  const author = 'Project Translate'
+  const author = TOOL_AUTHOR
   const langList = langDisplayList(langs)
   const description = mods.length === 1
     ? (mods[0].isBaseGame
