@@ -168,6 +168,32 @@ function rescan() {
     })
 }
 
+// Antwort erst nach dem Rescan senden. War beim Start ein Rescan aktiv, ist
+// dessen Snapshot veraltet — dann noch einmal einspielen.
+function rescanThen(wasRescanning, respond) {
+  return rescan()
+    .then(() => (wasRescanning ? rescan() : undefined))
+    .catch(() => {})
+    .finally(respond)
+}
+
+// Gemeinsame Auswahl der Export-Routen: { mods, targetLangs } oder null
+// (dann ist die 400-Antwort schon gesendet).
+function exportSelection(body, res) {
+  const modIds = Array.isArray(body.modIds) ? body.modIds : []
+  const resolvedLangs = langsArrayOf(body, config.load().targetLangs)
+  if (resolvedLangs.error) {
+    fail(res, 400, resolvedLangs.error)
+    return null
+  }
+  const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
+  if (!mods.length) {
+    fail(res, 400, 'No valid mod selection.')
+    return null
+  }
+  return { mods, targetLangs: resolvedLangs.langs }
+}
+
 // True, wenn die Disk gerade neu eingelesen wird (rescan) — PUTs, die
 // währenddessen laufen, dürfen den Cache danach nicht alt machen.
 let rescanning = false
@@ -459,10 +485,7 @@ app.post('/api/reset-translations', (req, res) => {
   } catch (err) {
     return fail(res, err.status || 500, classifyFsError(err, WORK_ROOT).message)
   }
-  rescan()
-    .then(() => (wasRescanning ? rescan() : undefined))
-    .catch(() => {})
-    .finally(() => res.json({ resetCount, modCount }))
+  rescanThen(wasRescanning, () => res.json({ resetCount, modCount }))
 })
 
 // --- Speicherpunkte ("Restore Backup" in Settings) ---
@@ -483,10 +506,7 @@ app.post('/api/backups/:id/restore', (req, res) => {
     return fail(res, err.status || 500, classifyFsError(err, BACKUP_ROOT).message)
   }
   if (!cache) return res.json(result)
-  rescan()
-    .then(() => (wasRescanning ? rescan() : undefined))
-    .catch(() => {})
-    .finally(() => res.json(result))
+  rescanThen(wasRescanning, () => res.json(result))
 })
 
 app.put('/api/mods/:modId/entries', (req, res) => {
@@ -508,10 +528,7 @@ app.put('/api/mods/:modId/entries', (req, res) => {
   // im Hintergrund und der Editor las für ~1 s alte Werte). War zu Beginn
   // des PUTs ein rescan aktiv, ist sein Snapshot (start < PUT-Schreib)
   // veraltet — danach erneut einspielen.
-  rescan()
-    .then(() => (wasRescanning ? rescan() : undefined))
-    .catch(() => {})
-    .finally(() => res.json(result))
+  rescanThen(wasRescanning, () => res.json(result))
 })
 
 // --- Config ---
@@ -553,13 +570,9 @@ app.post('/api/config', (req, res) => {
 // die Disk geschrieben.
 app.post('/api/export/llm', (req, res) => {
   const body = req.body || {}
-  const modIds = Array.isArray(body.modIds) ? body.modIds : []
-  const cfg = config.load()
-  const resolvedLangs = langsArrayOf(body, cfg.targetLangs)
-  if (resolvedLangs.error) return fail(res, 400, resolvedLangs.error)
-  const targetLangs = resolvedLangs.langs
-  const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
-  if (!mods.length) return fail(res, 400, 'No valid mod selection.')
+  const selection = exportSelection(body, res)
+  if (!selection) return
+  const { mods, targetLangs } = selection
   try {
     // Optionaler Freitext des Nutzers als Kontext für die KI (gekürzt).
     const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 2000) : ''
@@ -618,14 +631,10 @@ app.post('/api/import/llm/preview', (req, res) => {
 // das eine Bundle).
 app.post('/api/export/mod', (req, res) => {
   const body = req.body || {}
-  const modIds = Array.isArray(body.modIds) ? body.modIds : []
   const targetDir = body.targetDir && typeof body.targetDir === 'string' ? body.targetDir : MOD_EXPORT_DEFAULT
-  const cfg = config.load()
-  const resolvedLangs = langsArrayOf(body, cfg.targetLangs)
-  if (resolvedLangs.error) return fail(res, 400, resolvedLangs.error)
-  const targetLangs = resolvedLangs.langs
-  const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
-  if (!mods.length) return fail(res, 400, 'No valid mod selection.')
+  const selection = exportSelection(body, res)
+  if (!selection) return
+  const { mods, targetLangs } = selection
   try {
     const result = exportModsBundle(mods, targetLangs, targetDir, config.SOURCE_LANG, WORK_ROOT)
     res.json({ targetLangs: result.targetLangs, targetDir: config.toPosix(targetDir), results: [result] })
@@ -643,13 +652,9 @@ app.post('/api/export/mod', (req, res) => {
 // wieder gelöscht.
 app.post('/api/export/mod/zip', (req, res) => {
   const body = req.body || {}
-  const modIds = Array.isArray(body.modIds) ? body.modIds : []
-  const cfg = config.load()
-  const resolvedLangs = langsArrayOf(body, cfg.targetLangs)
-  if (resolvedLangs.error) return fail(res, 400, resolvedLangs.error)
-  const targetLangs = resolvedLangs.langs
-  const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
-  if (!mods.length) return fail(res, 400, 'No valid mod selection.')
+  const selection = exportSelection(body, res)
+  if (!selection) return
+  const { mods, targetLangs } = selection
 
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-export-'))
   try {

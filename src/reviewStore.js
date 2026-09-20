@@ -114,16 +114,6 @@ export function reviewModIds(dirty) {
   return ids;
 }
 
-// Die Sprachen, in denen eine Mod offene Import-Einträge hat — für den
-// Hinweis, wo noch etwas zu prüfen ist.
-export function reviewLangsOf(dirty, modId) {
-  const langs = new Set();
-  for (const val of dirty.values()) {
-    if (val.origin === "import" && val.modId === modId && val.lang) langs.add(val.lang);
-  }
-  return [...langs].sort();
-}
-
 // Status einer Mod für Filter-Pillen/Tags: "review" (Import-Einträge noch
 // offen) schlägt den aus translatedCount/entryCount abgeleiteten Stand.
 // `translatedCount` ist der von der API für die AKTIVE Sprache gelieferte

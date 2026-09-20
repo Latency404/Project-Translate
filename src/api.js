@@ -5,21 +5,23 @@
 // Routen, die genau eine Sprache betreffen (Mods-Liste, Einträge, Speichern),
 // nehmen sie optional als `lang` — ohne Angabe gilt serverseitig `activeLang`.
 
+async function throwHttpError(res) {
+  let msg;
+  try {
+    const body = await res.json();
+    msg = body?.error || `HTTP ${res.status}`;
+  } catch {
+    msg = `HTTP ${res.status}`;
+  }
+  throw new Error(msg);
+}
+
 async function request(path, options = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
-  if (!res.ok) {
-    let msg;
-    try {
-      const body = await res.json();
-      msg = body?.error || `HTTP ${res.status}`;
-    } catch {
-      msg = `HTTP ${res.status}`;
-    }
-    throw new Error(msg);
-  }
+  if (!res.ok) await throwHttpError(res);
   return res.json();
 }
 
@@ -114,16 +116,7 @@ export async function exportModZip(modIds, targetLangs) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ modIds, targetLangs }),
   });
-  if (!res.ok) {
-    let msg;
-    try {
-      const body = await res.json();
-      msg = body?.error || `HTTP ${res.status}`;
-    } catch {
-      msg = `HTTP ${res.status}`;
-    }
-    throw new Error(msg);
-  }
+  if (!res.ok) await throwHttpError(res);
   const disposition = res.headers.get("Content-Disposition") || "";
   const match = /filename="([^"]+)"/.exec(disposition);
   const filename = match ? match[1] : "mod.zip";
