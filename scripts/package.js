@@ -84,24 +84,10 @@ log('5/6  Node-Laufzeit mitliefern')
 fs.mkdirSync(path.join(OUT, 'runtime'), { recursive: true })
 fs.copyFileSync(process.execPath, path.join(OUT, 'runtime', path.basename(process.execPath)))
 
-// Startdatei. CRLF, weil cmd.exe das erwartet. Die App legt config.json und
-// export/ neben die Startdatei statt nach app/ - dort findet der Nutzer sie.
-const cmd = [
-  '@echo off',
-  'setlocal',
-  'cd /d "%~dp0"',
-  'set "PT_CONFIG_PATH=%~dp0config.json"',
-  'set "PT_EXPORT_ROOT=%~dp0export"',
-  'echo Project Translate is starting...',
-  'echo Close this window to stop it.',
-  'echo.',
-  'start "" /b cmd /c "timeout /t 2 /nobreak >nul & start "" http://127.0.0.1:3100"',
-  '"%~dp0runtime\node.exe" "%~dp0app\server\index.js"',
-  'echo.',
-  'echo Project Translate has stopped.',
-  'pause'
-].join('\r\n') + '\r\n'
-fs.writeFileSync(path.join(OUT, 'Start Project Translate.cmd'), cmd, 'utf8')
+// Startdatei aus der Vorlage scripts/launcher.cmd. Der Text steht bewusst in
+// einer eigenen Datei: Windows-Pfade im JS zu maskieren hat hier schon einmal
+// eine kaputte .cmd erzeugt.
+fs.copyFileSync(path.join(__dirname, 'launcher.cmd'), path.join(OUT, 'Start Project Translate.cmd'))
 
 const readme = [
   `Project Translate ${pkg.version}`,

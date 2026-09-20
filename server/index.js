@@ -18,6 +18,7 @@ const express = require('express')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { spawn } = require('node:child_process')
 
 const config = require('./config')
 const langs = require('./langs')
@@ -758,7 +759,22 @@ app.listen(PORT, '127.0.0.1', (err) => {
     console.error(`API konnte Port ${PORT} nicht öffnen: ${err.message}`)
     process.exit(2)
   }
-  console.log(`API auf http://127.0.0.1:${PORT} (Fake: ${FAKE})`)
+  const url = `http://127.0.0.1:${PORT}`
+  console.log(`API auf ${url} (Fake: ${FAKE})`)
+  // Nur das portable Paket setzt PT_OPEN_BROWSER; im Entwicklungsbetrieb
+  // passiert hier nichts. Der Browser geht erst auf, wenn der Port wirklich
+  // lauscht - vorher landet der Nutzer auf einer Fehlerseite.
+  //
+  // Bewusst explorer.exe statt eines versteckten `cmd /c start`: ein
+  // unsichtbares Shell-Fenster, das eine weitere Anwendung startet, ist genau
+  // das Muster, auf das Virenscanner-Heuristiken ansprechen.
+  if (process.env.PT_OPEN_BROWSER === '1' && process.platform === 'win32') {
+    try {
+      spawn('explorer.exe', [url], { detached: true, stdio: 'ignore' }).unref()
+    } catch {
+      /* Browser oeffnen ist Komfort, kein Grund den Start abzubrechen */
+    }
+  }
 })
 
 module.exports = app
