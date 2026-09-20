@@ -10,7 +10,8 @@
 //     gewählten Versionsordner (später non-empty gewinnt) — nie aus dem
 //     Mod-Root, nie aus TXT (zombie/core/Translator.tryFillMapFromFile).
 //
-// Ziel: <targetDir>/<ModName>-<DE>[-<FR>...]/  (ab 4 Sprachen: <ModName>-multi)
+// Ziel: <targetDir>/<Name>-<DE>/  (ab 2 Sprachen: <Name>-Multi); <Name> ist bei
+// einem Mod dessen interner Ordnername (UsefulBarrelsMP), bei mehreren "TranslationPack"
 //   42/mod.info                 (die EINZIGE mod.info dieses Mods — "42" ist
 //                                ein fester, gültiger Versionsordner-Name
 //                                [PZ Build 42], kein aus den Quellen
@@ -107,6 +108,12 @@ function slugForId(s) {
   return cleaned || 'mod'
 }
 
+// Sprachanteil im Ordnernamen: eine Sprache → ihr Code, mehrere → "Multi".
+// (Die mod.info-id nutzt weiter langSuffix.)
+function folderLangSuffix(langsSorted) {
+  return langsSorted.length === 1 ? langsSorted[0] : 'Multi'
+}
+
 // Deterministische id für einen einzelnen Mod + Zielsprachen-Menge: derselbe
 // Mod (mod.id enthält bereits die WorkshopId oder ist 'BASE') + dieselbe
 // Sprachmenge ergeben immer dieselbe id, damit ein erneuter Export den vorigen
@@ -136,12 +143,16 @@ function sanitizeFolderName(name, maxLen = 100) {
   return s || 'Mod'
 }
 
-// Bundle-Ordnername: ein Mod → sein (sanitizter) Name; mehrere → ein fester
-// Name + Anzahl, damit er bei vielen Mods nicht die Pfadlänge sprengt und keine
-// verbotenen Zeichen aus Mod-Namen erbt.
+// Bundle-Ordnername: ein Mod → der interne Ordnername des Mods (letztes Segment
+// der mod.id, z. B. "UsefulBarrelsMP" aus "3436537035/UsefulBarrelsMP"; das
+// Basisspiel hat keinen und nimmt seinen Namen); mehrere → "TranslationPack".
+// Kurz und ohne Zeichen aus Mod-Namen, damit er bei vielen Mods nicht die
+// Pfadlänge sprengt. Die Sprachen hängt buildExport mit "-" an.
 function bundleFolderBaseName(mods) {
-  if (mods.length === 1) return sanitizeFolderName(mods[0].name)
-  return `Translation Bundle (${mods.length} mods)`
+  if (mods.length !== 1) return 'TranslationPack'
+  const mod = mods[0]
+  if (mod.isBaseGame) return sanitizeFolderName(mod.name)
+  return sanitizeFolderName(String(mod.id).split('/').pop())
 }
 
 // Anzeigename fürs `name=`-Feld der mod.info: dieselbe Regel wie beim
@@ -269,7 +280,7 @@ function readLocationTranslations(vdir, targetLang, sourceLang = SOURCE_LANG, wo
 // Verarbeitungsreihenfolge) — ob/wie sortiert wird, entscheidet der Aufrufer.
 function buildExport(mods, targetLangs, targetDir, sourceLang = SOURCE_LANG, workRoot = null) {
   const langs = normalizeLangs(targetLangs)
-  const outRoot = path.join(targetDir, `${bundleFolderBaseName(mods)}-${langSuffix(langs, '-')}`)
+  const outRoot = path.join(targetDir, `${bundleFolderBaseName(mods)}-${folderLangSuffix(langs)}`)
   assertWritable(outRoot)
   fs.mkdirSync(outRoot, { recursive: true })
 

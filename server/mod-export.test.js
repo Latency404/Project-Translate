@@ -231,8 +231,8 @@ test('exportModsBundle: zwei Mods → EINE Mod, Key-Vereinigung pro Datei, loadM
   const belt = mods.find((m) => m.id === '3000000003/Equipment Belt')
   const targetDir = path.join(workdir, 'exportBundle')
   const { targetPath, written } = exportModsBundle([coffee, belt], 'DE', targetDir)
-  // C4: ab mehreren Mods ein fester Ordnername + Anzahl (nicht die verketteten Namen).
-  const outRoot = path.join(targetDir, 'Translation Bundle (2 mods)-DE')
+  // Ab mehreren Mods der feste Ordnername "TranslationPack" (nicht die verketteten Namen).
+  const outRoot = path.join(targetDir, 'TranslationPack-DE')
   assert.equal(targetPath, outRoot.replace(/\\/g, '/'))
   assert.ok(existsSync(path.join(outRoot, '42', 'mod.info')))
   const info = readFileSync(path.join(outRoot, '42', 'mod.info'), 'utf8')
@@ -286,7 +286,7 @@ test('exportModsBundle: ein Mod → exakt wie exportMod', () => {
   const bundle = exportModsBundle([coffee], 'DE', solo)
   const single = path.join(workdir, 'exportBundleSingle')
   const ref = exportMod(coffee, 'DE', single)
-  // Gleicher Ordnername (ein Mod → sein Name, kein "Translation Bundle").
+  // Gleicher Ordnername (ein Mod → sein interner Ordnername, kein "TranslationPack").
   assert.equal(path.basename(bundle.targetPath), path.basename(ref.targetPath))
   assert.equal(path.basename(bundle.targetPath), 'Coffee Corner-DE')
   assert.deepEqual([...bundle.written].sort(), [...ref.written].sort())
@@ -324,7 +324,7 @@ test('exportModsBundle: Key-Kollision → späterer Mod gewinnt', () => {
   const modA = mk('a', 'Mod A')
   const modB = mk('b', 'Mod B')
   const { written } = exportModsBundle([modA, modB], 'DE', targetDir)
-  const outRoot = path.join(targetDir, 'Translation Bundle (2 mods)-DE')
+  const outRoot = path.join(targetDir, 'TranslationPack-DE')
   // EINE UI.json; der spätere Mod (B) gewinnt die Kollision.
   const ui = JSON.parse(readFileSync(
     path.join(outRoot, 'common', 'media', 'lua', 'shared', 'Translate', 'DE', 'UI.json'), 'utf8'
@@ -367,7 +367,7 @@ test('C4: Bundle aus vielen Mods mit langen/unzulässigen Namen legt einen gült
   const { targetPath } = exportModsBundle(many, 'DE', targetDir)
   const folderName = path.basename(targetPath)
   assert.ok(folderName.length < 80, `Ordnername zu lang: ${folderName.length} Zeichen`)
-  assert.equal(folderName, `Translation Bundle (${many.length} mods)-DE`)
+  assert.equal(folderName, 'TranslationPack-DE')
   assert.ok(existsSync(targetPath))
   // Windows: keine der verbotenen Zeichen im Ordnernamen.
   assert.ok(!/[<>:"/\\|?*]/.test(folderName))
@@ -413,7 +413,7 @@ test('exportMod: zwei Sprachen in einem Mod — eigene Sprachordner unter common
   // Sprachen absichtlich unsortiert übergeben — die Ausgabe sortiert selbst.
   const { targetPath, written, targetLangs } = exportMod(mod, ['FR', 'DE'], targetDir)
   assert.deepEqual(targetLangs, ['DE', 'FR'])
-  const outRoot = path.join(targetDir, 'MultiLang-DE-FR')
+  const outRoot = path.join(targetDir, 'MultiLang-Multi')
   assert.equal(targetPath, outRoot.replace(/\\/g, '/'))
   // Beide Sprachordner existieren nebeneinander unter demselben common/-Baum.
   const deJson = JSON.parse(readFileSync(
@@ -460,7 +460,7 @@ test('exportModsBundle: zwei Mods, zwei Sprachen — Merge nur innerhalb derselb
   const targetDir = path.join(workdir, 'exportBundleMultiLang')
   const { targetPath, written, targetLangs } = exportModsBundle([modA, modB], ['FR', 'DE'], targetDir)
   assert.deepEqual(targetLangs, ['DE', 'FR'])
-  const outRoot = path.join(targetDir, 'Translation Bundle (2 mods)-DE-FR')
+  const outRoot = path.join(targetDir, 'TranslationPack-Multi')
   assert.equal(targetPath, outRoot.replace(/\\/g, '/'))
   const de = JSON.parse(readFileSync(
     path.join(outRoot, 'common', 'media', 'lua', 'shared', 'Translate', 'DE', 'UI.json'), 'utf8'
@@ -481,12 +481,12 @@ test('exportModsBundle: zwei Mods, zwei Sprachen — Merge nur innerhalb derselb
   ])
 })
 
-test('4+ Sprachen: Ordnername/id werden zu "multi", Anzeigename nennt trotzdem alle Sprachen', () => {
+test('4+ Sprachen: Ordnername "Multi", id "multi", Anzeigename nennt trotzdem alle Sprachen', () => {
   const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const targetDir = path.join(workdir, 'exportManyLangs')
   const { targetPath, written, targetLangs } = exportMod(coffee, ['FR', 'DE', 'IT', 'ES'], targetDir)
   assert.deepEqual(targetLangs, ['DE', 'ES', 'FR', 'IT'])
-  const outRoot = path.join(targetDir, 'Coffee Corner-multi')
+  const outRoot = path.join(targetDir, 'Coffee Corner-Multi')
   assert.equal(targetPath, outRoot.replace(/\\/g, '/'))
   const info = readFileSync(path.join(outRoot, '42', 'mod.info'), 'utf8')
   assert.match(info, /^id=pt_2000000002_Coffee_Corner_multi$/m)

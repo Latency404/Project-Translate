@@ -84,8 +84,10 @@ PT_FAKE=1 npm run dev
 ## Installing the exported mod
 
 "Export Mod" downloads a ZIP. It holds one folder, named after the mod and the
-languages (for example `Useful Barrels-DE`, or `Translation Bundle (3 mods)-DE` for
-several mods). The app never installs anything itself, so you do that step by hand:
+languages: the mod's own folder name plus the language (for example
+`UsefulBarrelsMP-DE`), or `TranslationPack-DE` when several mods are exported
+together. With more than one language the language part is `Multi` instead
+(`UsefulBarrelsMP-Multi`, `TranslationPack-Multi`). The app never installs anything itself, so you do that step by hand:
 
 1. **Extract the ZIP into your game's mods folder**, typically
    `%UserProfile%\Zomboid\mods`. Copy the extracted folder (not the ZIP) there. Check

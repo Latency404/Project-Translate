@@ -192,7 +192,7 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   aufrufen.** Hintergrund: ein früherer Bug hat die DE-Sprachdateien des
   Basisspiels geleert.
 - **Mod-Export bündelt alle gewählten Mods UND Sprachen in EINE Mod**: ein
-  Ordner `<Name>-<LANGS>/` mit `42/mod.info` (+ `42/icon.png`, falls ein Poster
+  Ordner `<Name>-<LANGS>/` (`<Name>` = bei EINEM Mod dessen interner Ordnername, das letzte Segment der `mod.id`, z. B. `UsefulBarrelsMP`; bei mehreren `TranslationPack`) mit `42/mod.info` (+ `42/icon.png`, falls ein Poster
   vorhanden ist) und **allen** Übersetzungen aller gewählten Mods gemergt nach
   `common/media/lua/shared/Translate/<LANG>/<Kategorie>.json` — Merge-Reihenfolge:
   Mods in Auswahlreihenfolge, je Mod `common` → `root` → neuester Versionsordner,
@@ -200,8 +200,8 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   `author`/`description`, `poster=`/`icon=` falls vorhanden, sowie
   `loadModAfter=` mit den `mod.info`-IDs der Quell-Mods, damit die Übersetzung
   eine eigene Übersetzung des Quell-Mods überlagert. Ordnername/`mod.info`-ID:
-  bis zu 3 Sprachen `<base>-DE-FR` / `pt_<slug>_DE_FR`, ab 4 Sprachen `-multi`
-  (unverändert). Unbekannte Sprachcodes werden mit 400 abgelehnt. Die Übersetzungen
+  Ordnername: eine Sprache `<base>-DE`, ab 2 Sprachen `<base>-Multi`; `mod.info`-ID bis zu 3 Sprachen
+  `pt_<slug>_DE_FR`, ab 4 Sprachen `_multi` (unverändert). Unbekannte Sprachcodes werden mit 400 abgelehnt. Die Übersetzungen
   kommen aus dem Arbeitsstand (Arbeitsdatei vor Spiel/Workshop). Ein Zielordner
   in Spiel/Workshop wird mit 403 abgelehnt.
 - **Backup vor jedem Überschreiben/Löschen einer Arbeitsdatei** nach
