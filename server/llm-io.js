@@ -198,10 +198,14 @@ function buildContext(langs, notes) {
 // Wo und wie der Lua-Code einer Mod die Texte anzeigt: { key: "Datei.lua: getText(\"KEY\", …)" }
 // nur für Keys, die in `files` vorkommen. Das Basisspiel wird nicht durchsucht
 // (riesig, und seine Keys sind dem LLM meist geläufig).
-function modUsage(mod, files, sourceLang) {
-  if (mod.isBaseGame) return {}
+function modUsageFound(mod, sourceLang = SOURCE_LANG) {
+  if (mod.isBaseGame) return new Map()
   const luaDirs = [...new Set(enLocations(mod, sourceLang).map((l) => path.join(versionDirOf(mod, l.version), 'media', 'lua')))]
-  const found = findUsages(luaDirs)
+  return findUsages(luaDirs)
+}
+
+function modUsage(mod, files, sourceLang) {
+  const found = modUsageFound(mod, sourceLang)
   const usage = {}
   for (const keys of Object.values(files)) {
     for (const key of Object.keys(keys)) {
@@ -383,5 +387,6 @@ module.exports = {
   normalizeImportInput,
   importPreview,
   enLocations,
-  buildValidKeys
+  buildValidKeys,
+  modUsageFound
 }

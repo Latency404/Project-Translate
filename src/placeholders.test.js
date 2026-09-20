@@ -3,7 +3,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 test('placeholders', async (t) => {
-  const { splitByPlaceholders, comparePlaceholders, describePlaceholder } = await import('./placeholders.js')
+  const { splitByPlaceholders, comparePlaceholders, describePlaceholder, placeholderSources } = await import('./placeholders.js')
 
   await t.test('splitByPlaceholders zerlegt Text und Tokens', () => {
     assert.deepEqual(splitByPlaceholders('Hit %1 for <RGB:1,0,0>10<RGB:1,1,1> {0}'), [
@@ -44,5 +44,15 @@ test('placeholders', async (t) => {
     assert.equal(describePlaceholder('<LINE>'), 'a line break')
     assert.equal(describePlaceholder('<RGB:1,1,1>'), 'a text color')
     assert.equal(describePlaceholder('<FOO>'), 'a formatting code')
+  })
+
+  await t.test('placeholderSources ordnet %N dem N-ten getText-Argument zu', () => {
+    const usage = [{ file: 'UB.lua', args: ['ub_barrel.altLabel', 'count'], resolved: ['Translator.getName(name)', null] }]
+    assert.deepEqual(placeholderSources('Unscrew %1 x%2 %1', usage), {
+      '%1': { expr: 'ub_barrel.altLabel', value: 'Translator.getName(name)', file: 'UB.lua' },
+      '%2': { expr: 'count', value: 'count', file: 'UB.lua' }
+    })
+    assert.deepEqual(placeholderSources('Unscrew %3', usage), {})
+    assert.deepEqual(placeholderSources('Unscrew %1', undefined), {})
   })
 })

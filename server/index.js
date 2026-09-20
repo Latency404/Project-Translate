@@ -281,6 +281,24 @@ function getMod(res, modId) {
   return mod
 }
 
+// Lua-Fundstellen der Keys (Kontext für Platzhalter im Editor) je Mod; einmal
+// pro Scan-Cache gelesen, weil der Editor Seiten nachlädt.
+const usageMemo = new WeakMap()
+function usageFor(mod) {
+  let perMod = usageMemo.get(cache)
+  if (!perMod) usageMemo.set(cache, (perMod = new Map()))
+  if (!perMod.has(mod.id)) {
+    let found
+    try {
+      found = llm.modUsageFound(mod, config.SOURCE_LANG)
+    } catch {
+      found = new Map()
+    }
+    perMod.set(mod.id, found)
+  }
+  return perMod.get(mod.id)
+}
+
 app.get('/api/mods/:modId/entries', (req, res) => {
   const mod = getMod(res, req.params.modId)
   if (!mod) return
@@ -310,7 +328,11 @@ app.get('/api/mods/:modId/entries', (req, res) => {
     total: filtered.length,
     page,
     pageSize,
-    entries: filtered.slice(start, start + pageSize).map((e) => projectEntryForLang(e, lang))
+    entries: filtered.slice(start, start + pageSize).map((e) => {
+      const projected = projectEntryForLang(e, lang)
+      const uses = usageFor(mod).get(e.key)
+      return uses ? { ...projected, usage: uses } : projected
+    })
   })
 })
 

@@ -9,7 +9,7 @@ import Tag from "../components/Tag.jsx";
 import ModCard from "../components/ModCard.jsx";
 import DiscardIcon from "../components/DiscardIcon.jsx";
 import { useToast } from "../components/Toast.jsx";
-import { splitByPlaceholders, comparePlaceholders, describePlaceholder } from "../placeholders.js";
+import { splitByPlaceholders, comparePlaceholders, describePlaceholder, placeholderSources } from "../placeholders.js";
 import {
   loadDirty,
   saveDirty,
@@ -135,7 +135,7 @@ function PlaceholderText({ text }) {
     p.token ? (
       <span
         key={i}
-        title={`${p.text}: ${describePlaceholder(p.text)}. Keep it in your translation.`}
+        title={`${p.text}: ${describePlaceholder(p.text)}. Keep it in your translation only if it makes sense there.`}
         className="rounded bg-accent/15 px-1 text-accent"
       >
         {p.text}
@@ -161,7 +161,7 @@ function PlaceholderWarning({ missing, extra, onInsert }) {
               <span className="font-semibold">{tok}</span> ({describePlaceholder(tok)})
             </span>
           ))}
-          . The game needs {them} here. You can move {them} anywhere in your text.
+          . Leave {them} out if {them === "it" ? "it doesn't" : "they don't"} fit your sentence. Otherwise you can put {them} anywhere in your text.
         </p>
       )}
       {extra.length > 0 && (
@@ -255,6 +255,8 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
         const ph = currentTranslation ? comparePlaceholders(entry.original, currentTranslation) : null;
         const phIssue = ph && (ph.missing.length > 0 || ph.extra.length > 0);
 
+        const sources = placeholderSources(entry.original, entry.usage);
+
         const sourceFile = sourceFileOf(entry);
         const showFileDivider = showFileDividers && sourceFile !== prevSourceFile;
         prevSourceFile = sourceFile;
@@ -288,10 +290,19 @@ function EntryRows({ entries, renderCount, search, sort, dirty, sortDirty, updat
                   />
                 )}
               </span>
-              <span className="flex w-1/3 min-w-0 items-center border-l border-muted/15 py-2 pl-4">
-                <span className="truncate text-ui leading-none font-semibold text-text">
+              <span className="flex w-1/3 min-w-0 flex-col justify-center gap-1.5 border-l border-muted/15 py-2 pl-4">
+                <span className="text-ui leading-snug font-semibold break-words text-text">
                   <PlaceholderText text={entry.original} />
                 </span>
+                {Object.keys(sources).length > 0 && (
+                  <span className="space-y-0.5 text-xs leading-snug break-words text-muted">
+                    {Object.entries(sources).map(([tok, s]) => (
+                      <span key={tok} className="block">
+                        <span className="font-semibold text-accent">{tok}</span> = {s.value}
+                      </span>
+                    ))}
+                  </span>
+                )}
               </span>
             </div>
           </div>
@@ -349,6 +360,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
   const [entriesModId, setEntriesModId] = useState(null);
   const [renderCount, setRenderCount] = useState(0);
   const [entriesLoading, setEntriesLoading] = useState(false);
+  const lastLoadKeyRef = useRef(null);
 
   const [search, setSearch] = useState("");
   // null = "All Files", OPEN_TAB = alle Einträge ohne Übersetzung, sonst ein Dateiname
@@ -449,10 +461,18 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
     // already pointing at the new mod while `entries` still holds the
     // previous mod's (fully-known) set, which would make it prune the NEW
     // mod's dirty entries against the OLD mod's entry ids.
-    setEntries([]);
-    setEntriesTotal(Infinity);
-    setEntriesModId(null);
-    setRenderCount(0);
+    // Ausnahme: ein reiner Reload nach Save (gleicher Mod/Sprache/Suche) lässt die
+    // Liste stehen und tauscht sie erst mit den neuen Daten aus — sonst klappt sie
+    // zusammen und die Ansicht springt an den Anfang.
+    const loadKey = `${activeModId}|${activeLang}|${search}`;
+    const isReload = loadKey === lastLoadKeyRef.current;
+    lastLoadKeyRef.current = loadKey;
+    if (!isReload) {
+      setEntries([]);
+      setEntriesTotal(Infinity);
+      setEntriesModId(null);
+      setRenderCount(0);
+    }
     if (!activeModId) return;
     let cancelled = false;
     setEntriesLoading(true);
@@ -474,7 +494,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
       setEntries(all);
       setEntriesTotal(total);
       setEntriesModId(activeModId);
-      setRenderCount(Math.min(all.length, PAGE_SIZE));
+      setRenderCount((c) => Math.min(all.length, isReload ? Math.max(c, PAGE_SIZE) : PAGE_SIZE));
     })()
       .catch((err) => {
         // "Kein Scan": die Weiterleitung nach Settings meldet das bereits.

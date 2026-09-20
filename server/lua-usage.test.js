@@ -32,7 +32,9 @@ before(() => {
       'local b = getText(\'ContextMenu_UB_PumpFuel\')',
       '-- Komma im String und verschachtelte Klammern:',
       'local c = getText("Tooltip_X", getItemName("Base.RubberHose"), "a, b", math.ceil(x(1, 2)))',
-      'local d = getText("ContextMenu_UB_UnscrewPlug", ub_barrel.altLabel)' // gleiche Fundstelle nochmal
+      'local d = getText("ContextMenu_UB_UnscrewPlug", ub_barrel.altLabel)', // gleiche Fundstelle nochmal
+      'self.altLabel = nil', // nil zählt nicht als Auflösung
+      'self.altLabel = Translator.getMoveableDisplayName(name) -- Kommentar'
     ].join('\n')
   )
 })
@@ -52,9 +54,9 @@ test('findUsages: Datei + Argumente, doppelte Fundstellen nur einmal, ohne Argum
   const luaDir = path.join(modDir, '42', 'media', 'lua')
   const found = findUsages([luaDir])
   assert.deepEqual(found.get('ContextMenu_UB_UnscrewPlug'), [
-    { file: 'UB_BarrelContextMenu.lua', args: ['ub_barrel.altLabel'] }
+    { file: 'UB_BarrelContextMenu.lua', args: ['ub_barrel.altLabel'], resolved: ['Translator.getMoveableDisplayName(name)'] }
   ])
-  assert.deepEqual(found.get('ContextMenu_UB_PumpFuel'), [{ file: 'UB_BarrelContextMenu.lua', args: [] }])
+  assert.deepEqual(found.get('ContextMenu_UB_PumpFuel'), [{ file: 'UB_BarrelContextMenu.lua', args: [], resolved: [] }])
   assert.deepEqual(found.get('Tooltip_X')[0].args, ['getItemName("Base.RubberHose")', '"a, b"', 'math.ceil(x(1, 2))'])
   assert.equal(
     usageHint('ContextMenu_UB_UnscrewPlug', found.get('ContextMenu_UB_UnscrewPlug')),

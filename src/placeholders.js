@@ -66,6 +66,28 @@ export function describePlaceholder(token) {
   }
 }
 
+// Was der Mod-Code für %1, %2 … einsetzt: aus den getText-Fundstellen eines
+// Eintrags (usage = [{ file, args }]) → { "%1": { expr, file } }. Nur die erste
+// Fundstelle mit passendem Argument zählt. Der Ausdruck ist Lua-Code (z. B.
+// "ub_barrel.altLabel"), nicht der Laufzeitwert.
+export function placeholderSources(text, usage) {
+  const out = {};
+  if (!Array.isArray(usage)) return out;
+  for (const m of String(text ?? "").matchAll(/%(\d+)/g)) {
+    const tok = m[0];
+    if (out[tok]) continue;
+    const idx = Number(m[1]) - 1;
+    const use = usage.find((u) => u.args && u.args[idx] !== undefined);
+    if (use) {
+      // resolved = rechte Seite der Zuweisung im Mod-Code (falls gefunden); sie sagt
+      // mehr als der Feldname selbst.
+      const resolved = use.resolved && use.resolved[idx];
+      out[tok] = { expr: use.args[idx], value: resolved || use.args[idx], file: use.file };
+    }
+  }
+  return out;
+}
+
 // Vergleich Original ↔ Übersetzung. missing: im Original, aber nicht (oft genug)
 // in der Übersetzung; extra: in der Übersetzung, aber nicht im Original.
 // Beide sind Listen einzelner Tokens ohne Duplikate.
