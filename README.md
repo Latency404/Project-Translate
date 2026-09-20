@@ -78,9 +78,32 @@ PT_FAKE=1 npm run dev
    differently.
 4. **Export Mod** (top-right, on every page) — bundles the translated entries of
    the currently selected mods and target languages into one installable mod, and
-   downloads it as a ZIP (with a valid `mod.info` per layout location). Extract the
-   ZIP into your game's mods folder — typically `%UserProfile%\Zomboid\mods` — and
-   enable the mod in the launcher.
+   downloads it as a ZIP (with a valid `mod.info` per layout location). How to
+   install it: see [Installing the exported mod](#installing-the-exported-mod).
+
+## Installing the exported mod
+
+"Export Mod" downloads a ZIP. It holds one folder, named after the mod and the
+languages (for example `Useful Barrels-DE`, or `Translation Bundle (3 mods)-DE` for
+several mods). The app never installs anything itself, so you do that step by hand:
+
+1. **Extract the ZIP into your game's mods folder**, typically
+   `%UserProfile%\Zomboid\mods`. Copy the extracted folder (not the ZIP) there. Check
+   the result: `mods\<folder name>\42\mod.info` must exist directly, without a second
+   folder of the same name in between. Windows' "Extract All" sometimes adds one; if
+   so, move the inner folder up.
+2. **Start Project Zomboid** and open **Mods** in the main menu. The translation mod
+   is listed with the name `<Mod name> Translation (<Language>)`. Enable it, and
+   keep the original mod enabled too. The translation mod only adds texts to it.
+3. **Set the game language** to the language you translated into (Options →
+   Language) and restart the game if it asks for it.
+4. **Playing with others?** On a multiplayer server, the translation mod has to be
+   installed and enabled on the server as well.
+
+Exporting the same selection of mods and languages again produces the same mod ID, so
+the new version replaces the old one in the game. If you add or remove a mod in the
+selection, the ID changes: the game then lists both versions, and you remove the old
+folder from `mods\` yourself.
 
 ## Commands
 
