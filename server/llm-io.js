@@ -39,7 +39,8 @@
 // Comma / Lua-Style-Keys tolerant via readFlatMap().
 const fs = require('node:fs')
 const path = require('node:path')
-const { translateDir, sourceFileNames, readSourceMap } = require('./scanner')
+const { translateDir, sourceFileNames, readSourceMap, versionDirOf } = require('./scanner')
+const { findUsages, usageHint } = require('./lua-usage')
 const { SOURCE_LANG, langName } = require('./langs')
 
 // EN-Stellen eines Mods: [{ version, enDir }] — dieselben Regeln wie
@@ -134,20 +135,31 @@ function normalizeLangList(langs) {
 // befüllt wird, Keys/Struktur unverändert bleiben, und — falls keine Zielsprache
 // vorgegeben ist — dass das LLM selbst eine wählt und dafür einen eigenen
 // Sprachschlüssel unter `translations` anlegt.
+// Die Form von `translations` wird ausdrücklich mit Beispiel genannt: "Kopie der
+// mods-Struktur" haben Modelle als Liste von Mod-Blöcken gelesen (mod, description,
+// files), obwohl ein Objekt nach modId gemeint ist.
+const SHAPE_HINT =
+  `Shape of translations["<LANG>"]: an OBJECT keyed by modId, not a list. Each modId maps to an object keyed by ` +
+  `file key (for example "42/UI.json"), which maps each key to its translated string. ` +
+  `Do not repeat "mod", "description" or "files". Example: ` +
+  `{"translations": {"DE": {"1234/ModName": {"42/UI.json": {"UI_Key": "Übersetzter Text"}}}}}. `
+
 function buildNote(langs) {
   if (langs.length) {
     return (
       `These are the original English texts under "mods". Fill in "translations" only. ` +
-      `For each language listed in "targetLangs" (${langs.join(', ')}), translations["<LANG>"] must become ` +
-      `a full copy of the "mods" structure (same modId, same file keys, same keys) with the string values ` +
-      `translated into that language. Leave "mods" and all keys and structure exactly as given.`
+      `For each language listed in "targetLangs" (${langs.join(', ')}), translate every string value from "mods" ` +
+      `into that language and put it under translations["<LANG>"] with the same modId, the same file keys and the same keys. ` +
+      SHAPE_HINT +
+      `Leave "mods" and all keys and structure exactly as given.`
     )
   }
   return (
     `These are the original English texts under "mods". Fill in "translations" only. ` +
     `No target language was specified, so choose one yourself and add an entry for it, e.g. translations["DE"], ` +
-    `as a full copy of the "mods" structure (same modId, same file keys, same keys) with the string values ` +
-    `translated into that language. Leave "mods" and all keys and structure exactly as given.`
+    `with the same modId, the same file keys and the same keys as "mods" and the string values translated into that language. ` +
+    SHAPE_HINT +
+    `Leave "mods" and all keys and structure exactly as given.`
   )
 }
 
@@ -155,8 +167,8 @@ function buildNote(langs) {
 // Englisch und knapp, damit es in jedem Modell-Kontext Platz hat. Die
 // Regeln zu Platzhaltern sind der wichtigste Teil — ein zerstörter Platzhalter
 // (%1, <LINE>, <RGB:...>) bricht im Spiel Texte oder Farben.
-function buildContext(langs) {
-  return {
+function buildContext(langs, notes) {
+  const ctx = {
     game: 'Project Zomboid (Build 42), a zombie survival game. Gritty, serious tone.',
     about:
       'The strings are in-game texts of the base game or of a workshop mod: item names, tooltips, ' +
@@ -171,26 +183,52 @@ function buildContext(langs) {
       'Use one consistent term for the same thing across all entries and mods.',
       'Prefer the wording the official game translation uses for that language.',
       'If a string cannot or should not be translated, copy the original unchanged.',
+      'Where a mod has a "usage" entry for a key, it shows the game code that displays the text: the file name (it tells what the text is about) and the values passed in for %1, %2 and so on. Use it to understand what a placeholder stands for and what the text is used for, and translate so that the sentence still makes sense with that value.',
       'Return only the completed JSON file, nothing else.'
     ]
   }
+  // Freitext des Nutzers zu den ausgewählten Mods (was sie tun, Fachbegriffe, gewünschter Stil).
+  if (notes) {
+    ctx.notes = notes
+    ctx.rules.push('Follow the "notes" from the user: they know what these mods are about and how the texts are used.')
+  }
+  return ctx
+}
+
+// Wo und wie der Lua-Code einer Mod die Texte anzeigt: { key: "Datei.lua: getText(\"KEY\", …)" }
+// nur für Keys, die in `files` vorkommen. Das Basisspiel wird nicht durchsucht
+// (riesig, und seine Keys sind dem LLM meist geläufig).
+function modUsage(mod, files, sourceLang) {
+  if (mod.isBaseGame) return {}
+  const luaDirs = [...new Set(enLocations(mod, sourceLang).map((l) => path.join(versionDirOf(mod, l.version), 'media', 'lua')))]
+  const found = findUsages(luaDirs)
+  const usage = {}
+  for (const keys of Object.values(files)) {
+    for (const key of Object.keys(keys)) {
+      const uses = found.get(key)
+      if (uses && !usage[key]) usage[key] = usageHint(key, uses)
+    }
+  }
+  return usage
 }
 
 // Alle ausgewählten Mods in EINE Datei bündeln, mit einem leeren
 // `translations`-Gerüst je Zielsprache. Rückgabe:
 // { text, filename, modCount, entryCount, targetLangs }. Die Frontend lädt
 // `text` als `filename` über den Save-Dialog herunter.
-function exportLlmBundle(mods, sourceLang = SOURCE_LANG, targetLangs = []) {
+function exportLlmBundle(mods, sourceLang = SOURCE_LANG, targetLangs = [], { notes = "" } = {}) {
   const modDocs = mods.map((mod) => {
     const doc = { mod: mod.name, modId: mod.id }
     if (mod.description) doc.description = mod.description.slice(0, 500)
     doc.files = modFiles(mod, sourceLang)
+    const usage = modUsage(mod, doc.files, sourceLang)
+    if (Object.keys(usage).length) doc.usage = usage
     return doc
   })
   const langs = normalizeLangList(targetLangs)
   const translations = {}
   for (const lang of langs) translations[lang] = {}
-  const doc = { targetLangs: langs, note: buildNote(langs), context: buildContext(langs), mods: modDocs, translations }
+  const doc = { targetLangs: langs, note: buildNote(langs), context: buildContext(langs, String(notes || "").trim()), mods: modDocs, translations }
   let entryCount = 0
   for (const d of modDocs) {
     for (const keys of Object.values(d.files)) entryCount += Object.keys(keys).length
@@ -206,7 +244,8 @@ function exportLlmBundle(mods, sourceLang = SOURCE_LANG, targetLangs = []) {
 
 // Dateitext in { docsByLang, error, detectedTargetLangs } normalisieren.
 // Erkennt:
-//   - NEU: Objekt mit `translations` (Sprache → modId → fileKey → key → Wert).
+//   - NEU: Objekt mit `translations` (Sprache → modId → fileKey → key → Wert;
+//     toleriert werden auch eine Liste von Mod-Docs je Sprache und modId → { files }).
 //     Daraus je Sprache eine Liste von Mod-Docs { modId, files }.
 //   - ALT (muss weiter funktionieren): { targetLang, mods: [...] }, ein Array
 //     von Mod-Docs, oder ein einzelnes Mod-Doc { mod, modId, files }. Sprache
@@ -240,8 +279,15 @@ function normalizeImportInput(input) {
       const lang = typeof rawLang === 'string' ? rawLang.trim().toUpperCase() : rawLang
       detectedTargetLangs.push(lang)
       const docs = []
-      if (modsObj && typeof modsObj === 'object' && !Array.isArray(modsObj)) {
-        for (const [modId, files] of Object.entries(modsObj)) {
+      if (Array.isArray(modsObj)) {
+        // Häufige Abweichung: das Modell kopiert die mods-Struktur als Liste von
+        // Mod-Docs ({ mod, modId, files }) statt eines Objekts nach modId.
+        for (const d of modsObj) if (d && typeof d === 'object') docs.push(d)
+      } else if (modsObj && typeof modsObj === 'object') {
+        for (const [modId, value] of Object.entries(modsObj)) {
+          // Erwartet: modId → fileKey → key → Wert. Toleriert modId → { files: ... }.
+          const isDoc = value && typeof value === 'object' && value.files && typeof value.files === 'object'
+          const files = isDoc ? value.files : value
           docs.push({ modId, files: files && typeof files === 'object' ? files : {} })
         }
       }

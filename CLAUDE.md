@@ -40,6 +40,7 @@ server/              Express-API (CommonJS)
                      ("Restore Backup")
   guard.js           Schreibschutz: jedes Schreiben in Spiel-/Workshop-Ordner → 403
   llm-io.js          LLM-Export-Bundle, Import-Vorschau (inkl. matches)
+  lua-usage.js       getText("KEY", ...)-Fundstellen im Mod-Code (Kontext für den LLM-Export)
   mod-export.js      Installierbaren Übersetzungs-Mod erzeugen
   zip.js             Minimaler ZIP-Writer (kein externes Paket) für den Export-Mod-Download
   fake-api.js        Nur Wurzel-Tausch auf server/fixtures/ (PT_FAKE=1)
@@ -108,7 +109,9 @@ Diese Formen sind über Scanner, Editor, Export und Import hinweg verdrahtet —
   `llm-io.js` rekonstruiert daraus die entryId. Die exportierte Datei trägt
   `targetLangs`, `note` und `context` (Spiel, Sprachnamen, Übersetzungsregeln z. B. zu
   Platzhaltern — `llm-io.buildContext`), die Originaltexte unter `mods` (je Mod optional
-  `description` aus der `mod.info`) und ein leeres Gerüst
+  `description` aus der `mod.info`; `usage` = Fundstellen der Keys im Lua-Code der Mod, s.
+  `server/lua-usage.js`; `context.notes` = optionaler Freitext des Nutzers aus dem
+  Export-Dialog, Body-Feld `notes`) und ein leeres Gerüst
   `translations: { "<LANG>": {} }`, das das LLM füllt:
   `translations[LANG][modId][fileKey][key] = "Übersetzung"`. Das alte
   einsprachige Format (`{ targetLang, mods }`, blankes Array, einzelnes Mod-Doc)

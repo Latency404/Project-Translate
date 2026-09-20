@@ -163,12 +163,18 @@ export default function Mods({ activeLang, onGoToSetup }) {
   // --- LLM export: die Selektion in EINE Datei (Browser-Save-Dialog) ---
   const [exportLoading, setExportLoading] = useState(false);
 
+  // Export-Dialog: optionaler Freitext als Kontext für die KI (Notes bleiben
+  // nur für diese Sitzung der Seite stehen, damit man sie beim nächsten Export
+  // nicht neu tippen muss).
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportNotes, setExportNotes] = useState("");
+
   const handleLlmExport = async () => {
     if (selected.size === 0) return;
     setExportLoading(true);
 
     try {
-      const result = await api.exportLlm(Array.from(selected), targetLangs);
+      const result = await api.exportLlm(Array.from(selected), targetLangs, exportNotes.trim());
       const blob = new Blob([result.text], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -178,6 +184,7 @@ export default function Mods({ activeLang, onGoToSetup }) {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      setExportModalOpen(false);
     } catch (err) {
       toast("error", err.message);
     } finally {
@@ -347,7 +354,7 @@ export default function Mods({ activeLang, onGoToSetup }) {
           <Button
             variant="secondary"
             icon={Upload}
-            onClick={handleLlmExport}
+            onClick={() => setExportModalOpen(true)}
             disabled={selected.size === 0 || exportLoading}
             title="Export selected mods as LLM JSON (EN originals)"
           >
@@ -400,6 +407,39 @@ export default function Mods({ activeLang, onGoToSetup }) {
       </div>
 
       {/* Import confirmation modal */}
+      <Modal
+        open={exportModalOpen}
+        onClose={() => (!exportLoading ? setExportModalOpen(false) : undefined)}
+        title="Export for an AI"
+      >
+        <div className="space-y-4">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-muted">Notes for the AI (optional)</span>
+            <textarea
+              value={exportNotes}
+              onChange={(e) => setExportNotes(e.target.value)}
+              rows={5}
+              maxLength={2000}
+              placeholder="What are these mods about? Describe what they add, and explain special terms or words that could be misunderstood."
+              className="w-full resize-y rounded-lg border border-line bg-raised px-3 py-2 text-ui font-medium text-text placeholder:text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            />
+            <span className="mt-1 block text-xs text-muted/80">
+              The AI also gets the mod description and, where the mod code shows a text, the code line
+              (so it can see what %1 stands for). Your notes help with the rest: what the mod does, special
+              terms, the tone you want.
+            </span>
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setExportModalOpen(false)} disabled={exportLoading}>
+              Cancel
+            </Button>
+            <Button icon={Upload} onClick={handleLlmExport} disabled={exportLoading}>
+              {exportLoading ? "Exporting..." : "Export"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}

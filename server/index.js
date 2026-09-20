@@ -479,7 +479,9 @@ app.post('/api/export/llm', (req, res) => {
   const mods = (cache ? cache.mods : []).filter((m) => modIds.includes(m.id))
   if (!mods.length) return fail(res, 400, 'No valid mod selection.')
   try {
-    const result = llm.exportLlmBundle(mods, config.SOURCE_LANG, targetLangs)
+    // Optionaler Freitext des Nutzers als Kontext für die KI (gekürzt).
+    const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 2000) : ''
+    const result = llm.exportLlmBundle(mods, config.SOURCE_LANG, targetLangs, { notes })
     res.json(result)
   } catch (err) {
     fail(res, err.status || 500, err.message || 'LLM export failed.')

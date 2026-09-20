@@ -678,6 +678,20 @@ test('POST /api/export/mod — unbekannte Zielsprache → 400', async () => {
   assert.match(res.json.error, /Unknown target language: ZZ\./)
 })
 
+test('POST /api/export/llm — notes des Nutzers landen im context (gekürzt), ohne notes kein Feld', async () => {
+  const withNotes = await api('POST', '/export/llm', {
+    modIds: ['2000000002/Coffee Corner'],
+    targetLangs: ['DE'],
+    notes: '  Kaffee-Mod, Ton locker.  '
+  })
+  assert.equal(withNotes.status, 200)
+  assert.equal(JSON.parse(withNotes.json.text).context.notes, 'Kaffee-Mod, Ton locker.')
+  const long = await api('POST', '/export/llm', { modIds: ['2000000002/Coffee Corner'], targetLangs: ['DE'], notes: 'x'.repeat(5000) })
+  assert.equal(JSON.parse(long.json.text).context.notes.length, 2000)
+  const without = await api('POST', '/export/llm', { modIds: ['2000000002/Coffee Corner'], targetLangs: ['DE'] })
+  assert.equal('notes' in JSON.parse(without.json.text).context, false)
+})
+
 test('POST /api/export/llm — unbekannte Zielsprache → 400', async () => {
   const res = await api('POST', '/export/llm', {
     modIds: ['2000000002/Coffee Corner'],

@@ -146,6 +146,31 @@ test('exportLlmBundle: context erklärt Spiel, Sprachen (mit Namen) und Regeln; 
   assert.equal(normalizeImportInput(JSON.stringify(doc)).error, null)
 })
 
+test('exportLlmBundle: note nennt die Form von translations mit Beispiel (Objekt nach modId, keine Liste)', () => {
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
+  const doc = JSON.parse(exportLlmBundle([coffee], 'EN', ['DE']).text)
+  assert.match(doc.note, /OBJECT keyed by modId, not a list/)
+  assert.match(doc.note, /"42\/UI\.json"/)
+})
+
+// Praxisfall: Sonnet 5 hat translations.DE als Liste der Mod-Blöcke (Kopie von
+// "mods", samt mod/description/files) zurückgegeben — der Import fand nichts.
+test('normalizeImportInput: translations[LANG] als Liste von Mod-Docs wird wie ein Objekt nach modId gelesen', () => {
+  const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
+  const files = { '42.20/ContextMenu.json': { ContextMenu_OPTION_COFFEE_MACHINE: 'Kaffeemaschine' } }
+  const asList = { translations: { DE: [{ mod: coffee.name, modId: coffee.id, description: 'x', files }] } }
+  const asObject = { translations: { DE: { [coffee.id]: files } } }
+  const asDocs = { translations: { DE: { [coffee.id]: { files } } } }
+  for (const input of [asList, asObject, asDocs]) {
+    const { docsByLang, error } = normalizeImportInput(JSON.stringify(input))
+    assert.equal(error, null)
+    const preview = importPreview(docsByLang, mods, 'DE')
+    assert.equal(preview.matched, 1)
+    assert.equal(preview.matches[0].translation, 'Kaffeemaschine')
+    assert.equal(preview.matches[0].lang, 'DE')
+  }
+})
+
 test('exportLlmBundle: keine Zielsprache → leeres targetLangs/translations, Note bittet LLM um eigene Sprachwahl', () => {
   const coffee = mods.find((m) => m.id === '2000000002/Coffee Corner')
   const { targetLangs } = exportLlmBundle([coffee])

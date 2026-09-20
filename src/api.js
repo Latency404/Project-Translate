@@ -74,10 +74,11 @@ export function saveEntries(modId, entries, lang) {
   );
 }
 
-export function exportLlm(modIds, targetLangs) {
+// notes: optionaler Freitext als Kontext für die KI.
+export function exportLlm(modIds, targetLangs, notes) {
   return request("/api/export/llm", {
     method: "POST",
-    body: JSON.stringify(targetLangs ? { modIds, targetLangs } : { modIds }),
+    body: JSON.stringify({ modIds, ...(targetLangs ? { targetLangs } : {}), ...(notes ? { notes } : {}) }),
   });
 }
 
