@@ -448,7 +448,7 @@ export default function Editor({ onReselect, onGoToSettings, activeLang }) {
     if (activeModId && universe.some((m) => m.id === activeModId)) return;
     setActiveModId(universe[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [universe.map((m) => m.id).join(" ")]);
+  }, [universe.map((m) => m.id).join("\u0000")]);
 
   const activeMod = universe.find((m) => m.id === activeModId) || null;
 

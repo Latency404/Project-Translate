@@ -1,0 +1,10 @@
+# Zeilenenden projektweit festlegen — unabhängig davon, wie der einzelne
+# Rechner oder ein Werkzeug schreibt. Ohne das gilt jede umgestellte Zeile
+# als Änderung und ein Diff zeigt statt 150 echten Zeilen plötzlich 2000.
+#
+# text=auto: Git normalisiert Textdateien im Repo auf LF.
+# eol=crlf:  in der Arbeitskopie stehen sie als Windows-Zeilenenden.
+* text=auto eol=crlf
+
+# Binärdateien nie anfassen.
+*.png binary
