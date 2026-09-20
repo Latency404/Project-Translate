@@ -9,13 +9,16 @@
   "scripts": {
     "dev": "node scripts/dev.js",
     "build": "vite build",
+    "package": "node scripts/package.js",
     "start": "node server/index.js",
     "test": "node --test"
   },
   "dependencies": {
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
-    "express": "^5.2.1",
     "lucide-react": "^1.45.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
