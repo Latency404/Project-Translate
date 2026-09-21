@@ -322,9 +322,9 @@ app.get('/api/mods', (req, res) => {
 
 // --- Base-Game-Poster (Ressource aus Resources/) ---
 // Das Logo des Basisspiels liegt als statische Ressource im Projekt
-// (Resources/projectzomboidlogo.jpg) und wird unabhängig vom Scan als
+// (server/assets/base-game-poster.jpg) und wird unabhängig vom Scan als
 // /base-game-poster.jpg gedient. Die Mods-Seite zeigt es für den BASE-Mod.
-const BASE_POSTER_FILE = path.join(PROJECT_ROOT, 'Resources', 'projectzomboidlogo.jpg')
+const BASE_POSTER_FILE = path.join(__dirname, 'assets', 'base-game-poster.jpg')
 app.get('/base-game-poster.jpg', (req, res) => {
   if (!fs.existsSync(BASE_POSTER_FILE)) return fail(res, 404, 'Poster not found.')
   res.type('image/jpeg').sendFile(BASE_POSTER_FILE)

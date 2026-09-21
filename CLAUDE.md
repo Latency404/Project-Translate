@@ -45,6 +45,7 @@ server/              Express-API (CommonJS)
                      Start wieder laden (nur bei gleichen Pfaden/Zielsprachen)
   mod-export.js      Installierbaren Übersetzungs-Mod erzeugen
   zip.js             Minimaler ZIP-Writer (kein externes Paket) für den Export-Mod-Download
+  assets/            Statische Ressourcen (Base-Game-Poster)
   fake-api.js        Nur Wurzel-Tausch auf server/fixtures/ (PT_FAKE=1)
   fixtures/          Beispieldaten im echten PZ-Layout
   fixtures-inject.js Synthetische Layout-Fixtures für tmp-Kopien in Tests
@@ -64,7 +65,7 @@ src/
                      LangMultiSelect (mehrere, mit Suche)
   styles/theme.css   Design-Tokens (CSS-Variablen)
   views/             Settings, Mods, Editor
-Resources/           Sample-Mods, Logos, Figma-Mockups/Icons (git-ignoriert)
+Resources/           Sample-Mods, Figma-Mockups/Icons (git-ignoriert)
 export/              Laufzeit-Ausgabe: work/ (Übersetzungen), mods/, backups/ (git-ignoriert)
 config.json          Laufzeit (git-ignoriert)
 ```
