@@ -52,11 +52,13 @@ function copyDir(src, dest) {
   }
 }
 
-// Erstes vorhandenes Bild aus der Liste; null, wenn keins da ist.
+// Erstes vorhandenes Bild aus der Liste (erst Workshop/, dann server/assets/); null, wenn keins da ist.
 function pickImage(names) {
   for (const n of names) {
-    const p = path.join(ROOT, 'Workshop', n)
-    if (fs.existsSync(p)) return p
+    for (const dir of ['Workshop', path.join('server', 'assets')]) {
+      const p = path.join(ROOT, dir, n)
+      if (fs.existsSync(p)) return p
+    }
   }
   return null
 }
@@ -88,9 +90,9 @@ const preview = pickImage(['project-translate-ad.png', 'project-translate-ad.jpg
 if (preview) {
   fs.copyFileSync(preview, path.join(OUT, 'preview.png'))
   fs.copyFileSync(preview, path.join(MOD, '42', 'poster.png'))
-  console.log(`     Vorschaubild: Workshop/${path.basename(preview)}`)
+  console.log(`     Vorschaubild: ${path.relative(ROOT, preview)}`)
 } else {
-  console.log('     WARNUNG: kein Vorschaubild in Workshop/ gefunden')
+  console.log('     WARNUNG: kein Vorschaubild in Workshop/ oder server/assets/ gefunden')
 }
 
 fs.writeFileSync(
