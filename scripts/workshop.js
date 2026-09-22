@@ -10,8 +10,9 @@
 //       42/mod.info                       damit B42 das Item als Mod erkennt
 //       42/poster.png
 //       README.txt                        Anleitung + GitHub-Link
-//       Start Project Translate.cmd       die vollstaendige App
-//       runtime/  app/
+//       Start Project Translate.cmd       Starter (nutzt installiertes Node)
+//       app/                              ohne runtime/node.exe: der Workshop
+//                                         verbietet .exe/.dll/.bat/.sh/.so/.zip ...
 //
 // Der Ordner wird nach <Zomboid>/Workshop/ kopiert; hochgeladen wird er
 // danach aus Project Zomboid heraus (Hauptmenue, Workshop).
@@ -42,14 +43,29 @@ if (!fs.existsSync(SRC)) {
   process.exit(1)
 }
 
-function copyDir(src, dest) {
+// Der Workshop lehnt diese Endungen ab (Upload-Fehler "Dateitypen nicht erlaubt").
+const FORBIDDEN = new Set(['.exe', '.dll', '.bat', '.app', '.dylib', '.sh', '.so', '.zip'])
+// Nicht ins Item: die Laufzeit (node.exe) und deren Pruefsummen.
+const SKIP_TOP = new Set(['runtime', 'CHECKSUMS.txt'])
+
+function copyDir(src, dest, top = true) {
   fs.mkdirSync(dest, { recursive: true })
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (top && SKIP_TOP.has(entry.name)) continue
     const from = path.join(src, entry.name)
     const to = path.join(dest, entry.name)
-    if (entry.isDirectory()) copyDir(from, to)
+    if (entry.isDirectory()) copyDir(from, to, false)
     else if (entry.isFile()) fs.copyFileSync(from, to)
   }
+}
+
+function findForbidden(dir, found = []) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name)
+    if (e.isDirectory()) findForbidden(p, found)
+    else if (FORBIDDEN.has(path.extname(e.name).toLowerCase())) found.push(p)
+  }
+  return found
 }
 
 // Erstes vorhandenes Bild aus der Liste (erst Workshop/, dann server/assets/); null, wenn keins da ist.
@@ -107,12 +123,12 @@ fs.writeFileSync(
     'description=and run "Start Project Translate.cmd". README.txt explains where to',
     'description=find that folder.',
     'description=',
-    'description=About the .exe: it is the official Node.js runtime from nodejs.org,',
-    'description=digitally signed by the OpenJS Foundation and counter-signed by',
-    'description=Microsoft - not something I built or packed. Check it yourself via',
-    'description=Properties > Digital Signatures. Nothing is obfuscated and nothing is',
-    'description=downloaded at run time; the start file is plain text you can read, and',
-    'description=CHECKSUMS.txt lists SHA-256 hashes. The tool serves a page on 127.0.0.1',
+    'description=Requires Node.js 22.2 or newer (free, from nodejs.org). If you would',
+    'description=rather not install anything, download the self-contained version',
+    'description=(Node included) from the GitHub releases page.',
+    'description=',
+    'description=Nothing is obfuscated and nothing is downloaded at run time; the start',
+    'description=file is plain text you can read. The tool serves a page on 127.0.0.1',
     'description=so your browser can act as its window - your machine only.',
     'description=',
     `description=Source code and releases: ${GITHUB}`,
@@ -129,6 +145,16 @@ const readme = fs
   .replaceAll('{VERSION}', pkg.version)
   .replaceAll('{GITHUB}', GITHUB)
 fs.writeFileSync(path.join(MOD, 'README.txt'), readme, 'utf8')
+
+// Startdatei fuer das Workshop-Item: nutzt das installierte Node statt node.exe.
+fs.copyFileSync(path.join(__dirname, 'workshop-launcher.cmd'), path.join(MOD, 'Start Project Translate.cmd'))
+
+const forbidden = findForbidden(OUT)
+if (forbidden.length) {
+  console.error('FEHLER: Dateien mit im Workshop verbotener Endung im Item:')
+  for (const f of forbidden) console.error('  ' + path.relative(OUT, f))
+  process.exit(1)
+}
 
 console.log('4/4  fertig')
 let files = 0
